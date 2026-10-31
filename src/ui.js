@@ -1519,7 +1519,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-11-01-2';
+export const BUILD_STAMP = '2026-11-01-3';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -3495,22 +3495,14 @@ function buildPanelShell() {
 
     const paneWrap = h('div', { class: 'bc-panes' }, panes.status, panes.settings);
 
-    // ★★ 手机形态专用的「关闭」：顶栏那颗 ✕ 正好落在刘海 / 灵动岛 / 各种壳子顶栏盖住的位置，
-    //   苹果手机上点不到 ⇒ 在**右下角**（拇指够得着、不会被顶栏挡）再放一颗，
-    //   挂在外壳上（不在 iframe 里），层级压过面板内容 ✓。桌面形态不显示（CSS 管）
-    const phoneClose = h('div', {
-        class: 'bc-phone-close', title: '关闭面板', role: 'button', 'aria-label': '关闭面板',
-        onclick: (e) => { try { e.stopPropagation(); } catch { /* 忽略 */ } closePanel(); },
-    }, h('span', { text: '✕' }));
-
+    // ★ 2026-11-01（她：手机版上有三颗退出键）⇒ 只留**这一排最右边那颗 ✕**。
+    //   删掉的两颗：①面板自己顶栏那颗（和 复制/遮罩/搜索 挤一排，容易点错到搜索）；
+    //   ②右下角浮着的那颗（挡内容；它当初是因为苹果手机上顶栏那颗被刘海盖住才加的，
+    //     现在顶栏按 env() 留了安全区、点按范围也放到 44px，够得着 ✓）。
+    //   ⚠️ 以后真有设备点不到，改这颗的位置和大小，别再添第三颗 ✗
     root.appendChild(head);
     root.appendChild(paneWrap);
-    root.appendChild(phoneClose);
     document.body.appendChild(root);
-
-    // ★ 面板里那颗「关闭」（手机形态才有）要能叫回外壳：面板是同源 iframe ⇒ 直接挂个函数 ✓
-    //   （TT 手机上外壳顶栏不一定显示，没有这个就只能困在面板里出不来了）
-    try { window.__bodycordClosePanel = () => closePanel(); } catch { /* 忽略 */ }
 
     return { root, head, paneWrap, panes, clock, navBtn: head.querySelector('#bc-nav') };
 }

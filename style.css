@@ -463,10 +463,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 }
 .bc-icon-btn:hover { background: var(--bc-hover); color: var(--bc-tx); }
 /* 触屏上点按钮别等"双击缩放"那 300ms（iOS 上尤其明显）✓ */
-.bc-icon-btn, #bc-fab, .bc-phone-close { touch-action: manipulation; }
-
-/* 手机形态专用的「关闭」：桌面上不显示（顶栏已经有 ✕ 了）——显示规则在手机那块 @media 里 */
-.bc-phone-close { display: none; }
+.bc-icon-btn, #bc-fab { touch-action: manipulation; }
 
 /* ---------- 常驻页签 ---------- */
 .bc-panes { flex: 1 1 auto; position: relative; min-height: 0; }
@@ -3703,32 +3700,10 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
         padding-left: calc(14px + min(env(safe-area-inset-left, 0px), 80px));
         padding-right: calc(12px + min(env(safe-area-inset-right, 0px), 80px));
     }
-    /* 顶栏的 ✕ 在手机上给足 44×44 的点按范围（苹果人机指南就是这个数）✓ */
-    .bc-head .bc-icon-btn { width: 40px; height: 40px; }
-    /* ★ 右下角那颗「关闭」：拇指够得着，也不会被刘海 / 壳子的顶栏盖住 ✓ */
-    .bc-phone-close {
-        display: flex;
-        position: absolute;
-        right: calc(14px + env(safe-area-inset-right, 0px));
-        bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-        z-index: 5;
-        width: 46px;
-        height: 46px;
-        border-radius: 50%;
-        align-items: center;
-        justify-content: center;
-        font-size: 19px;
-        line-height: 1;
-        cursor: pointer;
-        user-select: none;
-        -webkit-user-select: none;
-        color: var(--bc-tx);
-        background: var(--bc-main);
-        border: 1px solid var(--bc-line);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, .22);
-        opacity: .92;
-    }
-    .bc-phone-close:active { transform: scale(.92); }
+    /* ★ 2026-11-01（她：手机版上有三颗退出键）⇒ 只留顶栏这一颗 ✕。
+       右下角那颗浮着的和面板里那颗都删了（原因见 src/ui.js 顶上那段注释）；
+       点按范围按苹果人机指南给到 44×44 ✓ */
+    .bc-head .bc-icon-btn { width: 44px; height: 44px; }
     /* 整屏之后**拖不动了**（拖出去就再也够不着）⇒ 头别再显示"能抓"的手型 ✓ */
     .bc-head,
     .bc-head:active { cursor: default; }

@@ -174,6 +174,7 @@ function gateGlossaryBlock() {
 //   ⇒ 收进「？」里，改由下面的 help 列给 ✓
 const TPL_FIELDS = [
     ['stateHeader', '状态摘要 · 抬头', 3],
+    ['stateRule', '状态的用法（放在系统段，不跟摘要走）', 4],
     ['targetBlock', '状态摘要 · 每个对象的模板', 8],
     ['stateFooter', '状态摘要 · 结尾（可留空）', 2],
     ['patchHeader', '沉浸设定 · 抬头', 3],
@@ -255,7 +256,7 @@ function templatesCard(handlers) {
                 title: '主 API 现在会收到的内容',
                 width: 880,
                 build: (bd) => {
-                    bd.appendChild(h('div', { class: 'bc-hint', text: '上面是「状态摘要」，下面是「沉浸设定」。这两段就是插件注入到正文生成里的全部内容' }));
+                    bd.appendChild(h('div', { class: 'bc-hint', text: '上面「状态摘要」放在对话末尾附近（倒数第 2 条消息之前），下面「沉浸设定」放在系统段，状态的用法那段也在系统段里，一起发' }));
                     bd.appendChild(h('div', { class: 'bc-section-title', text: '状态摘要' }));
                     bd.appendChild(h('pre', { class: 'bc-pre', text: pv.state || '（空）' }));
                     bd.appendChild(h('div', { class: 'bc-section-title', text: '沉浸设定' }));

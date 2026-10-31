@@ -23,8 +23,25 @@ import { isCardExcluded } from './cardexclude.js';
 
 const KEY_STATE = 'bodycord_state';
 const KEY_PATCH = 'bodycord_patch';
+// ★ 状态摘要的「用法说明」（禁令那半句）：**基本不变** ⇒ 和沉浸设定一起放系统段 ✓
+//   2026-11-01 从状态摘要抬头里拆出来的：那句"不要在正文里输出面板/字段名/数值"原来跟着
+//   每轮都变的那块走，落在整段提示词的最后一句 ⇒ 等于把预设塞在 d0 的条目顶掉（报障：破不开）✗
+const KEY_RULE = 'bodycord_rule';
 // ★「孩子」那一段：默认**不发**；设置里开了才发 ✓
 const KEY_CHILDREN = 'bodycord_children';
+
+/**
+ * ★★ 状态摘要的注入深度（2026-11-01 她拍板：从 0 挪到 2）。
+ *
+ * `深度 N` ＝排在**倒数第 N 条消息之前**；`深度 0` ＝最后一条消息之后，也就是整段提示词的
+ * 最后一块 —— 中文破限预设普遍拿 d0 放格式或破限条目，酒馆会把同深度同角色的注入拼成同一条
+ * 消息，我们的排在后面就等于把预设的最后一句顶掉（报障现象：换了 d0 密集型预设之后正文写不出来、
+ * 预设本来的效果消失）。
+ *
+ * ⚠️ 缓存不吃亏：缓存看的是"这块之前的内容是否一模一样"，深度 2 只比深度 0 多一两条消息要重算。
+ *   真正吃亏的是把它挪回系统段 —— 状态每轮变，后面的角色卡 / 世界书 / 全部历史都不吃缓存 ✗
+ */
+const STATE_DEPTH = 2;
 
 const _setKeys = new Set();
 
@@ -472,14 +489,16 @@ function put(key, value) {
  *   酒馆把 IN_PROMPT 的注入放在**主提示词之后、角色卡 / 世界书 / 全部历史之前**
  *   （`public/scripts/openai.js`：`newIndex = position === 'end' ? indexOfMain + 1 : indexOfMain`）
  *   ⇒ 它一变，后面几十条全部重算 ⇒ 主 API 的缓存一点吃不到 ✗
- *   ⇒ 改成 IN_CHAT ＋ 深度 0（= 请求里最后一块）：
- *     稳定前缀就变成「系统段 ＋ 整段历史」，每轮只有末尾这一小块在变 ✓
+ *   ⇒ 改成 IN_CHAT ＋ 固定深度（= 靠近请求尾巴）：
+ *     稳定前缀就变成「系统段 ＋ 到这块之前的整段历史」，每轮只有尾巴这一小块在变 ✓
  *   ⚠️ `depth` 只对 in-chat 注入生效 —— `put()` 里那个 4 对 IN_PROMPT 完全不起作用 ✓
  *   ⚠️ 只挪**每轮都会变的那块**（状态摘要）：沉浸设定 / 孩子那种基本不变的留在系统段 ✓
  *     （系统段的位置对正文风格影响更大，能不动就不动 ✓）
+ *   ⚠️★ 深度用 `STATE_DEPTH`（现在是 2，**不是 0**）—— 0 是整段提示词的最后一句，
+ *     会和预设塞在 d0 的破限条目抢同一个槽并把预设顶掉 ✗ 见上面那条注释 ✓
  */
 function putTail(key, value) {
-    setPrompt(key, value, 1 /* IN_CHAT */, 0, PROMPT_ROLE.SYSTEM, injectionFilter);
+    setPrompt(key, value, 1 /* IN_CHAT */, STATE_DEPTH, PROMPT_ROLE.SYSTEM, injectionFilter);
     _setKeys.add(key);
 }
 
@@ -553,6 +572,7 @@ export function clearInjection() {
     for (const k of _setKeys) setPrompt(k, '');
     _setKeys.clear();
     setPrompt(KEY_STATE, '');
+    setPrompt(KEY_RULE, '');
     setPrompt(KEY_PATCH, '');
     setPrompt(KEY_CHILDREN, '');
 }
@@ -563,8 +583,17 @@ export function clearInjection() {
 
 export const DEFAULT_TEMPLATES = {
     stateHeader: [
-        '[角色身体状态 · 由系统维护，作为当前事实]',
-        '下面列出的状态是你写这一轮正文之前的事实。请据此描写角色，但不要在正文里输出任何面板、字段名、数值格式或状态标签，也不要把这些参考数据照抄进正文；那些级别与累计刺激尤其不要写。',
+        '[角色身体状态 · 由系统维护]',
+        '下面是写这一轮正文之前的事实。',
+    ].join('\n'),
+
+    // ★★ 2026-11-01 新增：状态摘要的**用法说明**（含"不要在正文里输出面板 / 字段名 / 数值"那句）。
+    //   为什么从抬头里拆出来：抬头跟着**每轮都变**的状态摘要走尾巴，等于把整段提示词的
+    //   最后一句变成禁令 ⇒ 把预设塞在 d0 的破限条目顶掉（报障：预设效果没了）✗
+    //   这句基本不变 ⇒ 跟沉浸设定一起放系统段，照样吃缓存 ✓
+    stateRule: [
+        '[状态摘要怎么用]',
+        '状态摘要列出的是写这一轮正文之前的事实，请据此描写角色的身体与反应。不要在正文里输出任何面板、字段名、数值格式或状态标签，也不要把这些参考数据照抄进正文；那些级别与累计刺激尤其不要写。',
     ].join('\n'),
 
     // 每个追踪对象渲染一次；算出来是空的占位符所在行会自动消失
@@ -689,6 +718,24 @@ export function templates() {
         if (typeof v !== 'string') continue;
         for (const [a, b] of OLD_HEADER_WORDS) v = v.split(a).join(b);
         s.injectTemplates[k] = v;
+    }
+    // ★★ 2026-11-01：禁令那半句从「状态摘要抬头」挪去系统段（KEY_RULE）——
+    //   模板存在设置里 ⇒ 老存档那份抬头里还带着那句 ✗ 这里按**字面**拆开：
+    //   · 抬头里含禁令的**整行**去掉（那行前半句"请据此描写角色"跟着一起搬过去，语义不丢）
+    //   · stateRule 里还没有那句 ⇒ 给新的默认值（默认那段本来就包含它，内容不会丢）
+    //   ⚠️ 玩家自己改写过的抬头（不含禁令字面）一个字都不动 ✓
+    //   ⚠️ 玩家当年**故意删掉**禁令的那种抬头也不动；但 stateRule 是新键，默认值会补上
+    //     —— 这是"拆键"的代价，比让禁令继续压在提示词最后一句要好 ✓
+    {
+        const AT = '不要在正文里输出';
+        const cur = String(s.injectTemplates.stateHeader || '');
+        if (cur.includes(AT)) {
+            const kept = cur.split('\n').filter((l) => !l.includes(AT)).join('\n').trim();
+            s.injectTemplates.stateHeader = kept || DEFAULT_TEMPLATES.stateHeader;
+            if (!String(s.injectTemplates.stateRule || '').includes(AT)) {
+                s.injectTemplates.stateRule = DEFAULT_TEMPLATES.stateRule;
+            }
+        }
     }
     // ★★ 2026-10-26：状态摘要新增了「预产期」那一行 ——
     //   模板是**存在设置里**的 ⇒ 光改默认值不够：老存档里存的那份没有 {{due}}，
@@ -1187,9 +1234,14 @@ export function rebuildInjection() {
     const targets = injectTargets();
     if (!targets.length) return;
 
-    // ★ 状态摘要：**每轮都在变** ⇒ 走末尾注入（不然它后面的全部内容都不吃缓存 ✗ 见 putTail 的说明）
+    // ★ 状态摘要：**每轮都在变** ⇒ 走尾巴注入（不然它后面的全部内容都不吃缓存 ✗ 见 putTail 的说明）
+    //   ⚠️ 深度是 STATE_DEPTH（2），不是 0 —— d0 让给预设的破限条目 ✓
     const stateText = buildStateText(targets);
     if (stateText) putTail(KEY_STATE, substitute(stateText));
+
+    // ★ 状态摘要的用法说明：基本不变 ⇒ 系统段（每轮都发，但它不动，不伤缓存 ✓）
+    const ruleText = String(templates().stateRule || '').trim();
+    if (ruleText) put(KEY_RULE, substitute(ruleText));
 
     const patchText = buildPatchText(targets);
     if (patchText) put(KEY_PATCH, substitute(patchText));
@@ -1247,7 +1299,11 @@ export function previewInjection() {
     const targets = injectTargets();
     return {
         state: targets.length ? buildStateText(targets) : '（没有追踪对象）',
-        patch: targets.length ? buildPatchText(targets) : '（没有追踪对象）',
+        // ★ 用法说明跟着沉浸设定一起走系统段 ⇒ 预览里并成一段展示（她靠预览验收 ✓）
+        patch: targets.length
+            ? [String(templates().stateRule || '').trim(), buildPatchText(targets)].filter(Boolean).join('\n\n')
+                || '（空）'
+            : '（没有追踪对象）',
         children: targets.length ? (buildChildrenText(targets) || '（没开，或者这个对象还没有孩子）')
             : '（没有追踪对象）',
     };

@@ -762,19 +762,23 @@ function pickModelModal(models, onPick) {
     });
 }
 
-function behaviorSection(container, onChange) {
+/**
+ * 「推演总开关与时机」—— 一次推演的最外圈：推不推、什么时候推。
+ * 顺序按"一次推演从头到尾"排：总开关 → 自动更新 → 等几秒 → 重试 → 报错跳过 → 切分支也更新
+ * （延时 / 重试 / 报错跳过原来单独一张「什么时候推演」的卡，2026-10-31 并到这张最外圈的卡里 ✓）
+ */
+function timingSection(container, onChange) {
     const s = settings();
     // ★ 说明搬进右上角「？」弹窗；只有「注入主 API」那条
     //   在明面留一句最短的**后果**（警告不许藏 ✗）
-    const box = section('更新时机与注入', {
+    const box = section('推演总开关与时机', {
         help: [
+            '「插件总开关」关掉之后不推演、不注入，聊天里那排楼层按钮也收起来；面板和悬浮球照常能看能改',
             '「每次 AI 回复完自动更新状态」最省事。关掉后只能用悬浮球里的「立刻推演一次」手动更新',
+            '「生成结束后等几秒再自动推演」默认 15 秒（填 0 = 生成完马上推）。酒馆有时会空回或者回得慢，等一会儿再推更稳，也省 token。延时越长，你越来得及在这一楼点「不参与推演」把这次推演拦下来',
+            '「推演没跑成时的重试间隔」默认 5 秒。酒馆正忙的时候过一会儿再试',
+            '「报错或没响应时不自动推演」模型报错（400 / 524 之类）、生成被中止、或者什么都没输出时，就不推演。判断方式是「这次到底有没有真的产出一条消息」，所以不用去认错误码',
             '「切换消息分支（swipe）时也更新」只管切到一条还没算过的分支时要怎么办',
-            '「把状态设定注入主 API」打开（默认）：插件会把「角色现在什么状态」作为一段额外提示词塞进正文生成里，写正文的那个 AI 才知道这个角色怀孕了、正在经期、身上有痕迹这些事',
-            '接着上一条：关掉之后，那段提示词一个字都不发。主 API 完全不知道面板里记了什么，它会当这些事不存在，很可能写出跟面板对不上的正文（面板写着已怀孕，正文里这个角色还在喝酒）',
-            '什么时候该关：你只想让面板当个自己看的记录本，不想让 AI 知道',
-            '「把『孩子』也发给主 API」发的是这一轮要注入的那些对象各自的孩子（每行开头写着是谁的孩子 ✓）',
-            '「把当前时间也发给主 API」默认关。开了之后，那段提示词开头会多一行「当前时间：几月几日 几点」，写正文的 AI 才知道现在几点；剧情里本来就不写时间的卡，也能靠这一行拿到一个时间',
         ],
     });
     const b = box.querySelector('.bc-section-body');
@@ -798,6 +802,19 @@ function behaviorSection(container, onChange) {
 
     b.appendChild(row('插件总开关', '关掉之后不推演、不注入，聊天里那排楼层按钮也收起来；面板和悬浮球照常能看能改', () => s.enabled, v => s.enabled = v));
     b.appendChild(row('每次 AI 回复完自动更新状态', '', () => s.autoUpdate, v => s.autoUpdate = v));
+    // 生成后延时推演：太短不行（酒馆会出现阶段或者空回的情况）。
+    // ★ 默认 15 秒（截断没法靠代码判出来，只能把自动开始时间拉长一点）
+    //   ⇒ 留出"看到不对就点楼层那颗按钮拦下来"的时间 ✓
+    // ★ 这两格都是**秒**（毫秒用着很麻烦）✓（填 0 = 不等待 ✓）
+    b.appendChild(field('生成结束后等几秒再自动推演（秒）',
+        numberInput(s.judgeDelaySec ?? 15, v => { s.judgeDelaySec = v; save(); }, { min: 0, max: 600, step: 1 })));
+    b.appendChild(field('推演没跑成时的重试间隔（秒）',
+        numberInput(s.judgeRetrySec ?? 5, v => { s.judgeRetrySec = v; save(); }, { min: 1, max: 600, step: 1 })));
+    b.appendChild(h('div', { class: 'bc-inline' },
+        h('span', { class: 'bc-label', text: '报错或没响应时不自动推演' }),
+        toggle(s.judgeSkipEmpty !== false, v => { s.judgeSkipEmpty = v; save(); }),
+    ));
+    b.appendChild(h('div', { class: 'bc-hint', text: '⚠️ 有一种情况它判不出来：文字被「截断」（写到一半断了）。那种回复里是有字的，只有人读得出来「没写完」，插件做不到，所以它照常会推演。要是你看出来了，趁它还在等上面那个延时的功夫，给那一楼点「不参与推演」，这次推演就整个取消了（已经在跑的也会被中断，不会写进任何数据）' }));
     // ★ 这一条的说明**必须写清楚"手动更新算不算"** ——
     //   只写一句"不常开"的话，会让人以为「手动推演」也被这个开关管着 ✗
     b.appendChild(rowHelp('切换消息分支（swipe）时也更新', [
@@ -807,6 +824,33 @@ function behaviorSection(container, onChange) {
         '你手动点悬浮球里的「立刻推演一次」永远都能重算，跟这个开关无关',
         '切的是不是最后一楼的分支（往回翻旧楼切候选）：一律不重算、不动数据。楼层面板会写明它显示的是当初推演时的那个候选',
     ], () => s.updateOnSwipe, v => s.updateOnSwipe = v));
+
+    container.appendChild(box);
+}
+
+/**
+ * 「推演结果给谁」—— 推演出来的状态交给主 API 怎么用。
+ * ⚠️ 这里装的全是"给主 API 的"，跟推演本身怎么跑无关 ⇒ 单独一张卡、排在整页最后
+ *   （原来它跟"什么时候推"混在同一张卡里，一个在最前一个在最后，读起来是反的 ✗）
+ */
+function injectSection(container, onChange) {
+    const s = settings();
+    const box = section('推演结果给谁', {
+        help: [
+            '「把状态设定注入主 API」打开（默认）：插件会把「角色现在什么状态」作为一段额外提示词塞进正文生成里，写正文的那个 AI 才知道这个角色怀孕了、正在经期、身上有痕迹这些事',
+            '接着上一条：关掉之后，那段提示词一个字都不发。主 API 完全不知道面板里记了什么，它会当这些事不存在，很可能写出跟面板对不上的正文（面板写着已怀孕，正文里这个角色还在喝酒）',
+            '什么时候该关：你只想让面板当个自己看的记录本，不想让 AI 知道',
+            '「把『孩子』也发给主 API」发的是这一轮要注入的那些对象各自的孩子（每行开头写着是谁的孩子 ✓）',
+            '「把当前时间也发给主 API」默认关。开了之后，那段提示词开头会多一行「当前时间：几月几日 几点」，写正文的 AI 才知道现在几点；剧情里本来就不写时间的卡，也能靠这一行拿到一个时间',
+            '「主 API 保留最近几条状态栏」状态栏是累积的，最新那条已经包含全部信息，所以旧的纯属重复。留 3 条还能让 AI 看出变化趋势（1 条就看不出了）。填 0 = 全部剥掉',
+        ],
+    });
+    const b = box.querySelector('.bc-section-body');
+    const row = (label, hint, get, set) => h('div', { class: 'bc-switch-row' },
+        h('div', {}, h('div', { class: 'bc-label', text: label }), hint ? h('div', { class: 'bc-hint', text: hint }) : null),
+        toggle(get(), (v) => { set(v); save(); onChange?.(); }),
+    );
+
     b.appendChild(row('把状态设定注入主 API', '关掉后主 API 完全不知道面板里的状态，可能写出跟面板对不上的正文', () => s.injectToMain, v => s.injectToMain = v));
     // ★ 「把当前时间也发给主 API」——默认关
     //   开了之后状态摘要开头多一行「当前时间：…」，剧情不写时间的卡也能有一个时间可跟 ✓
@@ -852,6 +896,10 @@ function behaviorSection(container, onChange) {
         ['all', '注入全部已建档对象'],
     ], v => { s.injectScope = v; save(); onChange?.(); })));
 
+    // ★ 「主 API 保留最近几条状态栏」原来单独一张「主 API 那边」的卡夹在推演设置里，
+    //   它跟上面几颗一样都是"结果交给主 API"的事 ⇒ 并到这张卡的最后一格 ✓
+    b.appendChild(field('主 API 保留最近几条状态栏', numberInput(s.stateKeep ?? 3, v => { s.stateKeep = v; save(); }, { min: 0, max: 20 })));
+
     container.appendChild(box);
 }
 
@@ -863,50 +911,67 @@ function spanCapTextOf() {
         : ('现在最多认 ' + cap + ' 天（约 ' + Math.round(cap / 365) + ' 年）');
 }
 
-export function judgeSection(container, onChange) {
+/**
+ * 「推演谁」—— 这一轮把哪些对象交给推演，以及自动建档的名额。
+ * ⚠️ 名单本身（追谁、轻档转正、删人）在「追踪」页的「追踪对象」卡里；
+ *   这张卡只管"这一轮发给谁" ⇒ 两张卡别把同一件事各写一半 ✗
+ */
+function whoSection(container, onChange) {
     const s = settings();
-    // ★ 说这一页太乱 ⇒ 每组各占一张卡（原来全塞在一张卡里、靠小标题分段）
-    const mk = (title, help) => {
-        const box = section(title, (help && help.length) ? { help } : undefined);
-        container.appendChild(box);
-        return box.querySelector('.bc-section-body');
-    };
+    const box = section('推演谁', {
+        help: [
+            '「推演范围」默认是全部追踪对象。切成「只推演最近提到的对象」后，只有最近两楼正文里点名的对象会发给插件 API（本人一直带上），人多的存档能省不少 token',
+            '接着上一条：没被提到的人这一轮不推演，但时间照常推进（周期日、孕周、精子存活期都会走），下次被提到时接着推。代价是 TA 那段没被推演的空白里不会有新的状态描述',
+            '「自动追踪时最多追几个对象」管的是每一轮交给推演的名字数量（含你自己），不是"能建多少份档案"。超出的人档案照样留着、联系人页照样看得到，只是这一轮不推演',
+            '「自动模式发现新角色时自动建档」只在「追踪模式 = 自动」时起作用：AI 每轮推演时会按提示词里的条件申报值得建档的新对象，那个条件可以在下面的「额外规则」里改',
+            '申报进来的新对象，如果身上还没有任何身体记录，会先只登记名字：不参与推演、不占追踪名额；一旦有了身体记录，就自动转成正式追踪对象 ✓',
+            '也可以去「追踪」页的「追踪对象」卡里点「开始追踪」，把某个只登记了名字的对象手动转正 ✓',
+            '只报名字的致孕方不建档也照样记账（联系人页里会显示"种族未知"）。要给他填四项锁定、挂专属补丁，或者让他的身体状态也进推演时才需要建档，那时他会占上面那个名额',
+        ],
+    });
+    const b = box.querySelector('.bc-section-body');
 
-    // ---- ① 什么时候推演 ----
-    let b = mk('什么时候推演', [
-        '「生成结束后等几秒再自动推演」默认 15 秒（填 0 = 生成完马上推）。酒馆有时会空回或者回得慢，等一会儿再推更稳，也省 token。延时越长，你越来得及在这一楼点「不参与推演」把这次推演拦下来',
-        '「推演没跑成时的重试间隔」默认 5 秒。酒馆正忙的时候过一会儿再试',
-        '「报错或没响应时不自动推演」模型报错（400 / 524 之类）、生成被中止、或者什么都没输出时，就不推演。判断方式是「这次到底有没有真的产出一条消息」，所以不用去认错误码',
-    ]);
-    // 生成后延时推演：太短不行（酒馆会出现阶段或者空回的情况）。
-    // ★ 默认 15 秒（截断没法靠代码判出来，只能把自动开始时间拉长一点）
-    //   ⇒ 留出"看到不对就点楼层那颗按钮拦下来"的时间 ✓
-    // ★ 这两格都是**秒**（毫秒用着很麻烦）✓（填 0 = 不等待 ✓）
-    b.appendChild(field('生成结束后等几秒再自动推演（秒）',
-        numberInput(s.judgeDelaySec ?? 15, v => { s.judgeDelaySec = v; save(); }, { min: 0, max: 600, step: 1 })));
-    b.appendChild(field('推演没跑成时的重试间隔（秒）',
-        numberInput(s.judgeRetrySec ?? 5, v => { s.judgeRetrySec = v; save(); }, { min: 1, max: 600, step: 1 })));
+    // 人多了可以只推演在场的那几个（说明进「？」）
+    b.appendChild(field('推演范围', select(s.judge.scope || 'all',
+        [['all', '全部追踪对象'], ['present', '只推演最近提到的对象']],
+        (v) => { s.judge.scope = v; save(); onChange?.(true); })));
+    b.appendChild(field('自动追踪时最多追几个对象（含你自己）', numberInput(s.judge.maxTargets, v => { s.judge.maxTargets = v; save(); }, { min: 1, max: 200 })));
     b.appendChild(h('div', { class: 'bc-inline' },
-        h('span', { class: 'bc-label', text: '报错或没响应时不自动推演' }),
-        toggle(s.judgeSkipEmpty !== false, v => { s.judgeSkipEmpty = v; save(); }),
+        h('span', { class: 'bc-label', text: '解除上限（后果自负）' }),
+        toggle(s.judge.noTargetLimit === true, v => { s.judge.noTargetLimit = v; save(); }),
     ));
-    b.appendChild(h('div', { class: 'bc-hint', text: '⚠️ 有一种情况它判不出来：文字被「截断」（写到一半断了）。那种回复里是有字的，只有人读得出来「没写完」，插件做不到，所以它照常会推演。要是你看出来了，趁它还在等上面那个延时的功夫，给那一楼点「不参与推演」，这次推演就整个取消了（已经在跑的也会被中断，不会写进任何数据）' }));
+    // ★ 这行小字删掉（上限本身不贵、不值得单独占一行）✓
+    //   ⚠️ 这里**故意不把那句说明抄进注释**：断言是扫整个文件的（含注释），
+    //     抄一遍等于自己把自己判红 ✗（查文案的断言要先剥注释）
+    //   那个数字**只说一遍**就够（在「追踪名单」那张卡的「？」里 ✓）
+    b.appendChild(h('div', { class: 'bc-inline' },
+        h('span', { class: 'bc-label', text: '自动模式发现新角色时自动建档' }),
+        toggle(s.judge.autoCreateTargets !== false, v => { s.judge.autoCreateTargets = v; save(); }),
+    ));
+    b.appendChild(field('自动追踪的额外规则（可留空）', textArea(s.autoHints, v => { s.autoHints = v; save(); }, { rows: 3, placeholder: '例如：只追踪有名字的角色，路人和群众演员不算' })));
 
-    // ---- ② 喂给推演什么 ----
-    b = mk('喂给推演什么', [
-        '「送给插件 API 的最近角色楼层数」只管插件 API（状态推演）那一次请求，主 API 写正文时一个字都不多带',
-        '这个数字只数角色楼层，你自己的那几层是附带的、不占这个数',
-        '推演要的信息都在「上一轮状态」里（精子、累计受孕率、致孕方、周期日…），那是历史的累加结果，所以填 1（默认就是它）就够跑；调大只是让 AI 多看几层正文，用来给它留点余量。⚠️ 正文是整条原文一起送过去的，你的回复越长这里越贵',
-        '「把用户发言也一起送过去」默认关。打开之后，上面那个数还是只数角色楼层：每条角色楼层前面紧挨着的那条用户发言、以及比最后一条角色楼层还新的用户发言会一起带上，都不占那个数。推演要的信息都在「上一轮状态」里，你自己写的那一层通常对判定没帮助，带上纯属白花 token（想带就自己打开）',
-        '「推演前剥掉的标签」：送进推演之前把这些内容整段删掉。内置能剥的只有两类：一是网页注释，就是 <!-- 这样的 --> 写法（连内容一起删，可以多行）；二是成对的标签（例如 <thinking>…</thinking>，标签名要在 status_profile / period_profile / thinking / reasoning / analysis / think / cot 这一串里）',
-        '⚠️ 剥不了的三类：只有开头没有闭合的标签、方括号 / 方头括号那类写法（[COT] 、【思考】）、以及模型自己的特殊 token（<|thinking|> 这种，一般也不会出现在正文里）',
-        '想剥别的就把标签名加进来（回车或点「添加」变成一个胶囊，点胶囊上的 ✕ 删掉）。一次填好几个的话，用顿号、逗号、斜杠或换行隔开都行 ✓',
-        '标签名可以是中文。例如填 人物栏，就是把 <人物栏> 到 </人物栏> 之间整段删掉。两头带的那对括号不用自己写，写了也会帮你去掉',
-        '⚠️ 要成对才剥得掉：只有开头、没有 </标签名> 结尾的那种（模型偶尔会写成两边都是开头）剥不了',
-        '「推演范围」默认是全部追踪对象。切成「只推演最近提到的对象」后，只有最近两楼正文里点名的对象会发给插件 API（本人一直带上），人多的存档能省不少 token',
-        '接着上一条：没被提到的人这一轮不推演，但时间照常推进（周期日、孕周、精子存活期都会走），下次被提到时接着推。代价是 TA 那段没被推演的空白里不会有新的状态描述',
-        '例（可以直接复制）：details、summary、scratchpad、draft。想连折叠块一起剥，就把 details 加进来 ✓',
-    ]);
+    container.appendChild(box);
+}
+
+/** 「喂给推演什么」—— 那一次插件 API 请求里装什么。 */
+function feedSection(container, onChange) {
+    const s = settings();
+    const box = section('喂给推演什么', {
+        help: [
+            '「送给插件 API 的最近角色楼层数」只管插件 API（状态推演）那一次请求，主 API 写正文时一个字都不多带',
+            '这个数字只数角色楼层，你自己的那几层是附带的、不占这个数',
+            '推演要的信息都在「上一轮状态」里（精子、累计受孕率、致孕方、周期日…），那是历史的累加结果，所以填 1（默认就是它）就够跑；调大只是让 AI 多看几层正文，用来给它留点余量。⚠️ 正文是整条原文一起送过去的，你的回复越长这里越贵',
+            '「把用户发言也一起送过去」默认关。打开之后，上面那个数还是只数角色楼层：每条角色楼层前面紧挨着的那条用户发言、以及比最后一条角色楼层还新的用户发言会一起带上，都不占那个数。推演要的信息都在「上一轮状态」里，你自己写的那一层通常对判定没帮助，带上纯属白花 token（想带就自己打开）',
+            '「推演前剥掉的标签」：送进推演之前把这些内容整段删掉。内置能剥的只有两类：一是网页注释，就是 <!-- 这样的 --> 写法（连内容一起删，可以多行）；二是成对的标签（例如 <thinking>…</thinking>，标签名要在 status_profile / period_profile / thinking / reasoning / analysis / think / cot 这一串里）',
+            '⚠️ 剥不了的三类：只有开头没有闭合的标签、方括号 / 方头括号那类写法（[COT] 、【思考】）、以及模型自己的特殊 token（<|thinking|> 这种，一般也不会出现在正文里）',
+            '想剥别的就把标签名加进来（回车或点「添加」变成一个胶囊，点胶囊上的 ✕ 删掉）。一次填好几个的话，用顿号、逗号、斜杠或换行隔开都行 ✓',
+            '标签名可以是中文。例如填 人物栏，就是把 <人物栏> 到 </人物栏> 之间整段删掉。两头带的那对括号不用自己写，写了也会帮你去掉',
+            '⚠️ 要成对才剥得掉：只有开头、没有 </标签名> 结尾的那种（模型偶尔会写成两边都是开头）剥不了',
+            '例（可以直接复制）：details、summary、scratchpad、draft。想连折叠块一起剥，就把 details 加进来 ✓',
+        ],
+    });
+    const b = box.querySelector('.bc-section-body');
+
     // ⚠️ min 不能写 2 —— 推荐值就是 1，写 2 就填不进去（浏览器判定非法就不存）。
     //   这个数字是「送给插件 API 的最近**角色楼层**数」（用户楼层是附带的、不占这个数 ✓
     //   —— 见 judge.js 的 transcriptBlock），1 = 只给当前这一层。
@@ -915,10 +980,6 @@ export function judgeSection(container, onChange) {
     //     ⚠️ 这个框只影响**插件 API** 那一次请求，主 API 写正文不受影响 ✓
     b.appendChild(field('送给插件 API 的最近角色楼层数',
         numberInput(s.judge.historyDepth, v => { s.judge.historyDepth = v; save(); }, { min: 1, max: 60 })));
-    // 人多了可以只推演在场的那几个（说明进「？」）
-    b.appendChild(field('推演范围', select(s.judge.scope || 'all',
-        [['all', '全部追踪对象'], ['present', '只推演最近提到的对象']],
-        (v) => { s.judge.scope = v; save(); onChange?.(true); })));
     b.appendChild(h('div', { class: 'bc-inline' },
         h('span', { class: 'bc-label', text: '把用户发言也一起送过去' }),
         toggle(s.judge.includeUserMessages !== false, v => { s.judge.includeUserMessages = v; save(); }),
@@ -990,36 +1051,22 @@ export function judgeSection(container, onChange) {
         paintTags();
     }
 
-    // ---- ③ 自动建档与名额 ----
-    b = mk('自动建档与名额', [
-        '「自动追踪时最多追几个对象」管的是每一轮交给推演的名字数量（含你自己），不是"能建多少份档案"。超出的人档案照样留着、联系人页照样看得到，只是这一轮不推演',
-        '「自动模式发现新角色时自动建档」只在「追踪模式 = 自动」时起作用：AI 每轮推演时会按提示词里的条件申报值得建档的新对象，那个条件可以在下面的「额外规则」里改',
-        '申报进来的新对象，如果身上还没有任何身体记录，会先只登记名字：不参与推演、不占追踪名额；一旦有了身体记录，就自动转成正式追踪对象 ✓',
-        '也可以在这里点「开始追踪」把某个只登记了名字的对象手动转正 ✓',
-        '只报名字的致孕方不建档也照样记账（联系人页里会显示"种族未知"）。要给他填四项锁定、挂专属补丁，或者让他的身体状态也进推演时才需要建档，那时他会占上面那个名额',
-    ]);
-    b.appendChild(field('自动追踪时最多追几个对象（含你自己）', numberInput(s.judge.maxTargets, v => { s.judge.maxTargets = v; save(); }, { min: 1, max: 200 })));
-    b.appendChild(h('div', { class: 'bc-inline' },
-        h('span', { class: 'bc-label', text: '解除上限（后果自负）' }),
-        toggle(s.judge.noTargetLimit === true, v => { s.judge.noTargetLimit = v; save(); }),
-    ));
-    // ★ 这行小字删掉（上限本身不贵、不值得单独占一行）✓
-    //   ⚠️ 这里**故意不把那句说明抄进注释**：断言是扫整个文件的（含注释），
-    //     抄一遍等于自己把自己判红 ✗（查文案的断言要先剥注释）
-    //   那个数字**只说一遍**就够（在「追踪名单」那张卡的「？」里 ✓）
-    b.appendChild(h('div', { class: 'bc-inline' },
-        h('span', { class: 'bc-label', text: '自动模式发现新角色时自动建档' }),
-        toggle(s.judge.autoCreateTargets !== false, v => { s.judge.autoCreateTargets = v; save(); }),
-    ));
-    b.appendChild(field('自动追踪的额外规则（可留空）', textArea(s.autoHints, v => { s.autoHints = v; save(); }, { rows: 3, placeholder: '例如：只追踪有名字的角色，路人和群众演员不算' })));
+    container.appendChild(box);
+}
 
-    // ---- ④ 记什么、认多少天 ----
-    b = mk('记什么、认多少天', [
-        '「记录受孕过程」开：每次推演会多让 AI 报一段「受孕事件」，稍微多花一点 token。关掉：这段整个不问，也省下那点 token',
-        '「单轮最多认多少天」管的是推演报回来的跨度（它可能把年份当天数报，所以设一道上限）。默认 ' + Math.round(SPAN_CAP_DEF / 365) + ' 年，填 0 = 不限制。⚠️ 这一格是全局的：所有聊天共用同一个数',
-        '填 0 之后：它报错一个大数就会一下跳到很远（还会顺带把周期结算掉、把受孕记录归档），只能自己去「时间与日历」那页退回来',
-        '玩家手填的「时间跳跃与修正」那两颗按钮不受这一格限制：想补多少天就补多少天',
-    ]);
+/** 「记什么、认多少天」—— 推演回来要记哪些内容、一次最多认多少天。 */
+function recordSection(container, onChange) {
+    const s = settings();
+    const box = section('记什么、认多少天', {
+        help: [
+            '「记录受孕过程」开：每次推演会多让 AI 报一段「受孕事件」，稍微多花一点 token。关掉：这段整个不问，也省下那点 token',
+            '「单轮最多认多少天」管的是推演报回来的跨度（它可能把年份当天数报，所以设一道上限）。默认 ' + Math.round(SPAN_CAP_DEF / 365) + ' 年，填 0 = 不限制。⚠️ 这一格是全局的：所有聊天共用同一个数',
+            '填 0 之后：它报错一个大数就会一下跳到很远（还会顺带把周期结算掉、把受孕记录归档），只能自己去「时间与日历」那页退回来',
+            '玩家手填的「时间跳跃与修正」那两颗按钮不受这一格限制：想补多少天就补多少天',
+        ],
+    });
+    const b = box.querySelector('.bc-section-body');
+
     b.appendChild(field('记录受孕过程（谁什么时候让该角色怀上的）', toggle(s.conceptionLog !== false, v => { s.conceptionLog = v; save(); })));
     // 「周期结算方式」在补丁页的「生理周期模块」卡片上（占原「必开」的位置）
     // ★★ 「单轮最多认多少天」——**从「时间」那页搬过来**（玩家是全局设置 ⇒ 别住在按聊天的卡里 ✗）
@@ -1035,12 +1082,7 @@ export function judgeSection(container, onChange) {
     b.appendChild(field('单轮最多认多少天', capInput, '填 0 = 不限制。只管推演报的跨度，手填的那两颗按钮不受它限制'));
     b.appendChild(capNote);
 
-    // ---- ⑤ 主 API 那边的 ----
-    //   它其实属主 API 那一侧（状态栏保留几条）⇒ 单独一张卡放在最后，别混在推演设置里 ✗
-    b = mk('主 API 那边', [
-        '「主 API 保留最近几条状态栏」状态栏是累积的，最新那条已经包含全部信息，所以旧的纯属重复。留 3 条还能让 AI 看出变化趋势（1 条就看不出了）。填 0 = 全部剥掉',
-    ]);
-    b.appendChild(field('主 API 保留最近几条状态栏', numberInput(s.stateKeep ?? 3, v => { s.stateKeep = v; save(); }, { min: 0, max: 20 })));
+    container.appendChild(box);
 }
 
 /**
@@ -3971,7 +4013,7 @@ export function renderSettingsTab(container, onRefresh, onRebuild, actions = {})
     // ⚠️ 诊断放在**最下面**：它本来就是"排查用"的东西，不该占常规页的头几屏 ✓
     container.appendChild(groupHeading('排查'));
     diagSection(container, onChange, actions);
-    // ⚠️ 推演设置 / 更新时机与注入 / 追踪对象 / 数据都不在这里，
+    // ⚠️ 推演设置 / 推演结果给谁 / 追踪对象 / 数据都不在这里，
     //   它们在「推演与追踪」那个独立页签（见下方 renderJudgeTab）。
 }
 
@@ -3982,8 +4024,13 @@ export function renderSettingsTab(container, onRefresh, onRebuild, actions = {})
  *
  * 归到这里的判断标准：**凡是决定「插件去推演什么、推演出什么状态、这些状态发给谁」的**，
  * 都算这一块 —— 它们是一件事的各个环节，分散在三四个页签里很难找。
- *   · judgeSection     插件 API 怎么调（给几层正文、留几条状态栏、记不记受孕）
- *   · behaviorSection  什么时候触发推演、把状态注入给谁
+ *   · timingSection    总开关与时机（什么时候触发推演）
+ *   · whoSection       推演谁（范围 / 自动建档 / 名额）
+ *   · feedSection      喂给推演什么（给几层正文、剥哪些标签）
+ *   · wiSection        世界书（给推演看）
+ *   · cardSection      哪些角色卡完全不推演
+ *   · recordSection    记什么（记不记受孕、单轮最多认多少天）
+ *   · injectSection    推演结果给谁（注入主 API、保留几条状态栏）
  *   · targetSection    追踪谁（模式 / 名单）
  *   · dataSection      数据（导出 / 清空 / 档案中的状态数据）
  */
@@ -4787,16 +4834,19 @@ export function renderJudgeTab(container, onRefresh, onRebuild, actions = {}) {
     clear(container);
     const onChange = (structural) => { if (structural) onRebuild?.(); else onRefresh?.(); };
     // ★ 推演与追踪拆成两页：
-    //   ⇒ 这一页只留「**怎么推**（调用与参数）+ **什么时候推、发给谁**（触发与范围）」，
+    //   ⇒ 这一页只留「**怎么推**」＋「**推完给谁**」，
     //     「追踪谁 / 那些数据」在 renderTrackingTab ✓
-    // ★ 2026-10-18：顶部那行簇标题「调用与参数」删掉（卡片名已经说清），
-    //   只在真正需要分簇的地方（触发与范围）留一行 ✓
-    judgeSection(container, onChange);
+    // ★ 2026-10-31（她要求重排）：整页顺序＝**一次推演从头到尾**，不再把"总开关"和"注入"拆到页首页尾。
+    //   1 总开关与时机 → 2 推演谁 → 3 喂给推演什么 → 4 世界书 → 5 角色卡 → 6 记什么 → 7 结果给谁
+    //   ⚠️ 那条簇标题「触发与范围」删掉了：它只出现在「角色卡」上面一次，
+    //     前面几张卡看着像没有归属，不如让每张卡自己的名字说清 ✓
+    timingSection(container, onChange);
+    whoSection(container, onChange);
+    feedSection(container, onChange);
     wiSection(container);
-    container.appendChild(groupHeading('触发与范围'));
-    // ★ 2026-10-28：这一张卡到底参不参与 —— 它是"触发与范围"的最外一圈 ✓
     cardSection(container, onChange);
-    behaviorSection(container, onChange);
+    recordSection(container, onChange);
+    injectSection(container, onChange);
 }
 
 /**

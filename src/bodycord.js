@@ -1673,11 +1673,13 @@ export class BodycordPanel {
         const iframe = document.createElement('iframe');
         iframe.className = 'bc-frame';
         iframe.setAttribute('title', 'Bodycord 状态面板');
-        // ★ TauriTavern（TT）移动端：面板本体是个**同源 iframe** ⇒ 声明成 viewport-host，
-        //   宿主会把 `--tt-inset-*` / `--tt-base-viewport-height` 桥进 iframe 的 :root，
-        //   面板内部再按那套变量留白（TT 只承诺同源 iframe，我们的 srcdoc 就是同源 ✓）。
-        //   酒馆里没人读这个属性 ⇒ 对 ST 零影响 ✓
-        iframe.setAttribute('data-tt-mobile-surface', 'viewport-host');
+        // ★ TauriTavern（TT）移动端：面板本体是个**同源 iframe**。
+        //   ⚠️ 2026-10-31：这里原来声明 `data-tt-mobile-surface="viewport-host"`，
+        //   但 TT 手机上出现了「面板里的字带一圈包边 / 发虚」而外壳的字是清楚的 ⇒
+        //   怀疑 TT 对带这个声明的 iframe 做了视口缩放（缩放后再画 = 字发糊）。
+        //   ⇒ 先摘掉这个声明做对照（它只影响 TT 桥进来的 --tt-inset-* 安全区变量，
+        //     拿不到就退回 env(safe-area-inset-*)，不是坏，只是刘海避开少一层保险）。
+        //   如果摘掉后字变清楚，就确认是这个声明引起的；届时改用别的办法拿安全区 ✓
         iframe.srcdoc = doc;
         // ⚠️⚠️ 一定用 `this.host()` 现取，**不要用构造时记下的 this.container**。
         //   外面（StatusView.render）会 clear 掉整个视图再重建一个 .bc-frame-host，

@@ -322,6 +322,16 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     -webkit-text-stroke-width: 0 !important;
     -webkit-text-stroke-color: transparent !important;
 }
+/* ★★ 2026-10-31：她截图指出「上面（外壳）被包边、下面（面板里）正常」——
+   宿主的字效果是加在**子元素**上的（不是只加在根上），之前只清了 .bc-root 自己，
+   里面那几行字照样继承到 ⇒ 这里把外壳里的**每个元素**都清一遍 ✓ */
+.bc-root *,
+.bc-root *::before,
+.bc-root *::after {
+    text-shadow: none !important;
+    -webkit-text-stroke-width: 0 !important;
+    -webkit-text-stroke-color: transparent !important;
+}
 /* 被拖到别处 / 贴顶贴底：坐标由 JS 写成行内 left/top ⇒ 这里必须把居中那套解掉，
    否则 `inset:0` 的右/下两个 0 会和行内 left/top 打架（盒子被顶着不动）✗ */
 .bc-root.bc-positioned { inset: auto; margin: 0; transform: none; }

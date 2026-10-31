@@ -402,6 +402,30 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     -webkit-text-stroke-width: 0 !important;
     -webkit-text-stroke-color: transparent !important;
 }
+/* ★★ 2026-11-01（她：手机版**聊天里那条挂件**外面还有包边）——
+   宿主的字效果是加在**每个元素**上的（上面那条已经踩过同一个坑），而这条挂件挂在
+   聊天消息里、根本不在 `.bc-root` 里 ⇒ 只清 `.bc-floor` 自己不够，里面的字照样带包边 ✗
+   ⇒ 把**所有挂在外壳之外**的插件节点连子元素一起清（以后再加挂到 body / 聊天里的东西，
+     记得把它的类名也加进这张表 ✗）：
+       · .bc-floor         聊天里每一楼下面那条挂件（★ 这次漏的就是它）
+       · .bc-timer-ball    番茄钟那颗悬浮球
+       · .bc-ach-toasts    右上角成就卡片的外层容器
+       · .bc-ach-toast     成就卡片本身
+       · .bc-stage-zoom    点开的大图那一层
+   （.bc-root / #bc-fab / .bc-fab-menu / .bc-modal-overlay / .bc-bubble / .bc-lyrics 上面已清 ✓）
+   ⚠️ 顺手把 filter 也复位：有的主题不给字阴影、改用 drop-shadow 做"包边"，那个是 filter 不是
+     text-shadow ⇒ 不清它照样有一圈（这几层自己都不靠 filter 出效果，清掉没有副作用 ✓） */
+.bc-floor, .bc-floor *,
+.bc-floor *::before, .bc-floor *::after,
+.bc-timer-ball, .bc-timer-ball *,
+.bc-ach-toasts, .bc-ach-toasts *,
+.bc-ach-toast, .bc-ach-toast *,
+.bc-stage-zoom, .bc-stage-zoom * {
+    text-shadow: none !important;
+    -webkit-text-stroke-width: 0 !important;
+    -webkit-text-stroke-color: transparent !important;
+    filter: none !important;
+}
 /* 被拖到别处 / 贴顶贴底：坐标由 JS 写成行内 left/top ⇒ 这里必须把居中那套解掉，
    否则 `inset:0` 的右/下两个 0 会和行内 left/top 打架（盒子被顶着不动）✗ */
 .bc-root.bc-positioned { inset: auto; margin: 0; transform: none; }

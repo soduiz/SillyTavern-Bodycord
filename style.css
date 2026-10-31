@@ -296,12 +296,32 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
     font-size: calc(14px * var(--bc-fs-scale, 1));
     line-height: 1.6;
+    /* ★★ 2026-10-31：她报顶栏下面那两行字「荧光包边」。
+       我们自己的 CSS 里没有字阴影 / 描边；同一条 DOM 在无头浏览器里渲染是清楚的，
+       而且面板 iframe 里的字也是清楚的 ⇒ 差别就在**外壳挂在宿主页面里**，继承了宿主
+       （TT 手机 / 主题）给页面文字加的字阴影或描边。
+       ⇒ 在外壳根上硬复位：字阴影、描边、字形渲染全部拉回默认 ✓
+       （!important 是必须的：宿主动的那条可能也带 !important） */
+    text-shadow: none !important;
+    -webkit-text-stroke-width: 0 !important;
+    -webkit-text-stroke-color: transparent !important;
+    -webkit-font-smoothing: auto;
     background: var(--bc-main);
     color: var(--bc-tx);
     border: 1px solid var(--bc-line);
     box-shadow: 0 24px 80px rgba(0, 0, 0, .3);
 }
 .bc-root.show { display: flex; }
+/* 挂在 body 上那几层（悬浮球 / 右键菜单 / 弹窗 / 气泡 / 歌词）同样别继承宿主的字阴影 ✓ */
+#bc-fab,
+.bc-fab-menu,
+.bc-modal-overlay,
+.bc-bubble,
+.bc-lyrics {
+    text-shadow: none !important;
+    -webkit-text-stroke-width: 0 !important;
+    -webkit-text-stroke-color: transparent !important;
+}
 /* 被拖到别处 / 贴顶贴底：坐标由 JS 写成行内 left/top ⇒ 这里必须把居中那套解掉，
    否则 `inset:0` 的右/下两个 0 会和行内 left/top 打架（盒子被顶着不动）✗ */
 .bc-root.bc-positioned { inset: auto; margin: 0; transform: none; }
@@ -433,18 +453,24 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-status-bar {
     display: flex;
     align-items: center;
+    /* ★ 2026-10-31 她截图报「上面的文字变成这样了」：窄屏上左边一句 + 右边一句各占一半，
+       各自换行 ⇒ 两行字错位叠在一起 ✗ ⇒ 允许换行，挤不下就各占一整行 ✓ */
+    flex-wrap: wrap;
+    row-gap: 2px;
     gap: 6px;
     padding: 7px 12px;
     flex: 0 0 auto;
     border-bottom: 1px solid var(--bc-line);
     /* 工具多了也不出现那条横滚动条，改成可以滚但看不见 */
-    overflow-x: auto;
+    overflow-x: hidden;
     overflow-y: hidden;
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
 .bc-status-bar::-webkit-scrollbar { display: none; height: 0; }
-.bc-status-hint { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); white-space: nowrap; }
+.bc-status-hint { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); white-space: normal; min-width: 0; }
+/* 状态条里那句提示：窄屏时让它自己占一整行，别和左边那句抢半行 ✓ */
+.bc-status-bar .bc-fab-tip { flex: 0 1 auto; min-width: 0; white-space: normal; }
 
 /* 紧凑工具按钮 */
 .bc-tool {
@@ -3570,6 +3596,8 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     /* 手机上顶栏那一行要装下：品牌字 + 时钟 + 三个图标（她不想割舍品牌字 ✓）
        ⇒ 品牌字缩到 12.5px、时钟把内边距和字号各收一点（收完 320 宽也放得下，量过 ✓） */
     .bc-brand-text { font-size: 12.5px; }
+    /* 状态条：手机上那句提示单独占一整行，别和左边「还没进入聊天」挤成两行错位 ✓ */
+    .bc-status-bar .bc-fab-tip { flex: 1 1 100%; }
     .bc-clock {
         padding: 3px 7px;
         font-size: 12px;

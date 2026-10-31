@@ -14,7 +14,7 @@ import { ensureBaseTargets, state, commit, targetList, displayName, clearCandida
 import { runJudge, refreshRaw, restoreCachedCandidate } from './src/judge.js';
 import { forceReResolveAvatar } from './src/bodycord.js';
 import { rebuildInjection, clearInjection } from './src/prompt.js';
-import { initUI, refreshAll, rebuildStatusViews, refreshStatusHints, syncPresentation, openTab, applyFabLook, refreshSettingsPaneForce, floorsOn, BUILD_LABEL } from './src/ui.js';
+import { initUI, refreshAll, rebuildStatusViews, refreshStatusHints, syncPresentation, openTab, closePanel, applyFabLook, refreshSettingsPaneForce, floorsOn, BUILD_LABEL } from './src/ui.js';
 import { mountFloors, applyFloorPanel, lastFloorExcluded } from './src/ui-floors.js';
 import { installPromptInterceptor } from './src/intercept.js';
 import { installWorldInfoHooks } from './src/wi.js';
@@ -476,26 +476,58 @@ function bindEvents() {
 // ---------------------------------------------------------------------------
 
 const WAND_ENTRY_ID = 'bc-wand-entry';
+/** 我们自己那一格（跟酒馆内置扩展一样包一层 `*_wand_container` ✓） */
+const WAND_BOX_ID = 'bodycord_wand_container';
+
+/** 点魔法棒里那一条 ⇒ 打开面板（再点一次 = 关上）✓ */
+function onWandEntryClick() {
+    try {
+        // 跟点悬浮球一个效果：开着就关、关着就开（这样手机上没有球时也能关掉面板 ✓）
+        if (document.querySelector('.bc-root.show')) { closePanel(); return; }
+        openTab(settings().ui.openTab || 'status');
+    } catch (e) { console.warn('[Bodycord] 从扩展菜单打开面板失败', e); }
+}
 
 /**
- * 在左下角扩展菜单里加一条「生理孕育面板」。
+ * 在左下角扩展菜单（魔法棒）里加一条「Bodycord 生理孕育面板」。
  * @returns {boolean} 已经挂上（或本来就有）返回 true
  */
 function installWandMenuEntry() {
     try {
         const menu = document.querySelector('#extensionsMenu');
         if (!menu) return false;
-        if (document.getElementById(WAND_ENTRY_ID)) return true;
+        const existing = document.getElementById(WAND_ENTRY_ID);
+        if (existing && menu.contains(existing)) return true;
+        existing?.remove();
 
+        let box = document.getElementById(WAND_BOX_ID);
+        if (!box || !menu.contains(box)) {
+            box?.remove();
+            box = document.createElement('div');
+            box.id = WAND_BOX_ID;
+            box.className = 'extension_container';
+            menu.appendChild(box);
+        }
+
+        // 写法照酒馆内置扩展（翻译 / 图库那几条）抄的：同样的类名 ⇒ 各家主题下样子一致 ✓
         const item = document.createElement('div');
         item.id = WAND_ENTRY_ID;
-        item.className = 'list-group-item flex-container flexGap5';
-        item.innerHTML = '<div class="fa-solid fa-heart-pulse extensionsMenuExtensionButton"></div><span>生理孕育面板</span>';
-        item.addEventListener('click', () => {
-            try { openTab(settings().ui.openTab || 'status'); }
-            catch (e) { console.warn('[Bodycord] 从扩展菜单打开面板失败', e); }
+        item.className = 'list-group-item flex-container flexGap5 interactable';
+        item.tabIndex = 0;
+        item.title = '打开 / 关闭 Bodycord 面板';
+        item.innerHTML = '<div class="fa-fw fa-solid fa-heart-pulse extensionsMenuExtensionButton"></div><span>Bodycord 生理孕育面板</span>';
+        item.addEventListener('click', onWandEntryClick);
+        item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onWandEntryClick(); }
         });
-        menu.appendChild(item);
+        box.appendChild(item);
+
+        // 酒馆只在"菜单里有东西"时才露出魔法棒按钮（showHideExtensionsMenu）——
+        //   别的扩展都没挂时，我们这一条也要能把按钮叫出来 ✓
+        try {
+            const btn = document.getElementById('extensionsMenuButton');
+            if (btn && getComputedStyle(btn).display === 'none') btn.style.display = 'flex';
+        } catch { /* 忽略 */ }
         return true;
     } catch (e) {
         console.warn('[Bodycord] 挂扩展菜单入口失败', e);
@@ -503,13 +535,34 @@ function installWandMenuEntry() {
     }
 }
 
-/** 容器可能还没渲染出来 ⇒ 最多等 10 秒（每 250ms 一次），拿到就停 */
+let _wandObserver = null;
+/**
+ * 菜单容器可能比我们晚渲染、也可能被宿主重建（Luker / TT / 主题脚本）⇒
+ *   ① 先每 250ms 试一次，最多 10 秒；
+ *   ② 之后挂一个 MutationObserver：菜单出现 / 被重建、我们那一条被摘掉 ⇒ 立刻补回去 ✓
+ */
 function installWandMenuEntryWhenReady() {
-    if (installWandMenuEntry()) return;
+    installWandMenuEntry();
     let tries = 0;
     const timer = setInterval(() => {
         if (installWandMenuEntry() || ++tries >= 40) clearInterval(timer);
     }, 250);
+    if (_wandObserver || typeof MutationObserver !== 'function') return;
+    let pending = false;
+    _wandObserver = new MutationObserver(() => {
+        if (pending) return;
+        pending = true;
+        // 合并同一帧里的多次变动，别每个节点都跑一遍 ✓
+        setTimeout(() => {
+            pending = false;
+            if (!document.getElementById(WAND_ENTRY_ID)?.isConnected) installWandMenuEntry();
+        }, 50);
+    });
+    try { _wandObserver.observe(document.body, { childList: true, subtree: false }); } catch { /* 忽略 */ }
+    try {
+        const menu = document.querySelector('#extensionsMenu');
+        if (menu) _wandObserver.observe(menu, { childList: true, subtree: true });
+    } catch { /* 忽略 */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -630,8 +683,10 @@ try {
     console.log('[Bodycord] 已加载。聊天：', chatKeySafe());
 }
 
-/** 等酒馆上下文可用再启动 */
-function waitForST(tries = 60) {
+/** 等酒馆上下文可用再启动
+ *  ⚠️ 原来只等 15 秒（60 × 250ms）——手机 / 云酒馆冷启动慢的时候会直接放弃，悬浮球永远不出现 ✗
+ *  ⇒ 放宽到 2 分钟（只是一个便宜的轮询，拿到就停 ✓） */
+function waitForST(tries = 480) {
     if (window.SillyTavern && typeof window.SillyTavern.getContext === 'function') {
         boot();
         return;

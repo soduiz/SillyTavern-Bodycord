@@ -708,6 +708,8 @@ function menuHint() {
 
 /** ★ 长按已经开过快捷菜单了 ⇒ 这一次松手不该再当"点击"（否则菜单和面板一起弹 ✗） */
 let fabHoldOpened = false;
+/** 悬浮球正在被拖着（期间别让心跳把它按存档坐标摆回去 ✗） */
+let fabDragging = false;
 
 function buildFab() {
     // ★ TT 移动端：悬浮球是"可拖的浮窗" ⇒ 声明 free-window（宿主不长期钳制它的位置，
@@ -1439,6 +1441,12 @@ function applyLyricBar() {
             ax = Math.round(Number(cfg.x));
             ay = Math.round(Number(cfg.y));
             if (!Number.isFinite(ax) || !Number.isFinite(ay)) { ax = M; ay = M; }
+            // ★ 自定义坐标也夹进屏幕（大屏上拖的位置，到手机上会整条落在屏幕外 ✗）
+            //   只夹显示、不改存档 ✓；宽度最多按半屏算，免得长歌词把它整条挤到左边去
+            else {
+                const c = clampXYIntoView(ax, ay, Math.min(w, vw / 2), Math.min(h, vh / 2), M);
+                ax = c.x; ay = c.y;
+            }
         }
         lyricAnchor = { key: aKey, x: ax, y: ay, right: rightEdge };
     }
@@ -1517,7 +1525,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-10-31-24';
+export const BUILD_STAMP = '2026-10-31-25';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -3493,8 +3501,19 @@ function buildPanelShell() {
 
     const paneWrap = h('div', { class: 'bc-panes' }, panes.status, panes.settings);
 
+    // ★★ 手机形态专用的「关闭」（2026-10-31 报「苹果手机里面的叉子也点不到」）：
+    //   顶栏那颗 ✕ 和面板 iframe 里那颗 ✕ 都在**屏幕最顶上** —— 苹果手机上那一条正好是
+    //   刘海 / 灵动岛 / 状态栏，以及各种壳子（TT 等）自己的顶栏会盖住的地方 ⇒ 点不到 ✗
+    //   ⇒ 在**右下角**（拇指够得着、也不会被任何壳子的顶栏盖住）再放一颗，
+    //     挂在外壳上（不在 iframe 里），层级压过面板内容 ✓。桌面形态不显示（CSS 管）
+    const phoneClose = h('div', {
+        class: 'bc-phone-close', title: '关闭面板', role: 'button', 'aria-label': '关闭面板',
+        onclick: (e) => { try { e.stopPropagation(); } catch { /* 忽略 */ } closePanel(); },
+    }, h('span', { text: '✕' }));
+
     root.appendChild(head);
     root.appendChild(paneWrap);
+    root.appendChild(phoneClose);
     document.body.appendChild(root);
 
     // ★ 面板里那颗「关闭」（手机形态才有）要能叫回外壳：面板是同源 iframe ⇒ 直接挂个函数 ✓
@@ -5748,7 +5767,16 @@ export function syncPresentation() {
     // 楼层面板的开合交给 ui-floors.js，这里只转达
     try { applyFloorPanel(floorsOn()); } catch { /* 忽略 */ }
 
+    // ★ 有的宿主（TT 之类的手机壳 / 主题脚本）会重建 body 里的东西，把我们挂的节点摘掉 ⇒
+    //   球和面板一旦脱离文档就**永远看不见**、也没有任何报错 ✗ ⇒ 心跳里发现掉了就挂回去 ✓
+    try {
+        if (!els.fab.isConnected) document.body.appendChild(els.fab);
+        if (els.root && !els.root.isConnected) document.body.appendChild(els.root);
+    } catch { /* 忽略 */ }
+
     els.fab.style.display = fabNeeded() ? '' : 'none';
+    // ★ 球永远落在屏幕里（存档坐标来自别的设备 / 更大的窗口时会跑到屏幕外 ✗）
+    if (!fabDragging) { try { clampFabIntoView(); } catch { /* 忽略 */ } }
 
     // ★ 聊天里不显示了，但**消失得有点慢** ——
     //   因为那个钟**只靠 15 秒一次的定时器**刷 ✗ ⇒ 一进聊天最多要等 15 秒才收起来 ✓
@@ -6478,8 +6506,15 @@ function applyTimerBall(v) {
     //              ② **值真变了才写 DOM**（别再每秒无脑写一遍 left/top ✓）
     if (!timerBallDragging) {
         const tcfg = (settings() && settings().timer) || {};
-        const wantL = (tcfg.ballX != null && tcfg.ballY != null) ? tcfg.ballX + 'px' : '';
-        const wantT = (tcfg.ballX != null && tcfg.ballY != null) ? tcfg.ballY + 'px' : '';
+        // ★ 坐标同样要夹进屏幕（别的设备 / 更大的窗口拖过的坐标 ⇒ 小屏上球跑到外面去 ✗）
+        let wantL = '', wantT = '';
+        if (tcfg.ballX != null && tcfg.ballY != null
+            && Number.isFinite(Number(tcfg.ballX)) && Number.isFinite(Number(tcfg.ballY))) {
+            const c = clampXYIntoView(Number(tcfg.ballX), Number(tcfg.ballY),
+                timerBall.offsetWidth || 60, timerBall.offsetHeight || 60);
+            wantL = c.x + 'px';
+            wantT = c.y + 'px';
+        }
         if (timerBall.classList.contains('bc-positioned') !== !!wantL) {
             timerBall.classList.toggle('bc-positioned', !!wantL);
         }
@@ -6936,7 +6971,14 @@ function makeDraggable(el, handle, opts = {}) {
         opts.onDrop?.(el.getBoundingClientRect());
     };
     handle.addEventListener('pointerup', end);
-    handle.addEventListener('pointercancel', () => { dragging = false; document.body.style.userSelect = ''; });
+    // ★ 被系统打断（手机上滚动手势接管 / 来电等）也算"拖完了" ⇒ 必须通知调用方，
+    //   不然调用方那边的"正在拖"标记会一直卡在 true（心跳就再也不帮它归位 ✗）
+    handle.addEventListener('pointercancel', () => {
+        const was = dragging;
+        dragging = false;
+        document.body.style.userSelect = '';
+        if (was) { try { opts.onDragEnd?.(); } catch { /* 忽略 */ } }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -6958,10 +7000,13 @@ function attachFabHandlers() {
             if (fabHoldOpened) { fabHoldOpened = false; return; }
             try { togglePanel(); } catch (e) { console.error('[Bodycord] 开面板失败', e); showStartupError(e); }
         },
+        // ★ 拖的期间别让心跳里的 clampFabIntoView() 把球拽回存档位置 ✓
+        onDragStart: () => { fabDragging = true; },
         // ★ 拖球时让贴在它旁边的提醒气泡**实时跟** ✓（不实时跟容易出现位移 BUG）
         onMove: () => followBubbleToFab(),
-        onDragEnd: () => { try { placeReminderBubble(); } catch { /* 忽略 */ } },
+        onDragEnd: () => { fabDragging = false; try { placeReminderBubble(); } catch { /* 忽略 */ } },
         onDrop: (rect) => {
+            fabDragging = false;
             fabHoldOpened = false;      // 拖过 ⇒ 不是长按那一次，别再吃掉后面的点击 ✓
             const s = settings();
             s.ui.fabX = Math.round(rect.left);
@@ -6970,7 +7015,13 @@ function attachFabHandlers() {
         },
     });
     // ★ 窗口尺寸一变也让气泡跟一次（原来得等下一次心跳 ⇒ 会错位一秒多 ✗）
-    try { window.addEventListener('resize', () => followBubbleToFab()); } catch { /* 忽略 */ }
+    //   ★ 同时把球夹回屏幕里（转屏 / 把窗口拖窄之后球不能跑到屏幕外 ✓）
+    const onViewportChange = () => {
+        if (!fabDragging) { try { clampFabIntoView(); } catch { /* 忽略 */ } }
+        followBubbleToFab();
+    };
+    try { window.addEventListener('resize', onViewportChange); } catch { /* 忽略 */ }
+    try { window.visualViewport?.addEventListener?.('resize', onViewportChange); } catch { /* 忽略 */ }
 }
 
 /** 开局就炸的时候，别让界面一片空白 —— 把错误画在面板位置上 */
@@ -7107,11 +7158,58 @@ export function applyFabLook() {
         fab.querySelector('.bc-fab-icon')?.style.setProperty('display', '');
     }
     fab.dataset.theme = s.ui.theme || 'light';
-    if (s.ui.fabX != null && s.ui.fabY != null) {
-        fab.classList.add('bc-positioned');
-        fab.style.left = s.ui.fabX + 'px';
-        fab.style.top = s.ui.fabY + 'px';
+    clampFabIntoView();
+}
+
+/**
+ * 把一个存档坐标（左上角）夹进当前窗口里 —— 悬浮球 / 番茄钟球 / 悬浮歌词条共用 ✓
+ *   存档坐标是**跟着账号走**的（电脑和手机读同一份），所以任何"拖过的浮动元素"
+ *   都可能带着大屏的坐标来到小屏 ⇒ 一律在**显示时**夹一次（不改存档）✓
+ * @returns {{x:number,y:number}}
+ */
+function clampXYIntoView(x, y, w, h, margin = 4) {
+    let vw = 0, vh = 0;
+    try {
+        vw = window.innerWidth || document.documentElement.clientWidth || 0;
+        vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    } catch { /* 忽略 */ }
+    if (vw > 0) x = Math.max(margin, Math.min(vw - (w || 0) - margin, x));
+    if (vh > 0) y = Math.max(margin, Math.min(vh - (h || 0) - margin, y));
+    return { x: Math.round(x), y: Math.round(y) };
+}
+
+/**
+ * 把悬浮球摆到存档里的位置 —— **但一定落在屏幕里**。
+ *
+ * ★★ 2026-10-31 报「云酒馆 / 本地酒馆 / Luker / TT 都看不到悬浮球」：
+ *   球的位置 `fabX / fabY` 存在**酒馆的扩展设置**里，而这份设置是**跟着账号走的**
+ *   （电脑、手机打开同一个酒馆读的是同一份）。
+ *   电脑上把球拖到右边（比如 x=1500）⇒ 手机（宽 390）一打开，球被摆到屏幕外面 ✗；
+ *   电脑上把窗口拖窄也一样。原来这里原样照抄存档坐标，没有任何"拉回屏幕"的动作。
+ *   ⇒ 摆之前按当前窗口夹一次 ✓
+ *   ⚠️ 只动**显示**、不改存档：回到大屏时球还在原来那个位置 ✓
+ */
+export function clampFabIntoView() {
+    const s = settings();
+    const fab = els?.fab;
+    if (!fab) return;
+    if (s.ui.fabX == null || s.ui.fabY == null) {
+        // 没存过位置 ⇒ 交给 CSS 的默认右下角
+        if (fab.classList.contains('bc-positioned') && !fab.style.left) fab.classList.remove('bc-positioned');
+        return;
     }
+    const x0 = Number(s.ui.fabX), y0 = Number(s.ui.fabY);
+    if (!Number.isFinite(x0) || !Number.isFinite(y0)) {
+        fab.classList.remove('bc-positioned');
+        fab.style.left = '';
+        fab.style.top = '';
+        return;
+    }
+    const { x, y } = clampXYIntoView(x0, y0, fab.offsetWidth || 54, fab.offsetHeight || 54);
+    fab.classList.add('bc-positioned');
+    const lx = x + 'px', ly = y + 'px';
+    if (fab.style.left !== lx) fab.style.left = lx;
+    if (fab.style.top !== ly) fab.style.top = ly;
 }
 
 export function resetFabPosition() {

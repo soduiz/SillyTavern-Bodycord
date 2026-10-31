@@ -24,24 +24,42 @@ export const ST = {
  * 另外注意：setExtensionPrompt 其实是在 script.js 里，不在 extensions.js，
  * 所以能不用 import 就不用 —— 优先走 getContext()。
  */
+/**
+ * 单次 import 最多等多久。
+ * ⚠️ 不设上限的话，任何一个宿主（云酒馆反代 / Luker / TT 等）在这里卡住，
+ *   `boot()` 就永远停在 `await initST()` —— 后面的 initUI 一次都不跑 ⇒ **悬浮球不出现** ✗。
+ *   这两个模块拿不到也只是少几条退路（大部分功能走 getContext()），不值得为它卡死启动 ✓
+ */
+const IMPORT_TIMEOUT_MS = 4000;
+
 async function tryImport(paths) {
     for (const p of paths) {
-        try { return await import(p); } catch { /* 试下一个 */ }
+        try {
+            const url = new URL(p, import.meta.url).href;
+            let timer = null;
+            const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('timeout')), IMPORT_TIMEOUT_MS); });
+            try { return await Promise.race([import(url), timeout]); }
+            finally { clearTimeout(timer); }
+        } catch { /* 试下一个 */ }
     }
     return null;
 }
 
 export async function initST() {
     if (ST.ready) return ST;
+    // ★ 相对路径放**前面**：按本文件的位置去找，部署在子路径下（云酒馆反代成 /xxx/）也对得上
+    //   宿主自己那份模块（同一个 URL ⇒ 同一个实例）✓
+    //   绝对路径 `/script.js` 放最后兜底 —— 子路径部署时它指向的是**别的地址**，
+    //   最坏会把酒馆的 script.js 再加载一份新实例（等于再跑一遍酒馆初始化）✗
     ST.ext = await tryImport([
-        '/scripts/extensions.js',
         '../../../../extensions.js',
         '../../../extensions.js',
+        '/scripts/extensions.js',
     ]);
     ST.script = await tryImport([
-        '/script.js',
         '../../../../../script.js',
         '../../../../script.js',
+        '/script.js',
     ]);
     if (!ST.ext) ST.errors.push('extensions.js 没加载到（大部分功能仍可通过 getContext() 工作）');
     if (!ST.script) ST.errors.push('script.js 没加载到（大部分功能仍可通过 getContext() 工作）');

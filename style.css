@@ -502,7 +502,16 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-tool.on { background: var(--bc-sel-bg); color: var(--bc-sel-tx); border-color: transparent; }
 
 .bc-frame-host { flex: 1 1 auto; position: relative; overflow: hidden; min-height: 0; background: transparent; }
-.bc-frame { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
+.bc-frame {
+    width: 100%; height: 100%; border: 0; display: block; background: transparent;
+    /* ★★ 2026-10-31（TT 手机：面板里的字外圈带包边，外壳的字正常）：
+       我们的 CSS 里没有任何描边/字阴影，图标（SVG）也是清楚的 ⇒ 指向「iframe 里的文字
+       按低分辨率栅格化、再被合成器放大」。强制 iframe 自己一层，让浏览器按真实像素密度重画 ✓
+       （桌面无副作用；这一条只影响那个 iframe 元素自己） */
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+}
 .bc-error { padding: 16px; color: var(--bc-red); font-size: calc(13px * var(--bc-fs-scale, 1)); }
 
 /* ---------- 聊天内嵌 ---------- */

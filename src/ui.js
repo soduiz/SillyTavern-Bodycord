@@ -1517,7 +1517,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-10-31-24';
+export const BUILD_STAMP = '2026-10-31-26';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -6970,7 +6970,7 @@ function attachFabHandlers() {
         },
     });
     // ★ 窗口尺寸一变也让气泡跟一次（原来得等下一次心跳 ⇒ 会错位一秒多 ✗）
-    try { window.addEventListener('resize', () => followBubbleToFab()); } catch { /* 忽略 */ }
+    try { window.addEventListener('resize', () => { followBubbleToFab(); clampFabIntoView(); }); } catch { /* 忽略 */ }
 }
 
 /** 开局就炸的时候，别让界面一片空白 —— 把错误画在面板位置上 */
@@ -7109,6 +7109,35 @@ export function applyFabLook() {
     fab.dataset.theme = s.ui.theme || 'light';
     if (s.ui.fabX != null && s.ui.fabY != null) {
         fab.classList.add('bc-positioned');
+        fab.style.left = s.ui.fabX + 'px';
+        fab.style.top = s.ui.fabY + 'px';
+        clampFabIntoView();
+    }
+}
+
+/**
+ * ★ 2026-10-31：存档里那对悬浮球坐标夹回当前屏幕。
+ * 为什么必须加：坐标是**按当时那块屏幕**存下来的 ⇒ 换到手机 / Luker 那种更窄的窗口，
+ * 旧的 left/top 可能直接落在屏幕外 ⇒ 表现就是「**悬浮球不见了**」，
+ * 而且代码路径一切正常（元素在、display 也在），最难查 ✗✓
+ */
+function clampFabIntoView() {
+    const s = settings();
+    const fab = els?.fab;
+    if (!fab) return;
+    if (s.ui.fabX == null || s.ui.fabY == null) return;
+    const vw = window.innerWidth || 0;
+    const vh = window.innerHeight || 0;
+    if (!vw || !vh) return;
+    const bw = fab.offsetWidth || 54;
+    const bh = fab.offsetHeight || 54;
+    const pad = 8;
+    const nx = Math.min(Math.max(pad, s.ui.fabX), Math.max(pad, vw - bw - pad));
+    const ny = Math.min(Math.max(pad, s.ui.fabY), Math.max(pad, vh - bh - pad));
+    if (nx !== s.ui.fabX || ny !== s.ui.fabY) {
+        s.ui.fabX = Math.round(nx);
+        s.ui.fabY = Math.round(ny);
+        save();
         fab.style.left = s.ui.fabX + 'px';
         fab.style.top = s.ui.fabY + 'px';
     }

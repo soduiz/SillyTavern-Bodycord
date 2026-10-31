@@ -134,6 +134,36 @@ function deviceIcon(size = 26) {
     return svg;
 }
 
+/**
+ * 同一套画法的线图标（24 网格 / 1.8 描边 / currentColor / 圆头）。
+ * ★ 2026-11-01（她：顶栏那个设置齿轮是 emoji，跟旁边的图标画风不一样）——
+ *   顶栏的齿轮、深浅色都改成这里画的线图标；✕ 和 ← 本来就是线条字形，不用换 ✓
+ */
+function lineIcon(size, inner) {
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', String(size));
+    svg.setAttribute('height', String(size));
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.8');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = inner;
+    return svg;
+}
+
+/** 齿轮（设置）：外形跟 feather 的 settings 同一个骨架，粗细对齐 deviceIcon ✓ */
+const GEAR_PATHS =
+    '<circle cx="12" cy="12" r="3.1"/>'
+    + '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>';
+
+/** 深浅色：一个圆，右半边填实（对比度那个记号的画法）✓ */
+const CONTRAST_PATHS =
+    '<circle cx="12" cy="12" r="8.2"/>'
+    + '<path d="M12 3.8a8.2 8.2 0 0 1 0 16.4z" fill="currentColor" stroke="none"/>';
+
 // ---------------------------------------------------------------------------
 // 状态视图（悬浮窗 / 聊天内嵌 共用）
 // ---------------------------------------------------------------------------
@@ -1519,7 +1549,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-11-01-3';
+export const BUILD_STAMP = '2026-11-01-4';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -3474,14 +3504,18 @@ function buildPanelShell() {
         ),
         h('div', { class: 'bc-spacer' }),
         clock,
-        // ★ 深色浅色模式那条提示词里，"（全插件统一）"这个废话可以删掉 ✓
-        h('div', { class: 'bc-icon-btn', title: '深色 / 浅色', text: '🌓', onclick: toggleTheme }),
-        // 这个按钮会变身：状态页是齿轮 ⚙️，设置页变成返回箭头 ←
+        // ★ 深色浅色那条提示词里，"（全插件统一）"这个废话可以删掉 ✓
+        h('div', { class: 'bc-icon-btn', title: '深色 / 浅色', onclick: toggleTheme }, lineIcon(18, CONTRAST_PATHS)),
+        // 这个按钮会变身：状态页是齿轮 ⚙，设置页变成返回箭头 ←
         // （iOS / 聊天软件 的做法 —— 不需要额外多一条突兀的返回栏）
+        // ⚠️ 齿轮**不是 emoji**：用同一套线图标画（2026-11-01 她指出 emoji 跟旁边画风不一致 ✓）
         h('div', {
             class: 'bc-icon-btn bc-nav-btn', id: 'bc-nav',
             onclick: () => showPane(settings().ui.openTab === 'settings' ? 'status' : 'settings'),
-        }),
+        },
+            h('span', { class: 'bc-nav-gear' }, lineIcon(19, GEAR_PATHS)),
+            h('span', { class: 'bc-nav-back-i', text: '←' }),
+        ),
         h('div', { class: 'bc-icon-btn', title: '关闭', text: '✕', onclick: () => closePanel() }),
     );
 
@@ -3580,7 +3614,11 @@ function syncNavButton(pane) {
     const b = els?.navBtn;
     if (!b) return;
     const onSettings = pane === 'settings';
-    b.textContent = onSettings ? '←' : '⚙️';
+    // ★ 齿轮是画出来的线图标、返回是箭头字形 ⇒ 各一份，切显示（别再改 textContent，会把 svg 冲掉）
+    const gear = b.querySelector('.bc-nav-gear');
+    const back = b.querySelector('.bc-nav-back-i');
+    if (gear) gear.style.display = onSettings ? 'none' : 'flex';
+    if (back) back.style.display = onSettings ? 'flex' : 'none';
     b.title = onSettings ? '返回状态面板' : '设置';
     b.classList.toggle('bc-nav-back', onSettings);
 }

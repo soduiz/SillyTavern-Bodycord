@@ -1903,6 +1903,9 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 
 /* 顶部那个会变身的导航按钮：状态页=齿轮，设置页=返回箭头 */
 .bc-nav-btn { transition: transform .18s, color .18s; }
+/* 齿轮和箭头各一份：里面那层 span 要居中；箭头默认藏着（脚本切显示） */
+.bc-nav-btn > span { display: flex; align-items: center; justify-content: center; }
+.bc-nav-btn .bc-nav-back-i { display: none; }
 .bc-nav-btn.bc-nav-back {
     color: var(--bc-blurple, #5a65f0);
     font-weight: 700;

@@ -1672,8 +1672,20 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 /* =========================================================================
    弹窗
    ========================================================================= */
+/* ⚠️⚠️ 这里**不能用 `inset: 0`**（2026-10-31 修）——
+   宿主页面（酒馆 / TT）的 <html> 上带了 `transform`（哪怕是单位变换），而 <body> 又是
+   `position: fixed` ⇒ <html> 自身高度是 0 ⇒ 对 `position: fixed` 来说「包含块」变成了
+   那个 0 高度的 <html>，inset:0 算出来就是 0 高。
+   症状：弹窗已经 append 进 body、display:flex 也对，但整块 0 高 ⇒ 页面上**什么都看不到**
+   （手机上点「编辑」毫无反应就是这个；确定框 / 输入框那些弹窗也一起中招 ✗）。
+   ⇒ 尺寸改用**视口单位**，不依赖包含块（dvh 给手机地址栏收放用，老浏览器回落 vh）✓ */
 .bc-modal-overlay {
-    position: fixed; inset: 0; z-index: 30100;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    z-index: 30100;
     background: rgba(0, 0, 0, .45);
     display: flex; align-items: center; justify-content: center;
 }
@@ -3809,7 +3821,12 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
    ⚠️ z-index：面板本体是 30000、弹窗是 31000 ⇒ 这一层要压过它们 ⇒ 32000 ✓ */
 .bc-stage-zoom {
     position: fixed;
-    inset: 0;
+    /* ⚠️ 和 `.bc-modal-overlay` 同一个坑：宿主 <html> 带 transform ⇒ 包含块 0 高，
+       `inset:0` 会算成 0 高（整层看不见）⇒ 用视口单位 ✓ */
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
     z-index: 32000;
     background: rgba(0, 0, 0, .84);
     display: flex;

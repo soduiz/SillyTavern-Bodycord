@@ -18,7 +18,7 @@ import { rollSpermLife } from './judgment.js';
 import { MODULES } from './modules.js';
 // ★ 只为了"玩家手打的日期认不认"当场给个提示 ——
 //   打错字会静默存下来、年龄那行悄悄消失（做了没反馈 ✗）
-import { parseFictionDate, calendarSummary, diffDays, addDays } from './fiction-date.js';
+import { parseFictionDate, formatFictionDate, calendarSummary, diffDays, addDays } from './fiction-date.js';
 import {
     targetList, displayName, state, setActive, commit, createTarget, inRealChat, MAX_SNAPSHOTS,
     measureSnapshots,
@@ -45,7 +45,10 @@ import {
     awarenessManualOf, setAwarenessManualOf, clearAwarenessManualOf,
     awarenessTierIdOf, setAwarenessTierIdOf,
     implantDateOf, setImplantDateOf, pregDaysOf, shiftDueDatesOf, listAlerts, syncDueAlerts,
+    setCurrentDate, setCurrentTime, currentTime, dateMode, shiftRecordedDatesBy, storyDateTimeNow,
 } from './store.js';
+// 2026-11-01：上面那排是改数值里的「剧情日期」要用的（直接写时间轴那套现成接口，别另造 ✓）。
+//   ⚠️ 这类说明只能写在 import 的**外面**：括号里出现注释会被 imports 那套自测当成"导入了一个叫 // 的东西" ✗
 import { runJudge, refreshRaw, lastJudgePrompt, rollHeritageNow, ensureGestationDates } from './judge.js';
 import { wiStatus } from './wi.js';
 // ★ 被排除的角色卡（口径见 src/cardexclude.js 顶上那段）
@@ -54,7 +57,7 @@ import { wiStatus } from './wi.js';
 //   · `setCardExcluded()`     排除 / 放回（面板顶上那条提示里的「启用」按钮用它 ✓）
 import { isCardExcluded, currentCardAvatar, setCardExcluded } from './cardexclude.js';
 import { BodycordPanel, notesStats } from './bodycord.js';
-import { renderSettingsTab, renderJudgeTab, renderTrackingTab, renderAvatarTab, renderStagesTab, renderBasicInfoTab, renderCalendarTab, bodyLockRows, identRows } from './ui-settings.js';
+import { renderSettingsTab, renderJudgeTab, renderTrackingTab, renderAvatarTab, renderStagesTab, renderBasicInfoTab, renderCalendarTab, bodyLockRows, identRows, shiftDaySection } from './ui-settings.js';
 import { renderModulesTab } from './ui-modules.js';
 import { renderArchiveTab } from './ui-archive.js';
 import { renderAchTab } from './ui-ach.js';
@@ -1549,7 +1552,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-11-01-4';
+export const BUILD_STAMP = '2026-11-01-5';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -5154,6 +5157,7 @@ function openFieldEditor(focusKey) {
         // ★ 减密度：弹窗里也走「？」（改数值和时光机弹窗也需要 ✓）
         help: [
             '改完点保存，立刻反映到状态面板上。下一次自动推演会以你改过的内容为起点',
+            '最上面那块「剧情日期」和它下面的「时间跳跃与修正」动的是「整条时间轴」（一个聊天只有一根），不是当前这个人一个人的；这两块各有自己的按钮，点了就生效，不用等这个弹窗的保存',
             '「数据项六 · 胎儿状态」那一格下面可以按每个胎儿单独填（种族 / 性别 / 致孕方 / 孕期 / 预产期），不用自己记那串格式；已经出生的孩子在悬浮球菜单的「胎儿 / 孩子」里',
             '敏感带那一块改的是这个人当前的敏感带值，不是「初始设定」；初始设定在设置 → 规则补丁 → 敏感带初始设定里',
             '敏感带表格的改动也跟着一起保存（不用单独点）',
@@ -5202,6 +5206,136 @@ function openFieldEditor(focusKey) {
                 refresh: () => { try { refreshAll({ force: true }); } catch { /* 忽略 */ } },
                 rebuild: () => { try { refreshAll({ force: true }); } catch { /* 忽略 */ } },
             });
+            // ★★ 2026-11-01（她：插件 API 把剧情时间认错了，改数值里要能直接改日期）——
+            //   「剧情日期」是**整条时间轴**（一个聊天一根），不是当前这个对象一个人的 ⇒
+            //   卡片名和明面那行都写清「对所有人一样」，别让人以为只改这个人 ✓
+            {
+                const fmtEg = (() => { try { return formatFictionDate({ y: 1, m: 1, d: 1 }); } catch { return '1年01月01日'; } })();
+                const sec = section('剧情日期（整条时间轴）', {
+                    help: [
+                        '这一格改的是「这个聊天的时间轴」，不是当前这个对象一个人的：改完所有人都会按新日期走',
+                        '什么时候用：AI 把剧情时间认错了（比如明明是哪一年几月，结果被认成历法开头那种），在这儿直接改成对的',
+                        '写法照现在这套，例如「' + fmtEg + '」；也认 1-1-1 / 1/1/1 这种纯数字写法',
+                        '「已记的日期也一起搬」开着（默认）：所有已经记下的日期跟着平移同样的天数 ⇒ 孕周 / 周期第几天 / 痕迹这些相对的天数都不变，只是绝对日期换到对的年份上',
+                        '关掉「已记的日期也一起搬」：只改今天这一天，已记的日期原地不动 ⇒ 天数差会跟着变（周期第几天、孕周都可能一下跳很多）',
+                        '钟点那一格只有历法开了「记钟点」才出现；不开就不显示',
+                    ],
+                });
+                const db = sec.querySelector('.bc-section-body');
+                const nowLine = h('div', { class: 'bc-hint' });
+                const dateIn = textInput('', () => {}, { placeholder: '例如：' + fmtEg });
+                const timeIn = textInput('', () => {}, { placeholder: '例如：14:30' });
+                const unit = (() => { try { return timeUnitNow(); } catch { return 'none'; } })();
+                let moveRecorded = true;
+                const mYes = h('div', {
+                    class: 'bc-chip bc-chip-pick', text: '已记的日期也一起搬',
+                    title: '平移同样的天数：天数差不变，孕周 / 周期第几天都不跳',
+                });
+                const mNo = h('div', {
+                    class: 'bc-chip bc-chip-pick', text: '只改今天',
+                    title: '只改这一天，已记的日期留在原地 ⇒ 天数差会变',
+                });
+                const modeRow = h('div', { class: 'bc-chip-list' }, mYes, mNo);
+                const modeNote = h('div', { class: 'bc-hint' });
+                /** 现在能不能改？不能就返回一句人话（跟别的格同一套闸 ✓） */
+                const whyNow = () => {
+                    try {
+                        if (isCardExcluded()) return '这个角色卡没有启用推演，改不了剧情日期';
+                        if (!inRealChat()) return '先进入一个聊天（里面要有正文），这一格才有地方改';
+                    } catch { /* 忽略 */ }
+                    return '';
+                };
+                const btn = button('设为这个日期', () => save());
+                mYes.onclick = () => { moveRecorded = true; paint(); };
+                mNo.onclick = () => { moveRecorded = false; paint(); };
+
+                function paint() {
+                    let now = '', src = '';
+                    try { now = storyDateTimeNow(); } catch { /* 忽略 */ }
+                    try {
+                        const m = dateMode();
+                        src = m === 'story' ? '剧情给的日期'
+                            : (m === 'fiction' ? '虚拟日历（从历法第一天起算）' : '还没定');
+                    } catch { /* 忽略 */ }
+                    nowLine.textContent = '现在：' + (now || '（还没有日期）') + '　来源：' + src;
+                    mYes.classList.toggle('bc-chip-on', moveRecorded);
+                    mNo.classList.toggle('bc-chip-on', !moveRecorded);
+                    const why = whyNow();
+                    modeNote.textContent = why || (moveRecorded
+                        ? '已记的日期跟着平移同样的天数：孕周 / 周期第几天 / 痕迹都不跳'
+                        : '只改今天：已记的日期不动，天数差会跟着变（周期第几天、孕周可能一下跳很多）');
+                    dateIn.disabled = !!why;
+                    timeIn.disabled = !!why;
+                    btn.disabled = !!why;
+                    btn.classList.toggle('bc-btn-off', !!why);
+                }
+
+                function save() {
+                    const why = whyNow();
+                    if (why) { window.toastr?.warning?.(why); return; }
+                    const raw = String(dateIn.value || '').trim();
+                    if (!raw) { window.toastr?.warning?.('先把日期填上'); return; }
+                    const oldD = (() => { try { return currentDate() || ''; } catch { return ''; } })();
+                    // ★ 认不出来的日期 setCurrentDate 会拒（返回 false）—— 绝不硬写 ✗
+                    if (!setCurrentDate(raw, 'story')) {
+                        window.toastr?.warning?.('这个日期读不出来：照现在这套写法填，例如「' + fmtEg + '」');
+                        return;
+                    }
+                    const nextD = (() => { try { return currentDate() || ''; } catch { return ''; } })();
+                    // ★ 「已记的日期也一起搬」：平移同样的天数 ⇒ 天数差守恒（孕周 / 周期第几天都不跳 ✓）
+                    let moved = 0;
+                    if (moveRecorded && oldD && nextD) {
+                        let dd = 0;
+                        try { dd = diffDays(oldD, nextD); } catch { dd = 0; }
+                        if (Number.isFinite(dd) && dd) {
+                            try { moved = shiftRecordedDatesBy(dd); } catch (e) { console.warn('[Bodycord] 搬已记日期失败', e); }
+                        }
+                    }
+                    // 钟点（历法开了「记钟点」才出现那一格）
+                    let timeNote = '';
+                    const tRaw = String(timeIn.value || '').trim();
+                    if (unit !== 'none' && tRaw) {
+                        const mins = (() => {
+                            const m = tRaw.match(/^(\d{1,2})\s*(?:[:：点时])\s*(\d{1,2})?$/);
+                            if (!m) return null;
+                            const hh = Number(m[1]);
+                            const mi = (m[2] === undefined) ? 0 : Number(m[2]);
+                            if (!Number.isFinite(hh) || hh < 0 || hh > 23) return null;
+                            if (!Number.isFinite(mi) || mi < 0 || mi > 59) return null;
+                            return hh * 60 + (unit === 'hour' ? 0 : mi);
+                        })();
+                        if (mins === null) window.toastr?.warning?.('钟点读不出来：写成 14:30 这样（只记小时就写 14）');
+                        else { try { setCurrentTime(mins); timeNote = '，钟点一起改了'; } catch { /* 忽略 */ } }
+                    }
+                    try { commit(); } catch { /* 忽略 */ }
+                    try { refreshRaw({ force: true }); } catch { /* 忽略 */ }
+                    try { refreshAll({ force: true }); } catch { /* 忽略 */ }
+                    dateIn.value = '';
+                    timeIn.value = '';
+                    paint();
+                    window.toastr?.success?.('已把剧情日期设为 ' + nextD
+                        + (moved ? ('，已记的日期一起搬了 ' + moved + ' 处') : '')
+                        + timeNote);
+                }
+
+                db.appendChild(nowLine);
+                db.appendChild(h('div', { class: 'bc-row' },
+                    field('剧情日期', dateIn),
+                    unit !== 'none' ? field('钟点', timeIn) : null,
+                ));
+                db.appendChild(modeRow);
+                db.appendChild(modeNote);
+                db.appendChild(h('div', { class: 'bc-row' }, btn));
+                paint();
+                body.appendChild(sec);
+            }
+
+            // ★ 2026-11-01：整块从「时间与日历」搬过来的（她：放那儿不合适）——
+            //   直接改日期给准确值、这里按天数走并当场结算，两件事挨着放才找得到 ✓
+            //   弹窗里默认收起：它比日期格长，常开会把下面的数值挤下去 ✓
+            shiftDaySection(body, () => { try { refreshAll({ force: true }); } catch { /* 忽略 */ } },
+                { collapsible: true, open: false });
+
             if (zoneBox) {
                 const zoneSec = section('🎯 敏感带（当前值）', { collapsible: true, open: false });
                 zoneSec.querySelector('.bc-section-body').appendChild(zoneBox);
@@ -5271,7 +5405,7 @@ function openFieldEditor(focusKey) {
                         try {
                             if (isImplant) {
                                 // 植入孕要用"今天 − N 天"反推植入日 ⇒ 没有剧情日期就没法写
-                                if (!now) { window.toastr?.warning?.('还没定下剧情日期：植入孕的孕周改不了（先去设置 → 时间与设置 定个日期）'); return; }
+                                if (!now) { window.toastr?.warning?.('还没定下剧情日期：植入孕的孕周改不了（先在上面「剧情日期」那块填一个）'); return; }
                                 ok = !!setImplantDateOf(t.key, addDays(now, -total));
                             } else if (total > 0) { setCycleDayOf(t.key, total, now); ok = true; }
                         } catch { ok = false; }

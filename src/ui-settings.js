@@ -3153,6 +3153,7 @@ function timeSection(container, onChange) {
             '插件跟时间有关的事都按它算：日期认不认、天数怎么加、两个日期差几天、孩子的年龄',
             '改历法不会动时间轴。已经记下的日期会按同一个「第几天」重新写一遍，周期第几天和年龄都不会变',
             '剧情里没给日期的时候，虚拟时间就从这套日历推，起点是 1 年 1 月 1 日',
+            '这一页只管"日子怎么算"；要改现在走到哪一天、或者按天数补 / 退，去改数值弹窗最上面的「剧情日期」和「时间跳跃与修正」',
         ],
     });
     const b = box.querySelector('.bc-section-body');
@@ -3653,9 +3654,15 @@ function bubbleSection(container, onChange, actions = {}) {
  *
  * ⚠️ 都**不可逆**（现场结算过的那笔账收不回来）⇒ 按项目规矩：明面留一句最短的后果，
  *   详细解释进「？」；按钮上直接写清"几天"，点完如实报结果（不许含糊 ✗）。
+ *
+ * ★ 2026-11-01：**整块搬去「改数值」弹窗**（她原话「我认为时间跳跃与修正在时间与日历那里放着不合适」）——
+ *   时间与日历那页只留历法设定；翻天数并当场结算属于运行时修正，跟"直接改日期"住一处 ✓
+ *   ⇒ 这里 export 出去，由 ui.js 的改数值弹窗调（本文件里不再有页面调它）。
+ * @param {object} [opts] 传给 section 的选项（弹窗里默认收起：`{collapsible:true, open:false}` ✓）
  */
-function shiftDaySection(container, onChange) {
+export function shiftDaySection(container, onChange, opts = {}) {
     const box = section('时间跳跃与修正', {
+        ...opts,
         help: [
             '什么时候用：剧情里明明过了一段时间（过夜、三天后、隔了一个月），但推演那边没报出来，日历停着不动',
             '或者反过来：写正文那个把时间写多了（写「三个月后」其实只过了一天）⇒ 时间轴走歪了，要退回来',
@@ -3979,9 +3986,9 @@ export function renderCalendarTab(container, onRefresh, onRebuild, actions = {})
     //   ⇒ 只剩两张**按内容命名**的卡：「时间怎么算」和「日期怎么写」
     //     （跟别的页一个规矩：卡片叫内容的名字，不叫页的名字 ✓）
     timeSection(container, onChange);
-    // ★ 「时间往未来补」—— AI 漏报 / 写歪时间时，玩家自己把天数补回来 ✓
-    //   ⚠️ 名字里**不许写「往前」**（会被读成"回到过去" ⇒ 有歧义 ✗）
-    shiftDaySection(container, onChange);
+    // ★ 2026-11-01：「时间跳跃与修正」**搬去改数值弹窗了**（她：放这儿不合适）——
+    //   这页只留历法设定（怎么算日子 / 日期怎么写 / 节日 / 提醒气泡 / 番茄钟）✓
+    //   ⚠️ 别再把它调回来：玩家改时间走「改数值 → 剧情日期 / 时间跳跃与修正」那一处 ✓
     dateStyleSection(container, onChange);
     // ★ 节日表给玩家自己改 ✓
     holidaySection(container, onChange);

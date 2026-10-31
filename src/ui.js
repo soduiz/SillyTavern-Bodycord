@@ -1519,7 +1519,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-10-31-32';
+export const BUILD_STAMP = '2026-10-31-33';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -7007,6 +7007,9 @@ function attachFabHandlers() {
     };
     try { window.addEventListener('resize', onViewportChange); } catch { /* 忽略 */ }
     try { window.visualViewport?.addEventListener?.('resize', onViewportChange); } catch { /* 忽略 */ }
+    // ★ 开局量一次：某些宿主（手机 / Luker）算出来的包含块不一样，球可能落在屏幕外 ⇒ 先夹一次
+    //   （这一刻还没排完版就什么也不做，后面心跳里还会再夹 ✓）
+    try { requestAnimationFrame(() => { try { clampFabIntoView(); } catch { /* 忽略 */ } }); } catch { /* 忽略 */ }
 }
 
 /** 开局就炸的时候，别让界面一片空白 —— 把错误画在面板位置上 */
@@ -7152,24 +7155,45 @@ export function applyFabLook() {
 }
 
 /**
- * ★ 2026-10-31：存档里那对悬浮球坐标夹回当前屏幕。
- * 为什么必须加：坐标是**按当时那块屏幕**存下来的 ⇒ 换到手机 / Luker 那种更窄的窗口，
- * 旧的 left/top 可能直接落在屏幕外 ⇒ 表现就是「**悬浮球不见了**」，
- * 而且代码路径一切正常（元素在、display 也在），最难查 ✗✓
+ * ★ 2026-10-31：把悬浮球夹回当前屏幕里（两种情况都管）。
+ *
+ * ① 拖过 / 存过坐标的：坐标是**按当时那块屏幕**存下来的 ⇒ 换到手机那种更窄的窗口，
+ *    旧的 left/top 可能直接落在屏幕外 ⇒ 表现就是「**悬浮球不见了**」，
+ *    而且代码路径一切正常（元素在、display 也在），最难查 ✗✓
+ *
+ * ② ★ 没拖过、走 CSS 默认位置的那一种（2026-10-31 查「Luker / 手机端没有悬浮球」的结论）：
+ *    手机宿主把 <body> 设成 position:fixed、<html> 又带 transform ⇒ <html> 高度是 0，
+ *    它成了 position:fixed 的包含块 ⇒ 以前 CSS 用 `bottom` 定位，球被算到屏幕**上方外面**
+ *    （实测 top = -146，整颗球在可视区之上）。CSS 那边已改成 top + 视口单位（见 style.css），
+ *    这里再兜一层：真要是还落在屏幕外（宿主算法不同 / 转屏那一瞬），就钉回屏幕里。
+ *    ⚠️ 兜底**只改显示、不改存档** —— 下次默认位置正常时还是 CSS 给的那个位置 ✓
  */
 function clampFabIntoView() {
     const s = settings();
     const fab = els?.fab;
     if (!fab) return;
-    if (s.ui.fabX == null || s.ui.fabY == null) return;
     const vw = window.innerWidth || 0;
     const vh = window.innerHeight || 0;
     if (!vw || !vh) return;
     const bw = fab.offsetWidth || 54;
     const bh = fab.offsetHeight || 54;
     const pad = 8;
-    const nx = Math.min(Math.max(pad, Number(s.ui.fabX)), Math.max(pad, vw - bw - pad));
-    const ny = Math.min(Math.max(pad, Number(s.ui.fabY)), Math.max(pad, vh - bh - pad));
+    const saved = s.ui.fabX != null && s.ui.fabY != null;
+    let cx;
+    let cy;
+    if (saved) {
+        cx = Number(s.ui.fabX);
+        cy = Number(s.ui.fabY);
+    } else {
+        const r = fab.getBoundingClientRect();
+        if (!r.width || !r.height) return;      // 还没排完版，等下一轮
+        if (r.top >= 0 && r.left >= 0 && r.bottom <= vh && r.right <= vw) return;   // 好好的，别动
+        cx = r.left;
+        cy = r.top;
+        if (!Number.isFinite(cx) || !Number.isFinite(cy)) { cx = vw - bw - 14; cy = vh - bh - 92; }
+    }
+    const nx = Math.min(Math.max(pad, cx), Math.max(pad, vw - bw - pad));
+    const ny = Math.min(Math.max(pad, cy), Math.max(pad, vh - bh - pad));
     // ⚠️ 只改显示、**不改存档**：回到大屏时球还在原来那个位置 ✓
     const lx = Math.round(nx) + 'px';
     const ly = Math.round(ny) + 'px';

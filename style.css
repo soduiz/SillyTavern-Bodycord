@@ -178,10 +178,17 @@
 /* =========================================================================
    悬浮球
    ========================================================================= */
+/* ⚠️⚠️ 默认位置用 `top` 算，**不要用 `bottom`**（2026-10-31 修）——
+   手机上宿主把 <body> 设成 position:fixed、<html> 又带 transform ⇒ <html> 自身高度是 0，
+   它成了 position:fixed 的"包含块" ⇒ `bottom: 92px` 会算成 y = 0 - 92 - 54 = **-146**，
+   也就是**球跑到屏幕上方外面去了** ⇒ 表现就是「手机上根本没有悬浮球」✗
+   （桌面上 <html> 有高度，所以只在手机上坏；Luker / TT 手机端都是这个情况 ✓）
+   ⇒ 一律用 top + 视口单位量到屏幕底边往上多少 ✓ */
 #bc-fab.bc-fab {
     position: fixed;
     right: 24px;
-    bottom: 120px;
+    top: calc(100vh - 174px);
+    top: calc(100dvh - 174px);
     width: 54px;
     height: 54px;
     border-radius: 17px;
@@ -229,7 +236,7 @@
     border-color: transparent !important;
     box-shadow: none !important;
 }
-#bc-fab.bc-fab.bc-positioned { right: auto; bottom: auto; }
+#bc-fab.bc-fab.bc-positioned { right: auto; bottom: auto; top: auto; }
 /* 插件被关掉时：球**留着**（它是唯一入口，收了就再也打不开了），但变灰让用户看得出状态 */
 #bc-fab.bc-fab.off {
     filter: grayscale(1);
@@ -2127,7 +2134,11 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-timer-ball {
     position: fixed;
     left: 18px;
-    bottom: 18px;
+    /* ⚠️ 和悬浮球同一个坑（2026-10-31）：手机上包含块是 0 高的 <html>，
+       用 bottom 会把整颗算到屏幕上方外面（看不见）⇒ 用 top + 视口单位 ✓
+       18（底边距）+ 76（球高）＝ 94 ✓ */
+    top: calc(100vh - 94px);
+    top: calc(100dvh - 94px);
     /* ⚠️ 它被压住就会"看着不像圆的、只露一角" ✗
        ⇒ 层级抬到**所有层之上**（30900 会比歌词条 31000 还低、离面板 30000 只差 900 ✗）✓ */
     z-index: 99999;
@@ -3743,8 +3754,13 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     /* 设置页那排导航：≤720 时每个分组的标题各占一整行 ⇒ 手机上光导航就 6 行（约 190px）✗
        ⇒ 手机上让标题跟着项目一起连排、自动折行（从 6 行收到 2~3 行 ✓） */
     .bc-setnav-group { width: auto; padding: 5px 6px 2px 4px; }
-    /* 悬浮球：离屏幕边留一点，也别压住酒馆的输入框 */
-    #bc-fab.bc-fab { right: 14px; bottom: 92px; }
+    /* 悬浮球：离屏幕边留一点，也别压住酒馆的输入框
+       （⚠️ 和上面那条一样用 top + 视口单位，别写 bottom：手机上的包含块是 0 高的 <html> ✗） */
+    #bc-fab.bc-fab {
+        right: 14px;
+        top: calc(100vh - 146px);
+        top: calc(100dvh - 146px);
+    }
 
     /* 命中区（手机形态才撑）—— 上面那四类控件（弹窗 ✕ / 「？」/ 诊断 ✕ / 顶栏图标）
        四周有富余，**随时**撑；下面这些旁边就挤着别的可点东西 ⇒ 只在手机上撑，

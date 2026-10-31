@@ -3617,12 +3617,12 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     .bc-head {
         height: auto;
         min-height: 50px;
-        /* ★ 2026-10-31：原来写 var(--tt-inset-top, env(...)) —— 宿主一旦注了这个变量
-           （哪怕比刘海小），env() 那条就完全不生效 ⇒ 苹果手机上顶栏钻到刘海底下，✕ 点不到 ✗
-           ⇒ 两个取**大的那个** ✓ */
-        padding-top: max(var(--tt-inset-top, 0px), env(safe-area-inset-top, 0px));
-        padding-left: calc(14px + max(var(--tt-inset-left, 0px), env(safe-area-inset-left, 0px)));
-        padding-right: calc(12px + max(var(--tt-inset-right, 0px), env(safe-area-inset-right, 0px)));
+        /* ★ 2026-10-31（苹果 TT）：宿主注进来的 --tt-inset-* 在 iOS 上明显不对
+           （顶栏被顶下去一大截、下面留一大片空白）⇒ 干脆**不再用它**，只认浏览器自己的
+           env(safe-area-inset-*)，且封顶 80px（真刘海最宽也就 60 上下）✓ */
+        padding-top: min(env(safe-area-inset-top, 0px), 80px);
+        padding-left: calc(14px + min(env(safe-area-inset-left, 0px), 80px));
+        padding-right: calc(12px + min(env(safe-area-inset-right, 0px), 80px));
     }
     /* 顶栏的 ✕ 在手机上给足 44×44 的点按范围（苹果人机指南就是这个数）✓ */
     .bc-head .bc-icon-btn { width: 40px; height: 40px; }

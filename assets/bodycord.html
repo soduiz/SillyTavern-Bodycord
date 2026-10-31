@@ -880,7 +880,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
      ★ 手机上的安全区一律写成「两用写法」：`var(--tt-inset-*, env(safe-area-inset-*, 0px))`
        —— TauriTavern（TT）在移动端把 `--tt-inset-*` 注进来（同源 iframe 也会桥进来一层），
           酒馆那边没有这个变量 ⇒ 自动退回 `env()` ⇒ 一套 CSS 两边都对，谁都不坏 ✓ */
-  .bc-app{height:100vh;height:100dvh;max-height:none;border-radius:0;border:0;padding-bottom:var(--tt-inset-bottom, env(safe-area-inset-bottom, 0px))}
+  .bc-app{height:100vh;height:100dvh;max-height:none;border-radius:0;border:0;padding-bottom:min(env(safe-area-inset-bottom, 0px), 80px)}
   .bc-drawer-btn{display:flex}
   .bc-drawer-mask{display:block}
   /* ⚠️ 遮罩必须 `pointer-events:none` 收着 —— opacity:0 的元素**照样吃点击**，
@@ -890,7 +890,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
      ⚠️ 那个投影**只在拉开时给**（挂在下面 `.drawer-open` 那条上）：
      抽屉关着是 `translateX(-100%)`，可投影带 24px 模糊 ⇒ 关着的时候屏幕左边会留下
      一条灰边（整屏形态下特别显眼 ✗）*/
-  .channel-sidebar{position:absolute;left:0;top:var(--tt-inset-top, env(safe-area-inset-top, 0px));bottom:var(--tt-inset-bottom, env(safe-area-inset-bottom, 0px));width:min(286px,84vw);z-index:20;transform:translateX(-100%);transition:transform .22s cubic-bezier(.2,0,0,1)}
+  .channel-sidebar{position:absolute;left:0;top:min(env(safe-area-inset-top, 0px), 80px);bottom:min(env(safe-area-inset-bottom, 0px), 80px);width:min(286px,84vw);z-index:20;transform:translateX(-100%);transition:transform .22s cubic-bezier(.2,0,0,1)}
   .bc-app.drawer-open .channel-sidebar{transform:translateX(0);box-shadow:6px 0 24px rgba(0,0,0,.28)}
   /* 抽屉里始终显示文字列表（窄屏反掉"收起成图标栏"） */
   .bc-app.channel-collapsed .channel-sidebar{width:min(286px,84vw)}
@@ -908,7 +908,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
   .user-menu{width:min(240px,72vw)}
   /* 顶部条也要吃安全区：TT 的沉浸模式默认开（顶部 inset 归零但仍然要躲刘海）✗
      所以高度改成 auto + min-height，把安全区加到上内边距上 ✓ */
-  .top-bar{height:auto;min-height:48px;padding:var(--tt-inset-top, env(safe-area-inset-top, 0px)) 6px 0 2px}
+  .top-bar{height:auto;min-height:48px;padding:min(env(safe-area-inset-top, 0px), 80px) 6px 0 2px}
   /* ★ 手机上顶栏是**三块**（☰ / 频道名 / 右边那排按钮），桌面只有两块（频道名 / 右边那排）——
      父级那句 `justify-content:space-between` 在三块时会**把频道名推到正中间**（看着像版块错位 ✗）
      ⇒ 手机这档改成左对齐 + 右边那排用 margin-left:auto 顶到最右，
@@ -1637,7 +1637,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
          就是单纯没进聊天；别再把这两个概念混在一起 ✗ */
 
   // 面板自己的构建标记：用来确认到底加载了哪一版文件（拿到缓存的旧文件时一眼能看出来）
-  var PANEL_BUILD = '2026-10-31-28';
+  var PANEL_BUILD = '2026-10-31-31';
   // 界面上不显示它，但留个查询口 —— 报 BUG 时能确认加载的是哪一版 ✓
   try{ window.__bodycordPanelBuild = PANEL_BUILD; }catch(e){}
 

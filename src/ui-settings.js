@@ -503,7 +503,14 @@ function apiSection(container, onChange) {
                 on ? h('span', { class: 'bc-badge on', text: '使用中' }) : null,
                 button('编辑', (e) => {
                     e?.stopPropagation?.();
-                    openApiEditor(row.id, () => { paintApiList(); paintApiHint(); onChange?.(); });
+                    // ★ 2026-10-31：有人报「点编辑没反应」——这条路上任何异常原来只会进控制台，
+                    //   界面上一点声音都没有 ⇒ 包起来，出事就把原因弹出来，别再装没事 ✓
+                    try {
+                        openApiEditor(row.id, () => { paintApiList(); paintApiHint(); onChange?.(); });
+                    } catch (err) {
+                        console.error('[Bodycord] 打开接口编辑窗口失败', err);
+                        window.toastr?.error?.('打开编辑窗口失败：' + (err?.message || err));
+                    }
                 }),
                 button('删除', async (e) => {
                     e?.stopPropagation?.();
@@ -522,11 +529,16 @@ function apiSection(container, onChange) {
     ownBox.appendChild(apiListHost);
     ownBox.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
         button('＋ 新建渠道', () => {
-            const row = addApi();
-            paintApiList();
-            paintApiHint();
-            onChange?.();
-            openApiEditor(row.id, () => { paintApiList(); paintApiHint(); onChange?.(); });
+            try {
+                const row = addApi();
+                paintApiList();
+                paintApiHint();
+                onChange?.();
+                openApiEditor(row.id, () => { paintApiList(); paintApiHint(); onChange?.(); });
+            } catch (err) {
+                console.error('[Bodycord] 新建接口失败', err);
+                window.toastr?.error?.('新建渠道失败：' + (err?.message || err));
+            }
         }, { variant: 'primary' }),
         button('测试当前这套', async () => {
             window.toastr?.info?.('正在测试…');
@@ -565,7 +577,11 @@ function apiSection(container, onChange) {
 function openApiEditor(id, onDone) {
     let row = null;
     try { row = apiList().find((x) => x.id === id); } catch { row = null; }
-    if (!row) return;
+    if (!row) {
+        // 找不到那条配置时以前是**静默返回** ⇒ 表现就是「点了编辑没反应」✗ ⇒ 说一句 ✓
+        try { window.toastr?.error?.('找不到这套接口配置（可能刚被删掉了）'); } catch { /* 忽略 */ }
+        return;
+    }
     const draft = { ...row };
     const result = h('div', { class: 'bc-hint' });
 

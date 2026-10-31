@@ -708,6 +708,8 @@ function menuHint() {
 
 /** ★ 长按已经开过快捷菜单了 ⇒ 这一次松手不该再当"点击"（否则菜单和面板一起弹 ✗） */
 let fabHoldOpened = false;
+/** 悬浮球正在被拖着（期间别让心跳把它按存档坐标摆回去 ✗） */
+let fabDragging = false;
 
 function buildFab() {
     // ★ TT 移动端：悬浮球是"可拖的浮窗" ⇒ 声明 free-window（宿主不长期钳制它的位置，
@@ -1517,7 +1519,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-10-31-26';
+export const BUILD_STAMP = '2026-10-31-31';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -3493,8 +3495,17 @@ function buildPanelShell() {
 
     const paneWrap = h('div', { class: 'bc-panes' }, panes.status, panes.settings);
 
+    // ★★ 手机形态专用的「关闭」：顶栏那颗 ✕ 正好落在刘海 / 灵动岛 / 各种壳子顶栏盖住的位置，
+    //   苹果手机上点不到 ⇒ 在**右下角**（拇指够得着、不会被顶栏挡）再放一颗，
+    //   挂在外壳上（不在 iframe 里），层级压过面板内容 ✓。桌面形态不显示（CSS 管）
+    const phoneClose = h('div', {
+        class: 'bc-phone-close', title: '关闭面板', role: 'button', 'aria-label': '关闭面板',
+        onclick: (e) => { try { e.stopPropagation(); } catch { /* 忽略 */ } closePanel(); },
+    }, h('span', { text: '✕' }));
+
     root.appendChild(head);
     root.appendChild(paneWrap);
+    root.appendChild(phoneClose);
     document.body.appendChild(root);
 
     // ★ 面板里那颗「关闭」（手机形态才有）要能叫回外壳：面板是同源 iframe ⇒ 直接挂个函数 ✓
@@ -5748,7 +5759,16 @@ export function syncPresentation() {
     // 楼层面板的开合交给 ui-floors.js，这里只转达
     try { applyFloorPanel(floorsOn()); } catch { /* 忽略 */ }
 
+    // ★ 有的宿主（TT 之类的手机壳 / 主题脚本）会重建 body 里的东西，把我们挂的节点摘掉 ⇒
+    //   球和面板一旦脱离文档就**永远看不见**、也没有任何报错 ✗ ⇒ 心跳里发现掉了就挂回去 ✓
+    try {
+        if (!els.fab.isConnected) document.body.appendChild(els.fab);
+        if (els.root && !els.root.isConnected) document.body.appendChild(els.root);
+    } catch { /* 忽略 */ }
+
     els.fab.style.display = fabNeeded() ? '' : 'none';
+    // ★ 球永远落在屏幕里（存档坐标来自别的设备 / 更大的窗口时会跑到屏幕外 ✗）
+    if (!fabDragging) { try { clampFabIntoView(); } catch { /* 忽略 */ } }
 
     // ★ 聊天里不显示了，但**消失得有点慢** ——
     //   因为那个钟**只靠 15 秒一次的定时器**刷 ✗ ⇒ 一进聊天最多要等 15 秒才收起来 ✓
@@ -6936,7 +6956,14 @@ function makeDraggable(el, handle, opts = {}) {
         opts.onDrop?.(el.getBoundingClientRect());
     };
     handle.addEventListener('pointerup', end);
-    handle.addEventListener('pointercancel', () => { dragging = false; document.body.style.userSelect = ''; });
+    // ★ 被系统打断（手机上滚动手势接管 / 来电等）也算"拖完了" ⇒ 必须通知调用方，
+    //   不然调用方那边的"正在拖"标记会一直卡在 true（心跳就再也不帮它归位 ✗）
+    handle.addEventListener('pointercancel', () => {
+        const was = dragging;
+        dragging = false;
+        document.body.style.userSelect = '';
+        if (was) { try { opts.onDragEnd?.(); } catch { /* 忽略 */ } }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -6958,10 +6985,13 @@ function attachFabHandlers() {
             if (fabHoldOpened) { fabHoldOpened = false; return; }
             try { togglePanel(); } catch (e) { console.error('[Bodycord] 开面板失败', e); showStartupError(e); }
         },
+        // ★ 拖的期间别让心跳里的 clampFabIntoView() 把球拽回存档位置 ✓
+        onDragStart: () => { fabDragging = true; },
         // ★ 拖球时让贴在它旁边的提醒气泡**实时跟** ✓（不实时跟容易出现位移 BUG）
         onMove: () => followBubbleToFab(),
-        onDragEnd: () => { try { placeReminderBubble(); } catch { /* 忽略 */ } },
+        onDragEnd: () => { fabDragging = false; try { placeReminderBubble(); } catch { /* 忽略 */ } },
         onDrop: (rect) => {
+            fabDragging = false;
             fabHoldOpened = false;      // 拖过 ⇒ 不是长按那一次，别再吃掉后面的点击 ✓
             const s = settings();
             s.ui.fabX = Math.round(rect.left);
@@ -6970,7 +7000,13 @@ function attachFabHandlers() {
         },
     });
     // ★ 窗口尺寸一变也让气泡跟一次（原来得等下一次心跳 ⇒ 会错位一秒多 ✗）
-    try { window.addEventListener('resize', () => { followBubbleToFab(); clampFabIntoView(); }); } catch { /* 忽略 */ }
+    //   ★ 同时把球夹回屏幕里（转屏 / 把窗口拖窄之后球不能跑到屏幕外 ✓）
+    const onViewportChange = () => {
+        if (!fabDragging) { try { clampFabIntoView(); } catch { /* 忽略 */ } }
+        followBubbleToFab();
+    };
+    try { window.addEventListener('resize', onViewportChange); } catch { /* 忽略 */ }
+    try { window.visualViewport?.addEventListener?.('resize', onViewportChange); } catch { /* 忽略 */ }
 }
 
 /** 开局就炸的时候，别让界面一片空白 —— 把错误画在面板位置上 */
@@ -7132,15 +7168,14 @@ function clampFabIntoView() {
     const bw = fab.offsetWidth || 54;
     const bh = fab.offsetHeight || 54;
     const pad = 8;
-    const nx = Math.min(Math.max(pad, s.ui.fabX), Math.max(pad, vw - bw - pad));
-    const ny = Math.min(Math.max(pad, s.ui.fabY), Math.max(pad, vh - bh - pad));
-    if (nx !== s.ui.fabX || ny !== s.ui.fabY) {
-        s.ui.fabX = Math.round(nx);
-        s.ui.fabY = Math.round(ny);
-        save();
-        fab.style.left = s.ui.fabX + 'px';
-        fab.style.top = s.ui.fabY + 'px';
-    }
+    const nx = Math.min(Math.max(pad, Number(s.ui.fabX)), Math.max(pad, vw - bw - pad));
+    const ny = Math.min(Math.max(pad, Number(s.ui.fabY)), Math.max(pad, vh - bh - pad));
+    // ⚠️ 只改显示、**不改存档**：回到大屏时球还在原来那个位置 ✓
+    const lx = Math.round(nx) + 'px';
+    const ly = Math.round(ny) + 'px';
+    fab.classList.add('bc-positioned');
+    if (fab.style.left !== lx) fab.style.left = lx;
+    if (fab.style.top !== ly) fab.style.top = ly;
 }
 
 export function resetFabPosition() {

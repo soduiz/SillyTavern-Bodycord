@@ -1,0 +1,8 @@
+{
+    "name": "sillytavern-bodycord",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "description": "生理孕育状态面板 —— SillyTavern 扩展（悬浮球 / 独立推演 API / 按聊天独立存储 / 22 条可开关补丁）",
+    "license": "SEE LICENSE IN LICENSE"
+}

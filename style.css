@@ -1,0 +1,3811 @@
+/* ---------------------------------------------------------------------------
+   设置页：聊天软件 式的「左侧竖排导航 + 右侧内容」
+
+   要的是**布局**：设置页面做成类似于"左侧导航 + 右侧内容"的那种排版 + 样式
+   （主面板的样子已经很好了、不要改；说的只是设置页面；配色沿用现有的那套）
+
+   ⇒ 只借 DC 的**排版**，配色全部沿用现有变量，一个 DC 的颜色都不引入。
+   DC 的关键特征：没有卡片框、用分隔线分段、小字大写组标题、选中项整条高亮。
+   --------------------------------------------------------------------------- */
+.bc-setlayout { display: flex; align-items: stretch; gap: 0; min-height: 0; height: 100%; }
+.bc-setnav {
+    flex: 0 0 168px;
+    overflow-y: auto;
+    padding: 12px 8px 18px 8px;
+    border-right: 1px solid var(--bc-line);
+}
+/* ⚠️ `scrollbar-gutter: stable`：右栏内容长短不一，滚动条一出现一消失，
+   整块内容会左右抖 1~2px（切页时最明显 ✗）⇒ 先把滚动条的位置**永久留出来**。
+   只影响"要不要留位"，不改任何间距值 ✓ */
+.bc-setcontent { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 12px 14px 20px 12px; scrollbar-gutter: stable; }
+/* 组标题：小字 + 灰色，对应 DC 的 USER SETTINGS / APP SETTINGS */
+.bc-setnav-group {
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--bc-tx-3);
+    padding: 10px 8px 4px;
+    user-select: none;
+}
+.bc-setnav-group:first-child { padding-top: 2px; }
+/* 导航项：整条可点、选中整条高亮（对应 DC 里 Profiles 那条）
+   上下 padding 7：一行行挨太紧、点起来也挤 ✗ */
+.bc-setnav-item {
+    padding: 7px 9px;
+    margin: 1px 0;
+    border-radius: 6px;
+    font-size: calc(13.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-2);
+    cursor: pointer;
+    user-select: none;
+    transition: background-color .12s ease, color .12s ease;
+}
+.bc-setnav-item:hover { background: var(--bc-hover); color: var(--bc-tx); }
+/* 导航选中项：**一点效果都不要**（那个底色也是效果，
+   选中之后本来就没有底色）—— 只靠文字变亮加粗来区分。 */
+.bc-setnav-item.active {
+    background: transparent;
+    color: var(--bc-tx);
+    font-weight: 600;
+}
+@media (max-width: 720px) {
+    .bc-setlayout { flex-direction: column; }
+    .bc-setnav {
+        flex: 0 0 auto;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        border-right: 0;
+        border-bottom: 1px solid var(--bc-line);
+        padding: 8px 10px;
+    }
+    .bc-setnav-group { width: 100%; padding: 5px 4px 2px; }
+    .bc-setnav-item { margin: 0; }
+}
+
+/* =========================================================================
+   生理孕育状态面板 · Bodycord —— 插件外观
+   配色刻意对齐 Bodycord 面板自己的调色板（聊天软件 风），
+   这样外壳和内部面板看起来是同一个应用。
+   ========================================================================= */
+
+:root {
+    /* 整套强调色**降饱和**（浅色一档、深色另一档）：饱和度高的色调看着突兀 ✗
+       ⇒ 硬指标：**按钮类（浅底）上的白字 ≥ 4.5:1**、**深色主题的强调色压深底 ≥ 4.5:1** ✓ */
+    --bc-blurple: #59609e;
+    --bc-blurple-2: #6a70c0;
+    --bc-green: #2d7a4f;
+    --bc-red: #bc4a4e;
+    /* ⚠️ 不要用 #b08420：压白只有 3.41:1，那句"最短的后果"看不清 ✗
+       ⇒ 换成 5.64:1 ✓（各处写死的 #b8801a / #8a5f11 / #e5a41f 也一并并到这一个变量上） */
+    --bc-yellow: #8a5f11;
+    /* 实心控件（"选中的那颗 / 主按钮"）专用的一对 ——
+       ⚠️ 两个坑：深色下白字压亮紫只有 2.90:1；面板和外壳各用一套选中色 ✗
+       ⇒ 必须**两层共用同一对值**（面板那份 `--sel-bg/--sel-tx` 也改成一样的 ✓），
+         浅色用 #4338ca + 白字（7.90:1）；
+         深色在下面那份（#a9afdd + 近黑 7.89:1）。
+       ⚠️ 两层的值必须**逐字相同**（units 里有断言逐项比对 ✓），改一边忘一边就红 ✓ */
+    --bc-sel-bg: #4338ca;
+    --bc-sel-bg-2: #3a30b0;   /* hover：压白 9.42:1 ✓ */
+    --bc-sel-tx: #ffffff;
+}
+
+/* 浅色（悬浮窗、聊天内嵌、被搬进面板侧栏的骰子共用同一套变量） */
+.bc-root,
+.bc-embed,
+.bc-inline-host {
+    --bc-main: #ffffff;
+    --bc-side: #f1f2f4;
+    --bc-surface: #f7f8f9;
+    --bc-line: rgba(0, 0, 0, .08);
+    --bc-hover: rgba(0, 0, 0, .045);
+    /* ★ 悬停的**明显一档**（下拉选项那种小面积的地方用：4.5% 在黑字旁边几乎看不出来） */
+    --bc-hover-strong: rgba(0, 0, 0, .10);
+    --bc-tx: #0b0c0e;
+    --bc-tx-2: #4a4d55;
+    --bc-tx-3: #666b73;   /* ⚠️ 不要用 #8a8f98：只有 2.9~3.3:1，连小字的 4.5 都不到 ✗ */
+    --bc-scroll: rgba(0, 0, 0, .18);
+}
+.bc-root[data-theme="dark"],
+.bc-embed[data-theme="dark"],
+.bc-inline-host[data-theme="dark"] {
+    --bc-main: #2a2724;
+    --bc-side: #242220;
+    --bc-surface: #302d29;
+    --bc-line: rgba(255, 255, 255, .055);
+    --bc-hover: rgba(255, 255, 255, .05);
+    /* ★ 悬停的明显一档（夜模式） */
+    --bc-hover-strong: rgba(255, 255, 255, .12);
+    --bc-tx: #e8e3da;
+    --bc-tx-2: #a8a29a;
+    --bc-tx-3: #a49e95;   /* ⚠️ 不要用 #7a756e：只有 3.0~3.5:1 ✗ */
+    /* 深色主题的强调色：**亮但低饱和**（⚠️ #6c74f5 / #22c55e 这类太艳、突兀 ✗） */
+    --bc-blurple: #8b93d6;
+    --bc-blurple-2: #a9afdd;
+    --bc-green: #57c08a;
+    --bc-red: #e07f83;
+    --bc-yellow: #e0b150;   /* 深色这份够（7.48:1），跟各处深色覆盖面统一成同一个值 ✓ */
+    /* 深色的"选中" = **亮靛紫底 + 近黑字**（7.89:1 ✓，比白字压它高得多）——
+       底用的是调色板里现成的 --bc-blurple-2 那个亮档，不再另造一个色 ✓
+       （金色留给"金 / 警告"那一类，别跟"选中"撞色 ✓） */
+    --bc-sel-bg: #a9afdd;
+    --bc-sel-bg-2: #c2c7ea;   /* hover：压近黑 10.12:1 ✓ */
+    --bc-sel-tx: #1f1d1b;
+    --bc-scroll: rgba(255, 255, 255, .16);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   排版间隔的档位表（别再犯"卡片之间 6 / 7 / 9 / 10 / 11 / 12 混着用"这种错 ✗）
+
+   新增一块东西时，**先把"它和上面那块的间隔"归到下面某一档**，别新造一个数字 ✗：
+     · 28px = 分区之间（`.bc-pane .bc-section`）
+     · 24px = 卡片之间（`.bc-card` / `.bc-param-card` / `.bc-gate-card` / `.bc-arch-card`）
+     · 12px = 表单字段之间（`.bc-field`）／嵌进聊天面板那套的卡片（`.bc-embed .bc-section`）
+     · 10px = 分区内部"块与块"之间（工具条 / 小卡片 / 分组标题块）
+     · 5px  = 列表行之间（模块行 / 追踪对象行）
+     · 4px  = 更紧的行（骰子行 / 用量行）
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 统一的细滚动条（夜模式不再冒出一条突兀的亮条） */
+.bc-root *,
+.bc-inline-host *,
+.bc-modal-box * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--bc-scroll, rgba(0, 0, 0, .18)) transparent;
+}
+.bc-root ::-webkit-scrollbar,
+.bc-inline-host ::-webkit-scrollbar,
+.bc-modal-box ::-webkit-scrollbar { width: 8px; height: 8px; }
+.bc-root ::-webkit-scrollbar-track,
+.bc-inline-host ::-webkit-scrollbar-track,
+.bc-modal-box ::-webkit-scrollbar-track { background: transparent; }
+.bc-root ::-webkit-scrollbar-thumb,
+.bc-inline-host ::-webkit-scrollbar-thumb,
+.bc-modal-box ::-webkit-scrollbar-thumb {
+    background: var(--bc-scroll, rgba(0, 0, 0, .18));
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+.bc-root ::-webkit-scrollbar-corner,
+.bc-inline-host ::-webkit-scrollbar-corner { background: transparent; }
+
+/* 扩展被宿主禁用时，**只建一次的那些东西**（面板外壳 / 状态栏视图 / 设置页抽屉 / 内联宿主）
+   加这个类名隐藏 —— ⚠️ 不能 `remove()`：重新勾选扩展之后（不刷新页面）它们回不来、
+   点悬浮球没反应 ✗。删掉的事交给 lifecycle 的 restoreUI() 摘掉它 ✓ */
+.bc-off-hidden { display: none !important; }
+
+/* =========================================================================
+   悬浮球
+   ========================================================================= */
+#bc-fab.bc-fab {
+    position: fixed;
+    right: 24px;
+    bottom: 120px;
+    width: 54px;
+    height: 54px;
+    border-radius: 17px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    z-index: 30000;
+    user-select: none;
+    touch-action: none;
+    color: #5a65f0;
+    background: rgba(255, 255, 255, .94);
+    /* 悬浮球边缘不留紫色发光（不好看 ✗）
+       ⇒ 边框和投影里的紫（`rgba(90,101,240,…)` / `rgba(140,150,255,…)`）换中性灰黑。
+       ⚠️ **只去紫、不取消层次**：球是压在滚动的聊天上面的，一点阴影还是要的
+       （不然它会跟正文糊在一起），所以投影保留、只把颜色换成中性 ✓ */
+    border: 1px solid rgba(0, 0, 0, .14);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background-size: cover;
+    background-position: center;
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+#bc-fab.bc-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0, 0, 0, .26); }
+#bc-fab.bc-fab:active { cursor: grabbing; transform: scale(.94); }
+/* ⚠️ 设了自定义图之后，必须把**底色**一起清掉。
+   只设 background-image 不够：.bc-fab 的 background 里还带着
+   rgba(255,255,255,.94) —— 透明 PNG 会被垫上一层白底，看起来像"被框住"。
+   border / box-shadow / 毛玻璃同理：图填满了，这些都不该还在。 */
+#bc-fab.bc-fab.has-img {
+    font-size: 0;
+    background-color: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+/* 夜模式那条规则也要让位 */
+#bc-fab.bc-fab.has-img[data-theme="dark"] {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+}
+#bc-fab.bc-fab.bc-positioned { right: auto; bottom: auto; }
+/* 插件被关掉时：球**留着**（它是唯一入口，收了就再也打不开了），但变灰让用户看得出状态 */
+#bc-fab.bc-fab.off {
+    filter: grayscale(1);
+    opacity: .5;
+}
+#bc-fab.bc-fab.off:hover {
+    opacity: .85;
+}
+#bc-fab.bc-fab[data-theme="dark"] {
+    color: #a8b0ff;
+    background-color: rgba(36, 34, 32, .94);
+    border-color: rgba(255, 255, 255, .16);   /* ⚠️ 夜模式的描边不要淡紫 ✗ */
+    box-shadow: 0 6px 22px rgba(0, 0, 0, .45);
+}
+.bc-fab-icon { display: flex; align-items: center; justify-content: center; }
+/* ⚠️ 球上那圈「推演中」的转圈**已经删掉了**（2026-10-15）——
+   球可以被玩家换成**自定义图片**，任何贴在球身上的东西都会压坏那张图 ✗
+   ⇒ 现在"正在推演"由**球旁边那颗气泡**说（`.bc-bubble-judge`，见 ui.js 的 paintJudgeBubble ✓）*/
+
+/* ---------------------------------------------------------------------------
+   酒馆的「管理扩展程序」弹窗开着时，插件界面全部让位
+
+   点【管理扩展程序】的时候插件禁止载入（只有关闭、酒馆重新载入的时候再打开），
+   而且**不用给提示**。
+
+   为什么必须这样：插件的悬浮面板 `.bc-root` 是 94vw × 88vh、z-index 30000 的居中
+   悬浮窗 —— 管理扩展程序那个弹窗比它窄，于是面板的左右两边会从弹窗后面透出来，
+   看着就是「一块透明面板布满了画面」。不是面板透明，是它本来就铺得很宽、
+   而酒馆弹窗的遮罩是半透明的，于是它整个透出来了。
+
+   判断方式：酒馆的弹窗是 <dialog> + showModal()，**开着的时候带 open 属性**，
+   内容是 `.extensions_info`。所以纯 CSS 就能认准，不需要事件、不需要监听、不打扰用户。
+   （`.extensions_info` 是"管理扩展程序"专属的，别的弹窗没有。）
+   --------------------------------------------------------------------------- */
+body:has(dialog[open] .extensions_info) #bc-fab,
+body:has(dialog[open] .extensions_info) .bc-root,
+body:has(dialog[open] .extensions_info) .bc-inline-host,
+body:has(dialog[open] .extensions_info) .bc-modal-overlay,
+body:has(dialog[open] .extensions_info) .bc-lyrics {
+    display: none !important;
+}
+
+/* =========================================================================
+   悬浮窗
+   ========================================================================= */
+/* ⚠️ 居中方式：`inset:0` ＋ 自动外边距，**不用 `transform:translate(-50%,-50%)`**。
+   为什么改（2026-10-23）：面板里装着一个 iframe，而"父级带 transform ＋ 圆角 ＋
+   overflow 裁切"是 Chrome 里会让**那块内嵌内容整块位置画错**的经典组合 ——
+   症状就是她报的「打开之后内容从右下角移动到中间」：坐标是对的、只有画面歪，
+   而且偶发（画错那一两帧后自己纠正）✓
+   顺带的好处：10-14 那个「少了半个身位就蹦到右下角」的坑（行内 transform 没清）
+   从根上没有了 —— 现在复位只需要清 left/top ✓ */
+.bc-root {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    width: min(1180px, 94vw);
+    height: min(800px, 88vh);
+    display: none;
+    flex-direction: column;
+    z-index: 30000;
+    border-radius: 14px;
+    overflow: hidden;
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    font-size: calc(14px * var(--bc-fs-scale, 1));
+    line-height: 1.6;
+    background: var(--bc-main);
+    color: var(--bc-tx);
+    border: 1px solid var(--bc-line);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, .3);
+}
+.bc-root.show { display: flex; }
+/* 被拖到别处 / 贴顶贴底：坐标由 JS 写成行内 left/top ⇒ 这里必须把居中那套解掉，
+   否则 `inset:0` 的右/下两个 0 会和行内 left/top 打架（盒子被顶着不动）✗ */
+.bc-root.bc-positioned { inset: auto; margin: 0; transform: none; }
+.bc-root.busy { cursor: progress; }
+
+.bc-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 50px;
+    padding: 0 12px 0 14px;
+    flex: 0 0 auto;
+    background: var(--bc-side);
+    border-bottom: 1px solid var(--bc-line);
+    cursor: grab;
+}
+.bc-head:active { cursor: grabbing; }
+
+.bc-brand { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: calc(13.5px * var(--bc-fs-scale, 1)); white-space: nowrap; color: var(--bc-blurple); }
+.bc-brand-text { color: var(--bc-tx); }
+.bc-brand-icon { display: flex; }
+.bc-spacer { flex: 1 1 auto; }
+
+.bc-tab {
+    padding: 4px 15px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-2);
+    transition: .18s;
+    white-space: nowrap;
+}
+.bc-tab:hover { color: var(--bc-tx); }
+.bc-tab.active { background: var(--bc-main); color: var(--bc-tx); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); font-weight: 600; }
+
+/* ⚠️ 不要给它写 `order:9`（想顶到最右）——那一排**关闭按钮本来就是最后** ⇒
+   `order:9` 会把它排到关闭按钮**后面**、挤出可视区 ✗
+   ⇒ 不加 order（位置由 HTML 里的先后顺序决定），其余照旧（加粗 + 底色 + 描边 + 最小宽度） */
+.bc-clock {
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    color: var(--bc-tx-2);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .02em;
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: var(--bc-main);
+    border: 1px solid var(--bc-line, rgba(0, 0, 0, .12));
+    white-space: nowrap;
+    min-width: 44px;
+    text-align: center;
+    margin-left: 2px;
+}
+
+.bc-icon-btn {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; cursor: pointer; color: var(--bc-tx-2); transition: .18s;
+}
+.bc-icon-btn:hover { background: var(--bc-hover); color: var(--bc-tx); }
+
+/* ---------- 常驻页签 ---------- */
+.bc-panes { flex: 1 1 auto; position: relative; min-height: 0; }
+.bc-pane { position: absolute; inset: 0; display: none; flex-direction: column; min-height: 0; overflow-x: hidden; }
+.bc-pane.active { display: flex; }
+.bc-pane[data-pane="dice"],
+.bc-pane[data-pane="settings"] { overflow-y: auto; /* 内边距交给 .bc-setlayout 里那两列自己管，这里必须为 0，
+       否则会和新布局叠加（16+10+13=39px，文字离边框太远） */
+    padding: 0; }
+.bc-pane[data-pane="status"] { overflow: hidden; }
+.bc-pane-inner { min-height: 100%; }
+
+/* ---------- 状态视图 ---------- */
+.bc-status-view { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.bc-status-view.inline { height: 100%; }
+
+.bc-charbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--bc-line);
+    background: var(--bc-surface);
+}
+.bc-charbar-label { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); white-space: nowrap; }
+.bc-pills {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 1px;
+    /* 把那条横着的滚动条彻底藏掉，改用滚轮横滚 */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+.bc-pills::-webkit-scrollbar { display: none; height: 0; }
+.bc-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: var(--bc-hover);
+    color: var(--bc-tx-2);
+    cursor: pointer;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    white-space: nowrap;
+    transition: .18s;
+    flex: 0 0 auto;
+}
+.bc-pill:hover { color: var(--bc-tx); }
+.bc-pill.active { background: var(--bc-sel-bg); color: var(--bc-sel-tx); }
+.bc-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .45; }
+.bc-pill.active .bc-pill-dot { opacity: 1; }
+.bc-pill-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc-pill-tag { font-size: calc(10px * var(--bc-fs-scale, 1)); opacity: .75; }
+.bc-pill-input {
+    flex: 0 0 auto;
+    width: 180px;
+    padding: 4px 11px !important;
+    border-radius: 20px !important;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1))!important;
+}
+.bc-pill-input::placeholder { color: var(--bc-tx-3); }
+
+.bc-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--bc-line);
+    /* 工具多了也不出现那条横滚动条，改成可以滚但看不见 */
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+.bc-status-bar::-webkit-scrollbar { display: none; height: 0; }
+.bc-status-hint { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); white-space: nowrap; }
+
+/* 紧凑工具按钮 */
+.bc-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-2);
+    background: var(--bc-hover);
+    border: 1px solid transparent;
+    transition: .18s;
+    white-space: nowrap;
+    user-select: none;
+}
+.bc-tool:hover { color: var(--bc-tx); background: rgba(128, 128, 128, .16); }
+.bc-tool.on { background: var(--bc-sel-bg); color: var(--bc-sel-tx); border-color: transparent; }
+
+.bc-frame-host { flex: 1 1 auto; position: relative; overflow: hidden; min-height: 0; background: transparent; }
+.bc-frame { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
+.bc-error { padding: 16px; color: var(--bc-red); font-size: calc(13px * var(--bc-fs-scale, 1)); }
+
+/* ---------- 聊天内嵌 ---------- */
+.bc-inline-host {
+    height: 78vh;
+    min-height: 420px;
+    margin: 14px 6px;
+    border-radius: 14px;
+    border: 1px solid var(--bc-line);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--bc-main);
+    color: var(--bc-tx);
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    font-size: calc(14px * var(--bc-fs-scale, 1));
+    line-height: 1.6;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .12);
+}
+/* 停靠在聊天页面内：固定坐标由 JS 按聊天区域算出来 */
+.bc-inline-host[data-style="dock"] {
+    position: fixed;
+    z-index: 29000;
+    margin: 0;
+    min-height: 0;
+    box-shadow: 0 10px 34px rgba(0, 0, 0, .28);
+    transition: top .18s ease, height .18s ease;
+}
+/* 收起时：一台小手机 */
+.bc-inline-host.collapsed {
+    min-height: 0;
+    border-radius: 14px;
+    border-width: 2px;
+    position: fixed;
+    cursor: pointer;
+    overflow: visible;
+}
+.bc-inline-host.collapsed::before {
+    /* 顶部听筒 / 刘海 */
+    content: '';
+    position: absolute;
+    top: 7px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 15px;
+    height: 3px;
+    border-radius: 2px;
+    background: currentColor;
+    opacity: .28;
+}
+
+/* 收起时只藏「除标题栏以外」的内容 ——
+   ⚠️ 藏整个 .bc-status-view 的话，连标题栏上的展开按钮一起没了 ⇒ 展不开 ✗ */
+
+.bc-inline-host.collapsed .bc-status-view { overflow: visible; }
+
+/* =========================================================================
+   通用控件
+   ========================================================================= */
+.bc-label { font-size: calc(13px * var(--bc-fs-scale, 1)); font-weight: 600; color: var(--bc-tx-2); }
+/* 小灰字 12.5px、行高 1.8：再小/再紧就太挤、看着难受 ✗ */
+.bc-hint { font-size: calc(12.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); line-height: 1.8; margin-top: 4px; }
+/* ⚠️ 底部也要留出间距（那一行和下面的
+   「能不能怀孕」贴在一起了）—— 告警块后面常常紧跟着下一格，没有下边距就会粘住 ✗ */
+.bc-warn { font-size: calc(12px * var(--bc-fs-scale, 1)); color: var(--bc-yellow); margin: 6px 0 14px; line-height: 1.7; }
+
+.bc-input, .bc-select, .bc-textarea {
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    font-family: inherit;
+    box-sizing: border-box;
+    outline: none;
+    /* 加 !important 是因为酒馆主题会用高优先级规则把输入框刷成它自己的颜色，
+       那样我们面板里就会突然冒出一块不属于这里的米黄色 */
+    background: var(--bc-main) !important;
+    color: var(--bc-tx) !important;
+    border: 1px solid var(--bc-line) !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+.bc-input:focus, .bc-textarea:focus { border-color: var(--bc-blurple) !important; }
+.bc-textarea { resize: vertical; line-height: 1.6; }
+/* ---------- 只读的"值框"（长得和输入框一样，为了和邻居对齐） ----------
+   那页别的格都是"整行一个框 ＋ 右边一颗按钮"，只有它是**裸文字** ⇒ 对不齐、看着很奇怪 ✗
+   ⇒ 给它套上同一个框 ✓
+   ⚠️ 别做成可编辑的样子骗人：这里只是读数，动作在右边那颗按钮上 ✓ */
+.bc-readout-box {
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    background: var(--bc-main);
+    color: var(--bc-tx-2);
+    border: 1px solid var(--bc-line);
+    min-height: calc(13px * var(--bc-fs-scale, 1) + 15px);
+}
+.bc-code { font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: calc(12px * var(--bc-fs-scale, 1)); }
+
+/* ---------- 自定义下拉框 ---------- */
+.bc-dd {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    box-sizing: border-box;
+    background: var(--bc-main);
+    color: var(--bc-tx);
+    border: 1px solid var(--bc-line);
+    user-select: none;
+}
+.bc-dd:hover { border-color: var(--bc-blurple); }
+.bc-dd.open { border-color: var(--bc-blurple); }
+/* 这一格**不生效**时的样子（不能怀孕时的「能不能怀上异种」✓）
+   ⚠️ 不用降透明度（项目规矩：不许靠透明度表示"已排除"）—— 虚线边框 + 暗一档的值，
+      真正的原因写在下边那行小字里（那行可读 ✓） */
+.bc-dd.is-disabled { border-style: dashed; cursor: not-allowed; }
+.bc-dd.is-disabled:hover { border-color: var(--bc-line); }
+.bc-dd.is-disabled .bc-dd-value { color: var(--bc-tx-3); }
+.bc-dd-value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc-dd-caret { flex: 0 0 auto; opacity: .55; font-size: calc(11px * var(--bc-fs-scale, 1)); transition: transform .18s; }
+.bc-dd.open .bc-dd-caret { transform: rotate(180deg); }
+.bc-dd-wide { min-width: 240px; }
+
+.bc-dd-menu {
+    display: none;
+    position: absolute;
+    /* 左对齐、宽度按内容走：太长了会换行，不会再撑出容器 */
+    left: 0;
+    right: auto;
+    top: calc(100% + 4px);
+    z-index: 30500;
+    min-width: 100%;
+    width: max-content;
+    max-width: min(560px, 88vw);
+    max-height: 320px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px;
+    border-radius: 10px;
+    /* ★ 兜底**不能用白色**（夜模式会变白板 ✗）——
+       优先用从原位置抄过来的主题变量（dom.js 的 copyThemeVars），
+       实在抄不到才落到系统色 Canvas / CanvasText，它会跟着浏览器当前深浅色走 ✓ */
+    background: var(--bc-main, Canvas);
+    color: var(--bc-tx, CanvasText);
+    border: 1px solid var(--bc-line);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, .28);
+    box-sizing: border-box;
+}
+.bc-dd-menu.drop-up { top: auto; bottom: calc(100% + 4px); }
+.bc-dd.open .bc-dd-menu { display: block; }
+.bc-dd-item {
+    padding: 6px 10px;
+    border-radius: 6px;
+    /* ★ 每一行自己带**不透明底**（同菜单那句：兜底走系统色，不用白色 ✓）
+       弹层挂在 body 上，万一主题变量在那一层没取到，整块会变透明 ⇒ 后面的东西全透出来、看着乱 ✗ */
+    background: var(--bc-main, Canvas);
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    cursor: pointer;
+    /* 名字很长也要能换行，别撑破菜单 */
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.55;
+}
+/* 悬停：小面积要用**明显一档**（4.5% 那种在选项行上几乎看不出变化） */
+.bc-dd-item:hover { background: var(--bc-hover-strong, rgba(0, 0, 0, .10)); }
+/* 按下：比全局那档再压暗一点（只是"点到了"的即时反馈；不换底色 ——
+   换底色会把选中态顶掉，全局那条规矩就是这么定的 ✓。触屏没悬停，全靠这一下） */
+.bc-dd-item:active { filter: brightness(.90); }
+.bc-dd-item.active { background: var(--bc-sel-bg); color: var(--bc-sel-tx); }
+.bc-dd-empty { padding: 6px 10px; font-size: calc(12px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); }
+.bc-dd-host { flex: 1 1 240px; min-width: 0; }
+
+.bc-field { margin-bottom: 12px; }
+.bc-field .bc-label { display: block; margin-bottom: 4px; }
+
+/* 角色基础信息那四格 = 「标签 + 徽章」一行 + 「下拉 + 恢复自动」一行
+   （三行的话：标签 / 下拉 / 再一行徽章与恢复自动 ⇒ 未填时第三行纯属白占 ✗）
+   ⚠️ 必须写成 `.bc-field .bc-label-row .bc-label`（0,3,0）—— 跟上面那条 `.bc-field .bc-label`
+      同权重的话就靠书写顺序决胜负了，太脆 ✓ */
+.bc-label-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.bc-field .bc-label-row .bc-label { margin-bottom: 0; }
+
+/* 别名与备注合成一条可折叠的行 ——
+   默认收起，折叠条右边带状态字（「还没填」/「已填：别名 + 备注」）⇒ 不会因为收起就错过 ✓
+   ⚠️ 状态字走自己的类，**故意不挂 `bc-hint`** —— 页面上 `.bc-hint` 的条数是被断言盯着的
+      （那条断言防的是"每行底下压着的解释句"）⇒ 一个读数不该被算进去 ✓ */
+.bc-ident-body.collapsed { display: none; }
+.bc-ident-state {
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    font-weight: 500;
+    color: var(--bc-tx-3);
+}
+
+.bc-btn {
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--bc-line);
+    background: var(--bc-hover);
+    color: inherit;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    font-family: inherit;
+    cursor: pointer;
+    transition: .18s;
+    white-space: nowrap;
+}
+.bc-btn:hover { background: rgba(128, 128, 128, .14); }
+.bc-btn:active { transform: translateY(1px); }
+.bc-btn-primary { background: var(--bc-sel-bg); border-color: transparent; color: var(--bc-sel-tx); }
+.bc-btn-primary:hover { background: var(--bc-sel-bg-2); }
+.bc-btn-danger { background: rgba(229, 72, 77, .12); border-color: rgba(229, 72, 77, .3); color: var(--bc-red); }
+
+.bc-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: nowrap; }
+.bc-row-wrap { flex-wrap: wrap; }
+/* 模型名那一行：输入框占满、按钮留在右边（「拉取模型列表」那颗 ✓） */
+.bc-model-row { margin-top: 0; }
+.bc-model-row > .bc-input { flex: 1 1 auto; width: auto; min-width: 0; }
+.bc-model-row > .bc-btn { flex: 0 0 auto; }
+/* 挑模型的小弹窗：清单要能滚、名字要能换行，别把长模型名挤没了 ✓ */
+.bc-model-list { margin-top: 8px; max-height: 46vh; overflow-y: auto; }
+.bc-model-item { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--bc-line); }
+.bc-model-item .bc-model-name { flex: 1 1 auto; min-width: 0; font-size: calc(13px * var(--bc-fs-scale, 1)); color: var(--bc-tx); word-break: break-all; }
+.bc-model-item > .bc-btn { flex: 0 0 auto; }
+.bc-row > .bc-field { flex: 1 1 0; margin-bottom: 0; }
+.bc-inline { display: flex; align-items: center; gap: 8px; }
+.bc-toolbar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 6px 0 10px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--bc-line);
+}
+.bc-toolbar-label { font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 600; color: var(--bc-tx-2); }
+.bc-toolbar .bc-select { width: auto; min-width: 200px; }
+
+/* ---------- 开关 ---------- */
+.bc-toggle { position: relative; display: inline-block; width: 42px; height: 23px; flex: 0 0 auto; }
+.bc-toggle input { opacity: 0; width: 0; height: 0; }
+.bc-slider { position: absolute; inset: 0; border-radius: 34px; background: #c9ccd3; transition: .18s; cursor: pointer; }
+.bc-slider::before {
+    content: ''; position: absolute; height: 17px; width: 17px; left: 3px; bottom: 3px;
+    background: #fff; border-radius: 50%; transition: .18s;
+}
+.bc-toggle input:checked + .bc-slider { background: var(--bc-green); }
+.bc-toggle input:checked + .bc-slider::before { transform: translateX(19px); }
+
+.bc-switch-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 13px; border-radius: 10px;
+    background: var(--bc-hover);
+    margin-bottom: 10px;   /* 归到"块与块"那一档（10px ✓），别新造数字 ✗ */
+}
+
+/* ---------- 分区 / 子页签 ---------- */
+/* 卡片之间 24px：间距太小、一页 5-6 张卡等距连排＝"一大片" ✗ */
+.bc-section { margin-bottom: 24px; }
+.bc-section-title {
+    font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 700; color: var(--bc-tx-2);
+    padding-bottom: 6px; margin-bottom: 8px;
+    border-bottom: 1px solid var(--bc-line);
+}
+
+.bc-section-body { min-width: 0; }
+
+/* =========================================================================
+   数值卡片（补丁页顶部）
+   ========================================================================= */
+
+.bc-param-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 4px; }
+
+.bc-param-title { font-size: calc(13px * var(--bc-fs-scale, 1)); font-weight: 700; }
+.bc-param-status { font-size: calc(11.5px * var(--bc-fs-scale, 1)); min-height: 1em; }
+.bc-param-suffix { font-weight: 400; opacity: .65; }
+.bc-param-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 10px;
+    margin: 10px 0 4px;
+}
+.bc-param-field.wide { grid-column: 1 / -1; }
+.bc-param-field .bc-label { display: block; margin-bottom: 4px; }
+/* ---------- 每一格右边那颗「↩ 单独重置」 ----------
+   ⚠️ 不要用 `float:right` ＋ 负 `margin-top` 把它飘到输入框右边 ——**量出来是坏的**：
+      宽字段（种族那格）里输入框只有 70% 宽 ⇒ 按钮直接飘到格子外面；普通格子里余量也是 0 ✗
+      （三种宽度都一样 ✗）
+   ⇒ 改成**输入框与按钮同一行 flex**（`.bc-param-line`）：输入框 flex:1、按钮 flex:none ✓
+   ⚠️ 置灰时**不许靠透明度**（项目规矩：排除态用虚框、不用半透明）⇒
+      它同时还有 `button()` 加的 `.bc-btn-off`（`opacity:.45`）⇒ 这里显式压回 1 ✓ */
+.bc-param-line { display: flex; align-items: center; gap: 8px; }
+.bc-param-line > .bc-input, .bc-param-line > input { flex: 1 1 auto; min-width: 0; }
+.bc-param-line > .bc-row { flex: 1 1 auto; min-width: 0; }
+.bc-param-reset {
+    flex: 0 0 auto;
+    height: 30px;
+    min-width: 34px;
+    padding: 0 6px;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    line-height: 1;
+}
+.bc-param-reset:disabled, .bc-param-reset.bc-btn-off {
+    opacity: 1;
+    color: var(--bc-tx-3, #8a8f98);
+    border-style: dashed;
+    cursor: default;
+}
+/* 数值下面那行读数（这个值是谁定的 ＋ 交回按钮） ----------
+   用在「日常体质系数」那一格：推演按角色设定判的 / 你自己改的 ✓ */
+.bc-param-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 5px;
+}
+
+/* ---------- 一格的「被动提示」（不点「？」就能看到的那一句） ----------
+   外面太光秃秃了容易摸不到头脑 —— 这种信息不该需要主动去看，
+   有问号也该顺手就看得见，应该被动显示 ✓
+   ⚠️ 和 `.bc-hint` 分开：参数面板页面上 `.bc-hint` 必须为 0（那条守卫还在，别混用 ✓） */
+.bc-param-sub {
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    line-height: 1.8;
+    margin-top: 4px;
+}
+
+/* ---------- 敏感带：结构化行 ---------- */
+.bc-zone-table { margin: 10px 0 4px; }
+.bc-param-zones .bc-param-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.bc-zone-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+}
+
+.bc-zone-field { min-width: 0; }
+.bc-zone-cell { width: 100%; padding: 5px 8px; font-size: calc(12.5px * var(--bc-fs-scale, 1)); }
+.bc-zone-inline { display: flex; align-items: center; gap: 4px; }
+.bc-zone-inline .bc-zone-cell { min-width: 0; }
+.bc-zone-suffix { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); flex: 0 0 auto; }
+.bc-zone-op { flex: 0 0 auto; }
+.bc-zone-op .bc-btn { padding: 5px 9px; font-size: calc(11.5px * var(--bc-fs-scale, 1)); }
+@media (max-width: 760px) {
+    .bc-zone-row { flex-wrap: wrap; }
+    .bc-zone-field { flex: 1 1 40% !important; }
+}
+
+/* =========================================================================
+   补丁列表
+   ========================================================================= */
+
+.bc-badge {
+    font-size: calc(10px * var(--bc-fs-scale, 1)); padding: 1px 7px; border-radius: 20px;
+    background: rgba(128, 128, 128, .16); color: var(--bc-tx-2); font-weight: 500;
+}
+.bc-badge-lock { background: rgba(229, 164, 31, .2); color: var(--bc-yellow); }
+.bc-badge-edit { background: rgba(34, 165, 89, .18); color: #1a7d43; }
+.bc-badge-on { background: var(--bc-sel-bg); color: var(--bc-sel-tx); }
+/* ⚠️ 「角色基础信息」那个三态徽章必须给 `on` 类写样式 ——
+   只加类没有对应样式的话，选了之后看上去毫无变化 ✗
+   ⇒ 未填=淡灰、锁定=紫色实心，一眼能看出「这条被锁了」✓ */
+.bc-lock-tag.on {
+    background: var(--bc-sel-bg);
+    color: var(--bc-sel-tx);
+    font-weight: 600;
+}
+.bc-root[data-theme="dark"] .bc-badge-lock { color: #e0b150; }
+.bc-root[data-theme="dark"] .bc-badge-edit { color: #4ddc8a; }
+
+/* ---- 补丁编辑范围：被冻结的那条（正文改动留着、但不生效）---- */
+/* 从「全文可改」切回「只能改数值」时改动冻结不删，而且要**显眼标出来** ✓ */
+.bc-badge-frozen { background: rgba(229, 164, 31, .2); color: var(--bc-yellow); }
+.bc-root[data-theme="dark"] .bc-badge-frozen { color: #e0b150; }
+.bc-frozen-bar {
+    margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid rgba(229, 164, 31, .45);
+    background: rgba(229, 164, 31, .1);
+}
+.bc-frozen-title { font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 700; color: var(--bc-yellow); }
+.bc-root[data-theme="dark"] .bc-frozen-title { color: #e0b150; }
+.bc-frozen-bar .bc-hint { color: var(--bc-tx-2); }
+.bc-frozen-bar .bc-textarea { margin-top: 8px; }
+/* 灰掉但**留着**的按钮（让人看得见有这条路 ✓） */
+.bc-btn-off { opacity: .45; cursor: not-allowed; }
+
+/* =========================================================================
+   追踪对象
+   ========================================================================= */
+.bc-target-list { margin-top: 8px; }
+.bc-target-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 13px; border-radius: 10px; margin-bottom: 5px;
+    background: var(--bc-hover);
+}
+.bc-target-row.active { outline: 1px solid var(--bc-blurple); }
+.bc-target-main { flex: 1 1 auto; }
+.bc-target-name { font-size: calc(13px * var(--bc-fs-scale, 1)); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.bc-target-actions { display: flex; align-items: center; gap: 6px; }
+
+/* 「选角色卡」弹窗每行左边那颗头像（2026-10-28）
+   卡多的时候只看名字认不出来，头像才是一眼认得出的那个 ✓
+   ● 底下垫一个首字：图加载不出来（缩略图接口不通）时露出来，不会留个白框 ✓ */
+.bc-pick-av {
+    position: relative;
+    flex: 0 0 auto;
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bc-main);
+    border: 1px solid var(--bc-line);
+    color: var(--bc-tx-3);
+    font-size: calc(15px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+}
+.bc-pick-av-img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+}
+
+.bc-chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.bc-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px; border-radius: 20px; font-size: calc(12px * var(--bc-fs-scale, 1));
+    background: rgba(90, 101, 240, .12);
+    color: var(--bc-tx-2);
+}
+.bc-chip-add { cursor: pointer; }
+.bc-chip-add:hover { background: var(--bc-sel-bg); color: var(--bc-sel-tx); }
+.bc-chip-x { cursor: pointer; opacity: .6; }
+.bc-chip-x:hover { opacity: 1; color: var(--bc-red); }
+/* 历法预设库：能点的那条 + "当前用的就是它" */
+.bc-chip-pick { cursor: pointer; }
+/* ★★ 悬停**不许**长成"选中"的样子（两颗胶囊都蓝、看不出选了哪个 ✗）——
+   原来 hover 和 `.bc-chip-on` 用的是**同一套底色 + 字色** ⇒ 鼠标停在没选的那颗上，
+   看着就像两颗都选中了，她当场判：这俩在左右脑互博✗。⇒ 悬停只加一层**圈**（底色只加深一点），
+   实心蓝**只留给真正选中的那颗** ✓（同族：不许靠"淡"区分状态 ⇒ 这里靠"圈 + 实心"两种形态区分 ✓） */
+.bc-chip-pick:hover { background: rgba(90, 101, 240, .26); box-shadow: 0 0 0 2px var(--bc-sel-bg-2, var(--bc-sel-bg)); }
+.bc-chip-on, .bc-chip-pick.bc-chip-on:hover { background: var(--bc-sel-bg); color: var(--bc-sel-tx); box-shadow: none; }
+.bc-chip-on .bc-chip-x { color: var(--bc-sel-tx); }
+
+/* =========================================================================
+   骰子（可增删清单）
+   ========================================================================= */
+.bc-dice-summary { font-size: calc(12px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); font-variant-numeric: tabular-nums; }
+
+.bc-dice-row {
+    display: grid;
+    grid-template-columns: 84px minmax(110px, 1.3fr) 100px 108px 132px;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 11px;
+    border-radius: 10px;
+    margin-bottom: 4px;
+    background: var(--bc-hover);
+    border-left: 3px solid transparent;
+}
+.bc-dice-row.rolled { border-left-color: var(--bc-green); }
+.bc-dice-head {
+    background: transparent;
+    border-left-color: transparent;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    padding-top: 0;
+    padding-bottom: 2px;
+    margin-bottom: 2px;
+}
+.bc-dice-id b { font-size: calc(12px * var(--bc-fs-scale, 1)); font-variant-numeric: tabular-nums; }
+.bc-dice-label-input, .bc-dice-expr-input { width: 100%; }
+.bc-dice-expr-input { font-variant-numeric: tabular-nums; }
+.bc-dice-expr-input.bad { border-color: var(--bc-red) !important; }
+.bc-dice-val {
+    text-align: center;
+    font-size: calc(19px * var(--bc-fs-scale, 1));
+    font-weight: 800;
+    color: var(--bc-red);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+}
+.bc-root[data-theme="dark"] .bc-dice-val { color: #ff6aa8; }
+.bc-dice-val small { display: block; font-size: calc(10px * var(--bc-fs-scale, 1)); font-weight: 500; color: var(--bc-tx-3); }
+.bc-dice-val.empty { font-size: calc(12px * var(--bc-fs-scale, 1)); font-weight: 400; color: var(--bc-tx-3); }
+.bc-dice-ops { display: flex; gap: 4px; justify-content: flex-end; }
+.bc-dice-ops .bc-btn { padding: 4px 10px; font-size: calc(11.5px * var(--bc-fs-scale, 1)); }
+
+.bc-help { font-size: calc(12px * var(--bc-fs-scale, 1)); line-height: 1.9; color: var(--bc-tx-2); }
+
+/* =========================================================================
+   卡片式补丁页
+   ========================================================================= */
+.bc-card {
+    border-radius: 14px;
+    border: 1px solid var(--bc-line);
+    background: var(--bc-main);
+    /* 间隔太小就都塞一起了 ✗ —— `.bc-card` 这一族必须跟 `.bc-section` 同一档：
+       ⇒ 卡片之间 24px ✓（`.bc-card` 只在补丁页用 ⇒ 只影响那一页 ✓） */
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+.bc-card.on { border-color: rgba(90, 101, 240, .35); box-shadow: 0 0 0 1px rgba(90, 101, 240, .12) inset; }
+.bc-card-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+    padding: 10px 13px 8px;
+    background: var(--bc-surface);
+    border-bottom: 1px solid var(--bc-line);
+}
+.bc-card.on .bc-card-head { background: rgba(90, 101, 240, .07); }
+/* 长标题：多行时按行均衡断，比"第一行塞满、第二行只剩两个字"好看；
+   特别长的英文/数字串允许在任意位置断，免得把卡片撑破 ✓ */
+.bc-card-title { font-size: calc(13px * var(--bc-fs-scale, 1)); font-weight: 700; text-wrap: balance; overflow-wrap: anywhere; }
+.bc-card-toggle { display: flex; align-items: center; }
+.bc-card-desc { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); padding: 7px 13px 0; line-height: 1.6; }
+.bc-card-body { padding: 10px 13px 13px; }
+.bc-card-body:empty { display: none; }
+
+.bc-card-group-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    color: var(--bc-tx-2);
+    margin: 18px 0 5px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--bc-line);
+}
+
+/* ---------- 补丁页的分类页签（自动换行的卡片网格） ---------- */
+.bc-cat-tabs {
+    display: grid;
+    /* 一行塞几个由宽度决定，塞不下就自动换行 —— 永远不会横向溢出 */
+    grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
+    gap: 7px;
+    margin: 12px 0 14px;
+}
+.bc-cat-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    padding: 9px 11px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-2);
+    background: var(--bc-hover);
+    border: 1px solid transparent;
+    transition: .18s;
+    min-width: 0;
+}
+.bc-cat-tab:hover { color: var(--bc-tx); border-color: var(--bc-line); }
+.bc-cat-tab.active { background: var(--bc-sel-bg); color: var(--bc-sel-tx); border-color: var(--bc-sel-bg); }
+.bc-cat-tab-name {
+    font-weight: 600;
+    line-height: 1.4;
+    /* 名字长了自己换行，不撑破格子 */
+    overflow-wrap: anywhere;
+}
+.bc-cat-tab-meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.bc-cat-count {
+    font-size: calc(10px * var(--bc-fs-scale, 1));
+    padding: 0 5px;
+    border-radius: 20px;
+    background: rgba(128, 128, 128, .22);
+}
+.bc-cat-tab.active .bc-cat-count { background: rgba(255, 255, 255, .28); }
+.bc-cat-pane { min-height: 0; }
+
+.bc-lock-locked {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: rgba(229, 164, 31, .16);
+    color: var(--bc-yellow);
+    cursor: not-allowed;
+    user-select: none;
+}
+.bc-root[data-theme="dark"] .bc-lock-locked { color: #e0b150; }
+
+/* 数值区块（嵌在卡片里） */
+.bc-param-inline {
+    padding: 10px 11px;
+    border-radius: 10px;
+    background: var(--bc-hover);
+    margin-bottom: 10px;
+}
+.bc-param-inline .bc-param-head { margin-bottom: 6px; }
+.bc-param-inline .bc-param-title { font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 700; color: var(--bc-tx-2); }
+
+.bc-full-text { margin-top: 4px; }
+.bc-module-card { position: relative; }
+.bc-module-card .bc-card-desc { padding-bottom: 4px; }
+.bc-param-zones-inline { min-width: 0; }
+.bc-tpl-status { font-size: calc(11.5px * var(--bc-fs-scale, 1)); min-height: 1em; }
+
+/* 固定字段提示（纯显示，绝不进提示词） */
+
+/* =========================================================================
+   TOKEN 徽章
+   ========================================================================= */
+.bc-token-badge {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    border-radius: 20px;
+    font-size: calc(10.5px * var(--bc-fs-scale, 1));
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    background: rgba(128, 128, 128, .16);
+    color: var(--bc-tx-3);
+    white-space: nowrap;
+}
+.bc-token-badge.lv-warn { background: rgba(229, 164, 31, .18); color: var(--bc-yellow); }
+.bc-token-badge.lv-heavy { background: rgba(229, 72, 77, .16); color: #d13438; }
+.bc-root[data-theme="dark"] .bc-token-badge.lv-warn { color: #e0b150; }
+.bc-root[data-theme="dark"] .bc-token-badge.lv-heavy { color: #ff7b7f; }
+.bc-cat-tab.active .bc-token-badge { background: rgba(255, 255, 255, .26); color: var(--bc-sel-tx); }
+
+.bc-token-bar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding: 10px 13px;
+    margin: 10px 0 4px;
+    border-radius: 10px;
+    background: var(--bc-surface);
+    border: 1px solid var(--bc-line);
+}
+.bc-token-item { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.bc-token-label { font-size: calc(12px * var(--bc-fs-scale, 1)); font-weight: 700; color: var(--bc-tx-2); }
+
+/* ---------- 手动推演提醒 ---------- */
+.bc-pending-chip {
+    font-size: calc(11px * var(--bc-fs-scale, 1));
+    padding: 2px 9px;
+    border-radius: 20px;
+    margin-left: 8px;
+    white-space: nowrap;
+    background: rgba(128, 128, 128, .14);
+    color: var(--bc-tx-3);
+}
+/* ★ 2026-10-18：它现在住**标题栏右侧**（不再独占状态条那一行）——
+   单人 / 多人追踪都一样；多人时下面那条「追踪中」名字栏不受影响 ✓
+   窄窗口下只截断文字，悬停 title 里仍有完整说明 ✓ */
+.bc-head .bc-pending-chip {
+    margin-left: 0;
+    flex: 0 0 auto;
+    max-width: 40vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.bc-pending-chip.warn {
+    background: rgba(229, 164, 31, .16);
+    color: var(--bc-yellow);
+    font-weight: 600;
+}
+.bc-root[data-theme="dark"] .bc-pending-chip.warn { color: #e0b150; }
+
+.bc-badge-gate { background: rgba(34, 165, 89, .16); color: #1a8f4c; }
+.bc-root[data-theme="dark"] .bc-badge-gate { color: #4ed07f; }
+
+/* ---------- 自动门控卡片 ---------- */
+.bc-gate-card { margin-bottom: 24px; }   /* 卡片档（24px ✓），别新造数字 ✗ */
+.bc-gate-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+.bc-gate-item {
+    display: flex;
+    /* ⚠️ 不能用 `flex-start`：左边那颗开关只有 23px 高、右边文字块两行 44px
+       ⇒ 开关**顶在文字块最上面**，比第一行字高出半行、看着就是歪的 ✗
+       ⇒ 用 `center`：开关与右边那两行**垂直居中**（视力模式下开关会放大 1.15 倍，
+         居中缩放才不会偏 ✓） */
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    background: var(--bc-hover);
+    border: 1px solid transparent;
+    transition: .18s;
+}
+.bc-gate-item.on { background: rgba(34, 165, 89, .09); border-color: rgba(34, 165, 89, .3); }
+.bc-gate-main { min-width: 0; flex: 1 1 auto; }
+.bc-gate-label { font-size: calc(12px * var(--bc-fs-scale, 1)); font-weight: 600; line-height: 1.5; }
+
+/* ---------- 字段开关 ---------- */
+.bc-field-switches {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+    gap: 6px;
+    margin: 8px 0 4px;
+}
+.bc-field-switch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    background: var(--bc-hover);
+    border: 1px solid transparent;
+    transition: .18s;
+}
+.bc-field-switch.on { background: rgba(90, 101, 240, .09); border-color: rgba(90, 101, 240, .28); }
+.bc-field-switch:not(.on) { opacity: .6; }
+
+/* ---------- 门控术语表（默认收起：只留一条「入口条 + 强调色按钮」） ----------
+   折叠按钮必须显眼（占太大一格 ✗）
+   ⇒ 入口条复用 `.bc-ff-bar`（跟「固定字段表」那条长成一个样 ✓），
+     按钮走 `bc-btn-primary`（强调色 ⇒ 一眼看得见 ✓），展开的正文才铺下面 ✓ */
+.bc-gate-glossary {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--bc-main);
+    border: 1px solid var(--bc-line);
+}
+.bc-gate-glossary .bc-ff-bar { margin: 0; }
+.bc-gate-glossary-body {
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--bc-line);
+}
+.bc-gate-glossary-row {
+    display: flex;
+    gap: 9px;
+    /* ⚠️ 不能用 `flex-start`：右描述折成两三行时，**左边那个词贴在整行的最上面**，
+       看着就是"没对齐中心" ✗（顶边差 0，但**视觉重心**差着一大截）。
+       ⇒ 用 `center`：左词与右描述块**垂直居中对齐** ✓
+       ⚠️ 别再用 `flex-start` 改回去 —— 那正是这条注释在防的事 ✓ */
+    align-items: center;
+    padding: 5px 0;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    line-height: 1.75;
+    color: var(--bc-tx-3);
+}
+.bc-gate-glossary-row code {
+    /* ⚠️ 不要紫字 + 紫底 + 加粗 + 不换行 ⇒ 视觉重量压过正文，看着"突兀"又看不清 ✗
+       ⇒ 正常大小、加粗、用正文的深色，不换行那点也去掉（让它能跟着折行）✓ */
+    flex: 0 0 auto;
+    font-family: inherit;
+    font-weight: 700;
+    color: var(--bc-tx);
+    background: none;
+    padding: 0;
+    margin-right: 2px;
+    white-space: normal;
+}
+
+/* ---------- 胎儿状态结构化编辑 ---------- */
+.bc-fetus-editor {
+    margin-top: 8px;
+    padding: 10px 11px;
+    border-radius: 10px;
+    background: var(--bc-hover);
+}
+.bc-fetus-head { display: flex; align-items: center; gap: 8px; margin: 6px 0 8px; }
+.bc-fetus-head > *:last-child { flex: 1 1 auto; }
+/* ⚠️ 输入框有 width:100%，在 flex 行里会霸占整行宽度，把标签挤到只剩「1 个汉字」宽 ——
+   中文的 min-content 正好就是一个字，于是「概述」竖排成了概/述两行。
+   规矩：**标签不许收缩，只有输入框收缩**。 */
+.bc-fetus-head > .bc-hint,
+.bc-fetus-head > .bc-label { flex: 0 0 auto; white-space: nowrap; }
+.bc-fetus-head > .bc-input { flex: 1 1 auto; width: auto; min-width: 0; }
+/* 「＋ 添加一个胎儿」那行同理 */
+.bc-row > .bc-add-btn { flex: 0 0 auto; white-space: nowrap; }
+.bc-row > .bc-hint { flex: 1 1 auto; min-width: 0; }
+.bc-fetus-idx {
+    font-size: calc(11px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    color: var(--bc-tx-3);
+    text-align: center;
+}
+/* ★ 一个胎儿的**整块**（第一行：序号 / 种族 / 性别 / 致孕方 / 备注 / 删；第二行：孕期 / 预产期）——
+   两行之间用一条很轻的虚线隔开，多胎时一眼能看出"这几格属于同一个胎儿" ✓ */
+.bc-fetus-kid {
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px dashed var(--bc-line);
+}
+.bc-fetus-kid:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
+/* 第二行缩进到第一行输入框的位置（序号那格 34px ＋ gap 6px ✓） */
+.bc-fetus-row2 { padding-left: 40px; margin-top: 6px; }
+/* ★ 2026-10-24：这一段末尾那颗动作按钮，跟上面留开一点距离，别贴着最后一个胎儿 */
+.bc-fetus-actions { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--bc-line); }
+.bc-fetus-actions > .bc-btn { flex: 0 0 auto; white-space: nowrap; }
+/* 「孕期 / 预产期」这两个小标签**不许收缩**（跟上面「概述」同一条规矩 ✓） */
+.bc-fetus-lab {
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    white-space: nowrap;
+}
+.bc-add-btn {
+    /* ⚠️ 它复用了 .bc-icon-btn，而那是 30×30 的方形图标按钮。
+       带文字的话内容会溢出，justify-content:center 还会把溢出**均分到左右**，
+       于是「＋」跑到框外。文字按钮必须自己解除尺寸限制。 */
+    width: auto;
+    height: auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px dashed var(--bc-line);
+    cursor: pointer;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    color: var(--bc-blurple);
+}
+.bc-add-btn:hover { background: rgba(90, 101, 240, .08); border-style: solid; }
+
+/* =========================================================================
+   楼层状态面板：每个楼层下面一份，收起时只有一行摘要
+   ========================================================================= */
+.bc-floor {
+    margin: 6px 0 2px;
+    /* ★★ 这一行挂在**聊天消息**上、不在 `.bc-root` 里 ⇒ 拿不到那套主题变量 ✗
+       （原来底色的兜底是 `rgba(128,128,128,.05)` ⇒ 看着就是"透明的一条"，
+        而且深色主题下也不会变 —— 她 2026-10-14 报的）
+       ⇒ 自己带一份（跟 `.bc-lyrics` / 气泡那几层同一个做法 ✓）：
+         浅色这份写在这儿，深色那份在下面那条 `.bc-floor[data-theme="dark"]` 里 ✓
+       ⚠️ 对应地，`ui-floors.js` 必须自己给它带上 `data-theme` / `data-vision`（不带就永远匹配不上 ✗） */
+    --bc-main: #ffffff;
+    --bc-surface: #f7f8f9;
+    --bc-line: rgba(0, 0, 0, .08);
+    --bc-tx: #0b0c0e;
+    --bc-tx-2: #4a4d55;
+    --bc-tx-3: #666b73;
+    /* ★★ 字体 / 字渲染也**自己指定**，别继承聊天那边的 ——
+       她 2026-10-14：这一行的字：很模糊，跟酒馆原生 UI 一比就糊，浏览器缩放是 100%、
+       深浅两档都糊 ⇒ 判据落在"字渲染不一样"上：
+       这一行挂在**聊天消息**里 ⇒ 继承的是宿主主题给消息区那套字
+       （可能是偏细的字体、或者带字阴影/关掉次像素抗锯齿），而面板里同样的字是清楚的 ✓
+       ⇒ 这里跟面板用**同一套字体栈**，并把宿主可能加上的**字阴影**清掉、
+         字抗锯齿拉回 `auto`（次像素渲染还能用的地方就用 ✓） */
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    text-shadow: none !important;
+    -webkit-font-smoothing: auto;
+    /* 字号跟既定字阶走：小灰字 12.5px ✓ */
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    border-radius: 10px;
+    border: 1px solid var(--bc-line, rgba(128, 128, 128, .25));
+    background: var(--bc-main, rgba(128, 128, 128, .05));
+    overflow: hidden;
+    /* ⚠️ **整块不许半透明** —— 项目规矩「不许靠降透明度表示状态」，
+       而且半透明会把里面的小灰字再压暗一档（视力不好的人看不清 ✗）
+       「已排除」改用**虚框**表示（见下面 `.bc-floor.off`）✓ */
+    /* 收起时宽度跟着内容走 —— 否则按钮右边会拖出一大片空白 */
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+.bc-floor.open { width: 100%; }
+/* 「不参与推演」的整块标记：虚框（不靠透明度 ✓） */
+.bc-floor.off { border-style: dashed; }
+.bc-floor-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 8px 6px; }
+.bc-floor-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 9px;
+    border-radius: 20px;
+    cursor: pointer;
+    border: 1px solid var(--bc-line, rgba(128, 128, 128, .3));
+    background: transparent;
+    color: var(--bc-tx-2);      /* ⚠️ 不用最淡那档：楼层是正文旁边的字，要读得清 ✓ */
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    user-select: none;
+    line-height: 1.7;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+.bc-floor-btn:hover { border-color: var(--bc-blurple, #5a65f0); color: var(--bc-blurple, #5a65f0); }
+/* ★ 最后一楼那颗「推演这一楼」（2026-10-14）：它是**动作**、不是状态 ⇒
+   用强调色，跟旁边那颗"本楼状态"的折叠按钮分开（不然两颗长得一模一样，看不出哪颗能点出东西 ✓） */
+.bc-floor-judge { color: var(--bc-blurple, #5a65f0); }
+/* ★ 推演中那颗是「停止推演」（2026-10-15）—— 用警示色，跟"开跑"那颗一眼分得开，
+   而且它跟闲时那颗**占同一个位置**（同一颗按钮换词，不新增控件 ✓） */
+.bc-floor-cancel { color: var(--bc-red, #bc4a4e); border-color: rgba(229, 72, 77, .35); }
+.bc-floor-cancel:hover { border-color: var(--bc-red, #bc4a4e); color: var(--bc-red, #bc4a4e); }
+.bc-floor-title { overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
+
+/* 收起时只显示这一行摘要 */
+.bc-floor-body { display: none; padding: 2px 9px 9px; }
+.bc-floor.open .bc-floor-body { display: block; }
+
+/* ---- 对象选择窗（对象多了之后，横条改成一个按钮 + 带搜索的胶囊窗） ---- */
+.bc-pill-picker { cursor: pointer; }
+.bc-pill-picker-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 46vh;
+    overflow-y: auto;
+    padding: 4px 2px;
+}
+.bc-pill-big { cursor: pointer; }
+.bc-floor-name { font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 700; margin: 6px 0 4px; color: var(--bc-tx-2, #555); }
+.bc-floor-grid { display: flex; flex-direction: column; gap: 3px; }
+.bc-floor-cell {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 3px 6px;
+    border-radius: 6px;
+    background: var(--bc-surface, rgba(128, 128, 128, .06));
+}
+.bc-floor-key {
+    flex: 0 0 108px;
+    color: var(--bc-tx-2, #666);
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    padding-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.bc-floor-val { flex: 1 1 auto; min-width: 0; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.bc-floor-empty { padding: 5px 2px; color: var(--bc-tx-2, #666); }
+.bc-floor-arrow { font-size: 1em; }   /* 跟着这一行的字阶走（⚠️ 别再写固定的 9px）✓ */
+
+/* ---------- 设置页的开关行 ---------- */
+.bc-toggle-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--bc-line);
+}
+.bc-toggle-row:last-child { border-bottom: 0; }
+.bc-toggle-main { flex: 1 1 auto; min-width: 0; }
+.bc-toggle-label { font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 600; margin-bottom: 2px; }
+.bc-toggle-sw { flex: 0 0 auto; padding-top: 1px; }
+
+/* =========================================================================
+   预设条目
+   ========================================================================= */
+.bc-preset-entries {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 4px;
+    margin-top: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--bc-line);
+    background: var(--bc-surface);
+}
+.bc-preset-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .12s;
+}
+.bc-preset-entry:hover { background: var(--bc-hover); }
+.bc-preset-entry.on { background: rgba(90, 101, 240, .1); }
+.bc-preset-entry input { margin-top: 3px; flex: 0 0 auto; }
+/* 「属于哪个大类」选择面板的行：
+   ① 行加边框 ⇒ 一眼看出是条目（分组小标题没有边框 ⇒ 两者不会混 ✓）
+   ② 左边那个单选圈**自己画**，别用裸 <input type=radio>：酒馆主题把它的 appearance
+      清掉了 ⇒ 看着什么都没有（"没边框"说的就是这个 ✗） */
+.bc-xeno-row { border: 1px solid var(--bc-line); margin-bottom: 4px; }
+.bc-xeno-row.on { border-color: var(--bc-main); }
+.bc-xeno-dot {
+    flex: 0 0 auto;
+    width: calc(14px * var(--bc-fs-scale, 1));
+    height: calc(14px * var(--bc-fs-scale, 1));
+    margin-top: 2px;
+    border-radius: 50%;
+    border: 2px solid var(--bc-line);
+    background: transparent;
+}
+.bc-xeno-dot.on { border-color: var(--bc-main); background: var(--bc-main); }
+.bc-preset-entry-main { min-width: 0; flex: 1 1 auto; }
+.bc-preset-entry-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    font-weight: 600;
+}
+.bc-preset-entry-preview {
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    margin-top: 2px;
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+/* ---------- 随机数池 ---------- */
+.bc-pool-wrap { margin-bottom: 12px; }
+.bc-pool-title { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); margin: 8px 0 5px; }
+.bc-pool-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.bc-pool-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    background: var(--bc-hover);
+    border: 1px solid var(--bc-line);
+    font-variant-numeric: tabular-nums;
+}
+.bc-pool-ref { font-size: calc(10px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); }
+.bc-pool-val { font-size: calc(15px * var(--bc-fs-scale, 1)); font-weight: 800; color: var(--bc-blurple); }
+.bc-pool-chip-s .bc-pool-val { color: var(--bc-green); }
+/* ★ 这一格本轮已经被取用过了：压暗 + 虚线边，尾巴上挂一句「用在哪」
+   ⚠️ 不只靠颜色区分（压暗单独用，在暗色主题和色弱下都不够）⇒
+      虚线边和那行用途字是第二、第三条线索 ✓ */
+.bc-pool-chip-used { opacity: .55; border-style: dashed; }
+.bc-pool-chip-used .bc-pool-val { font-weight: 600; }
+.bc-pool-used-tag {
+    font-size: calc(10px * var(--bc-fs-scale, 1));
+    line-height: 1.3;
+    color: var(--bc-tx-3);
+    margin-left: 2px;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bc-usage-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 11px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    background: var(--bc-hover);
+}
+.bc-usage-ref { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); min-width: 34px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bc-usage-val { font-size: calc(16px * var(--bc-fs-scale, 1)); font-weight: 800; color: var(--bc-red); min-width: 44px; font-variant-numeric: tabular-nums; }
+.bc-root[data-theme="dark"] .bc-usage-val { color: #ff6aa8; }
+.bc-usage-for { font-size: calc(12.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-2); }
+/* 标明这颗是"谁掷的"（引擎取的 / 插件掷的）——
+   放最右、字号最小、不加色块 ⇒ 不抢 ref/值/用途 那三样 ✓ */
+.bc-usage-by { margin-left: auto; font-size: calc(11px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); white-space: nowrap; }
+/* 「这一条模型自己报的、不在池子里」—— 要让玩家一眼看见，
+   所以用警告色；它排在"谁掷的"前面，那条靠 margin-left:auto 仍然贴最右 ✓ */
+.bc-usage-bad { font-size: calc(11px * var(--bc-fs-scale, 1)); font-weight: 700; color: var(--bc-red); white-space: nowrap; }
+
+/* =========================================================================
+   字段编辑弹窗
+   ========================================================================= */
+.bc-field-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    /* 太挤了 ⇒ 行距拉开：行 16 / 列 20（原来是 10 / 10）✓ */
+    gap: 16px 20px;
+    margin-top: 14px;
+}
+.bc-field-item.wide { grid-column: 1 / -1; }
+.bc-field-item.focused .bc-input { border-color: var(--bc-blurple); box-shadow: 0 0 0 3px rgba(90, 101, 240, .18); }
+.bc-field-item .bc-label { display: block; margin-bottom: 6px; }
+/* ★ 手改锁：标签 ＋ 那颗「你手填的 · 交回插件」同一行 —— 空间不够就折到下一行 ✓ */
+.bc-field-labelrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+.bc-field-labelrow .bc-label { margin-bottom: 0; }
+.bc-field-labelrow .bc-btn {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+}
+/* 一行里"靠右那颗按钮"（既成事实那块用的 ✓）：flex 行里用 margin-left:auto 顶到右边 ✓ */
+/* ⚠️ 它自己也得是 flex ＋ gap —— 里面放**两颗**按钮时（例如「来源 / 分批」那排的
+   「加一批」＋「清掉 / 交回插件」），不设 gap 两颗会**贴在一起**（她 2026-10-14 报过 ✓）
+   放一颗按钮时行为一字不变 ✓ */
+/* ★★ 竖向对齐：**跟输入框那一行对齐**，不是跟"标签＋输入框"整块居中 ——
+   整块居中会让按钮看着**偏上**（这仨都歪了，太靠上✓）。
+   机制：字段块 ＝ 标签（约 17px）＋ 输入框；居中 ⇒ 按钮跑到输入框中线偏上，
+   改成 `align-self: flex-end` ＋ 把字段那块的下外边距清零 ⇒ 按钮的上下沿和**输入框**重合 ✓
+   ⚠️ 两条必须一起改：只改 flex-end 的话那 12px 尾巴会把按钮顶低 12px ✗ */
+.bc-row > div > .bc-field { margin-bottom: 0; }     /* 包在中间那层 div 里时也算上 ✓ */
+.bc-row-end { margin-left: auto; display: flex; align-items: center; gap: 8px; align-self: flex-end; }
+/* 「改数值 → 成就（可改可删）」里每一条：一块浅底、标题行放对象和保存/删除 ✓ */
+.bc-ach-edit {
+    border: 1px solid var(--bc-line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-top: 8px;
+    background: var(--bc-surface);
+}
+.bc-ach-edit-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.bc-ach-edit-head .bc-label { font-size: calc(12px * var(--bc-fs-scale, 1)); color: var(--bc-tx-2); }
+/* 「已有的内射记录」按致孕方分组：组标题一行，下面每笔左侧一条细线 ✓ */
+.bc-insem-group { margin-top: 10px; }
+.bc-insem-group-head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 3px 0 5px;
+    border-bottom: 1px solid var(--bc-line);
+    margin-bottom: 5px;
+}
+.bc-insem-row {
+    padding: 4px 0 4px 10px;
+    border-left: 2px solid var(--bc-line);
+    margin-left: 2px;
+}
+/* ★ 「来源 / 分批」那个小节标题：原来是个**裸 `.bc-label`** ⇒ 上下一点外边距都没有，
+   在「胎儿 / 孩子」那一页直接贴着上面那段说明和下面的输入框 ⇒ 她 2026-10-14 说
+   「这里的间隔太小了」✓ ⇒ 按六档给足：上面 10px（分区内块）、下面 4px（更紧）✓ */
+.bc-src-title { margin: 10px 0 4px; }
+/* ★ 「亚人选类人」那句提示：它跟上面那两条说明是**两个话题**，下面又紧挨着选项列表
+   ⇒ 上下都按「分区内块」给 10px（她 2026-10-14 截图说这里的间隔有问题 ✓）
+   ⚠️ 必须写在 `.bc-hint` 那条之后（同权重靠顺序赢 ✓） */
+.bc-hint-gap { margin: 10px 0; }
+
+/* =========================================================================
+   弹窗
+   ========================================================================= */
+.bc-modal-overlay {
+    position: fixed; inset: 0; z-index: 30100;
+    background: rgba(0, 0, 0, .45);
+    display: flex; align-items: center; justify-content: center;
+}
+.bc-modal-box {
+    max-width: 94vw; max-height: 88vh;
+    display: flex; flex-direction: column;
+    background: #fff; color: #0b0c0e;
+    border-radius: 14px; overflow: hidden;
+    box-shadow: 0 20px 70px rgba(0, 0, 0, .38);
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    font-size: calc(14px * var(--bc-fs-scale, 1));
+    /* ⚠️⚠️ `--bc-main` 和 `--bc-surface` 一个都不能漏 ✗ ——
+       而 `.bc-input` / `.bc-select` / `.bc-textarea` 写的是
+       `background: var(--bc-main) !important` ⇒ 变量没值 ⇒ **整条 background 失效** ⇒
+       弹窗里的输入框和下拉全部变成**透明**的 ✗
+       （角色基础信息里那个下拉的选项列表就是这个毛病 ✗）
+       ⇒ 弹窗挂在 <body> 上、不是 .bc-root 的子元素，拿不到那套变量 ⇒ 必须在这里补齐 ✓ */
+    --bc-main: #ffffff;
+    --bc-surface: #f7f8f9;
+    --bc-line: rgba(0, 0, 0, .08);
+    --bc-hover: rgba(0, 0, 0, .045);
+    /* ★ 悬停的**明显一档**（下拉选项那种小面积的地方用：4.5% 在黑字旁边几乎看不出来） */
+    --bc-hover-strong: rgba(0, 0, 0, .10);
+    --bc-tx-2: #4a4d55;
+    --bc-tx-3: #666b73;   /* ⚠️ 不要用 #8a8f98：只有 2.9~3.3:1，连小字的 4.5 都不到 ✗ */
+    --bc-scroll: rgba(0, 0, 0, .18);
+}
+.bc-modal-overlay[data-theme="dark"] .bc-modal-box {
+    background: #2a2724; color: #e8e3da;
+    --bc-main: #1f1d1b;
+    --bc-surface: #302d29;
+    --bc-line: rgba(255, 255, 255, .08);
+    --bc-hover: rgba(255, 255, 255, .05);
+    /* ★ 悬停的明显一档（夜模式） */
+    --bc-hover-strong: rgba(255, 255, 255, .12);
+    --bc-tx-2: #a8a29a;
+    --bc-tx-3: #a49e95;   /* ⚠️ 不要用 #7a756e：只有 3.0~3.5:1 ✗ */
+    /* 实心控件那三个**不在弹窗这里单独抄一份** ——
+       它跟"右键菜单 / 提醒气泡"一起，集中写在下面那条 `.bc-bubble[data-theme="dark"], …` 里 ✓
+       （三层一份来源，units 有断言盯着选择器组必齐全 + 强调色一个不许漏 ✓） */
+    --bc-scroll: rgba(255, 255, 255, .16);
+}
+.bc-modal-overlay[data-theme="dark"] .bc-input,
+.bc-modal-overlay[data-theme="dark"] .bc-textarea,
+.bc-modal-overlay[data-theme="dark"] .bc-select { background: #1f1d1b; }
+.bc-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 16px; border-bottom: 1px solid var(--bc-line);
+    font-weight: 700;
+}
+/* 标题右边那一组：「？」+ 关闭（弹窗也能挂说明 ✓） */
+.bc-modal-head-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.bc-modal-close { cursor: pointer; opacity: .55; }
+.bc-modal-close:hover { opacity: 1; color: var(--bc-red); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   命中区（tap target）
+
+   判据用**尺寸**、不用"看着还行"：**最小可点尺寸 = 44×44**
+   （苹果 HIG / 谷歌 Material 都是这个数）✓
+   ⇒ 下面这些控件**视觉一个字不动**（字形、边框、间距全不碰），
+     只用一圈**透明**的 `::before` 把"点到就算"的范围撑开 ✓
+
+   ⚠️ 只给"四周没有别的可点东西"的那些撑 —— 撑过头会把邻居的命中区盖掉
+      （那比"小"还糟：想点 A 结果点到 B ✗），所以逐个量过间距：
+      · 弹窗右上 ✕：右边是标题栏的 16px 内边距、左边紧挨「？」⇒ 可以撑满 44 ✓
+      · 卡片/弹窗那个「？」：在标题行最右、左边是弹性空白 ⇒ 撑满 44 ✓
+      · 诊断页右上 ✕：同上，标题行最右 ⇒ 撑满 44 ✓
+      · 面板顶栏那三个图标（主题 / 返回 / 关闭）：`.bc-head` 的 gap 是 14px、按钮 30px
+        ⇒ 两个中心正好隔 44；**这里撑到 40 就够**，再大就和邻居重叠了 ✗
+   ═══════════════════════════════════════════════════════════════════════════ */
+.bc-modal-close,
+.bc-sec-help,
+.bc-diag-x,
+.bc-icon-btn { position: relative; }
+/* 这四类里面，前三个四周有富余 ⇒ 44×44 */
+.bc-modal-close::before,
+.bc-sec-help::before,
+.bc-diag-x::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px; height: 44px;
+}
+/* 顶栏那三个图标：间距只够 40 ✓ */
+.bc-icon-btn::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px; height: 40px;
+}
+/* ⚠️ 弹窗标题栏里「？」在左、✕ 在右，两者只隔 10px ⇒ ✕ 那圈会压到「？」一点点，
+   把「？」抬到上面那一层 ⇒ 那几像素归它，
+   不会出现"想点说明结果把窗关了" ✗ */
+.bc-modal-head-right > .bc-sec-help { z-index: 1; }
+.bc-modal-title { font-size: calc(14px * var(--bc-fs-scale, 1)); }
+.bc-modal-body { padding: 14px 16px; overflow: auto; flex: 1 1 auto; }
+/* 「确定要删吗」那个弹窗的正文
+   ⚠️ `pre-wrap` 必须有：这些提示里带着 `\n\n`，普通 div 会把它们塌成一行 ✗ */
+.bc-modal-text {
+    font-size: calc(13.5px * var(--bc-fs-scale, 1));
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.bc-modal-foot {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; border-top: 1px solid var(--bc-line);
+}
+.bc-pre {
+    font-family: Consolas, "Cascadia Mono", Menlo, monospace;
+    font-size: calc(12px * var(--bc-fs-scale, 1)); line-height: 1.65;
+    white-space: pre-wrap; word-break: break-word;
+    background: rgba(128, 128, 128, .12);
+    padding: 12px; border-radius: 6px;
+    max-height: 60vh; overflow: auto;
+}
+
+/* =========================================================================
+   扩展抽屉
+   ========================================================================= */
+
+.bodycord-drawer-row { margin-bottom: 6px; }
+
+/* =========================================================================
+   窄屏
+   ========================================================================= */
+@media (max-width: 900px) {
+    .bc-root {
+        left: 8px; right: 8px; top: 8px; bottom: 8px;
+        width: auto; height: auto;
+        margin: 0;
+        transform: none;
+    }
+    /* ⚠️⚠️ 拖过面板之后（`.bc-positioned` 把 inset 解成 auto），上面那条 `width/height:auto`
+       会让整块塌成「只剩顶上一条横条、下面一片空白」——实测 `.bc-panes` 高度变 0，
+       iframe 跟着 0（2026-10-31 她缩窗口撞上，量过：267x51、panes=0 ✗）
+       ⇒ 拖过的面板给回**明确尺寸**，宽高仍然跟着窗口走 ✓ */
+    .bc-root.bc-positioned {
+        width: min(1180px, calc(100vw - 16px));
+        height: min(800px, calc(100dvh - 16px));
+    }
+    .bc-dice-row { grid-template-columns: 70px 1fr 84px 84px; }
+    .bc-dice-expr-input { display: none; }
+    /* ⚠️ 这里原来有 `.bc-brand-text{display:none}` —— 那是当年给顶栏那排旧标签腾地方，
+       标签栏早撤了，顶栏只剩"品牌 + 时钟 + 三个图标" ⇒ 品牌字**留得下**
+       （2026-10-31 量过：320 宽也够，见下面手机那档的时钟收窄 ✓） */
+    
+    .bc-inline-host { height: 84vh; }
+}
+
+/* 顶部那个会变身的导航按钮：状态页=齿轮，设置页=返回箭头 */
+.bc-nav-btn { transition: transform .18s, color .18s; }
+.bc-nav-btn.bc-nav-back {
+    color: var(--bc-blurple, #5a65f0);
+    font-weight: 700;
+    font-size: calc(16px * var(--bc-fs-scale, 1));
+}
+.bc-nav-btn.bc-nav-back:hover { transform: translateX(-2px); }
+
+/* =========================================================================
+   .bc-embed —— 被「搬」进聊天面板侧栏里的那一块
+   （骰子频道：节点是 adoptNode 过去的，所以要把它从「悬浮窗」的定位里解放出来）
+   ========================================================================= */
+.bc-embed {
+    position: static !important;
+    display: block !important;
+    left: auto !important;
+    top: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    z-index: auto !important;
+    overflow: visible !important;
+    background: transparent !important;
+    box-sizing: border-box;
+    padding: 14px 16px 18px;
+}
+.bc-embed .bc-toolbar { margin-top: 0; }
+
+/* 面板容器的对齐方式会继承进来（正文是居中的），骰子这块是表单式内容，必须左对齐。
+   直接在里面定死，不去追它到底从哪一层继承来的。 */
+.bc-embed,
+.bc-embed * { text-align: left; }
+.bc-embed .bc-dice-val { text-align: center; }   /* 骰子点数本来就该居中 */
+
+/* 宽度：表单式内容别拉满整页，读起来费劲 */
+.bc-embed .bc-toolbar { align-items: stretch; }
+.bc-embed .bc-dd { width: 100%; max-width: 520px; }
+.bc-embed .bc-input,
+.bc-embed .bc-select,
+.bc-embed .bc-textarea { max-width: 520px; }
+.bc-embed .bc-inline,
+.bc-embed .bc-row,
+.bc-embed .bc-row-wrap { justify-content: flex-start; }
+
+/* 段落式说明保持左对齐、限制行宽，别一行拖到屏幕最右边 */
+.bc-embed .bc-hint { max-width: 640px; }
+/* ---------- 骰子页：卡片式排版 ----------
+   .bc-section 只是个 margin 的话整页是「平铺文档」，看着很散。
+   这里在嵌入上下文里把它做成卡片，跟面板自己的消息块一个调子。 */
+.bc-embed .bc-section {
+    background: var(--bc-surface, #f7f8f9);
+    border: 1px solid var(--bc-line, rgba(0, 0, 0, .08));
+    border-radius: 14px;
+    padding: 12px 14px 14px;
+    margin-bottom: 12px;
+}
+.bc-embed .bc-section-plain { background: transparent; border-style: dashed; }
+.bc-embed .bc-section-title {
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    color: var(--bc-tx);
+    padding-bottom: 0;
+    margin-bottom: 10px;
+    border-bottom: 0;
+}
+/* 标题行：标题 + 右侧状态/开关 */
+.bc-embed .bc-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.bc-embed .bc-title-row .bc-spacer { flex: 1 1 auto; }
+.bc-embed .bc-pool-wrap { margin-bottom: 0; }
+.bc-embed .bc-pool-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.bc-embed .bc-pool-chip {
+    background: var(--bc-main, #fff);
+    border: 1px solid var(--bc-line, rgba(0, 0, 0, .08));
+}
+/* ⚠️ 上面那条 border 简写会把「已取用」的虚线边重置回实线
+   （同权重、它在后面）⇒ 在嵌入面板里补回来 ✓ */
+.bc-embed .bc-pool-chip-used { border-style: dashed; }
+.bc-embed .bc-help { font-size: calc(11.5px * var(--bc-fs-scale, 1)); line-height: 1.85; color: var(--bc-tx-3); }
+.bc-embed .bc-section-body > .bc-hint:first-child { margin-top: 0; }
+.bc-embed .bc-row { margin-top: 10px; }
+
+/* =========================================================================
+   悬浮球快捷菜单（右键 / 长按）
+   ========================================================================= */
+.bc-fab-menu {
+    position: fixed;
+    z-index: 31000;
+    min-width: 168px;
+    padding: 5px;
+    border-radius: 10px;
+    /* ⚠️ 它挂在 <body> 上（不在 .bc-root 里）⇒ 变量必须自己补齐，
+       否则 background/color 全靠兜底值，主题一换就会跟面板不一致 ✗ */
+    --bc-main: #ffffff;
+    --bc-surface: #f7f8f9;
+    --bc-line: rgba(0, 0, 0, .08);
+    --bc-tx: #0b0c0e;
+    --bc-tx-2: #4a4d55;
+    --bc-tx-3: #666b73;
+    --bc-hover: rgba(0, 0, 0, .045);
+    /* ★ 悬停的**明显一档**（下拉选项那种小面积的地方用：4.5% 在黑字旁边几乎看不出来） */
+    --bc-hover-strong: rgba(0, 0, 0, .10);
+    background: var(--bc-main, #fff);
+    color: var(--bc-tx, #0b0c0e);
+    border: 1px solid var(--bc-line, rgba(0, 0, 0, .1));
+    box-shadow: 0 12px 36px rgba(0, 0, 0, .3);
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    font-family: inherit;
+}
+/* ⚠️ 右键菜单必须有深色主题 —— 不给 `data-theme` 的话，面板切成黑夜、菜单照样白底 ✗
+   （`data-theme` 由 ui.js 的 openFabMenu 设 ✓） */
+.bc-fab-menu[data-theme="dark"] {
+    --bc-main: #2a2724;
+    --bc-surface: #302d29;
+    --bc-line: rgba(255, 255, 255, .055);
+    --bc-tx: #e8e3da;
+    --bc-tx-2: #a8a29a;
+    --bc-tx-3: #a49e95;
+    --bc-hover: rgba(255, 255, 255, .05);
+    /* ★ 悬停的明显一档（夜模式） */
+    --bc-hover-strong: rgba(255, 255, 255, .12);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, .55);
+}
+.bc-fab-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.bc-fab-menu-item:hover { background: var(--bc-sel-bg); color: var(--bc-sel-tx); }
+.bc-fab-menu-icon { width: 16px; text-align: center; flex: 0 0 auto; }
+.bc-fab-tip { font-size: calc(11px * var(--bc-fs-scale, 1)); opacity: .75; }
+
+/* =========================================================================
+   悬浮球上的「提醒气泡」（日程到日子了，从球上冒个气泡）
+   ⚠️ 它挂在 <body> 上（跟快捷菜单一样，不在 .bc-root 里）⇒ 颜色变量自己补齐 ✓
+   ⚠️ **不闪、不响、不自动消失**（不打扰 ✓）；位置由 JS 按球的实际位置算 ✓
+   ⚠️ **绝不碰悬浮球本身**（球是唯一入口，收掉就再也打不开 ✗）
+   ========================================================================= */
+.bc-bubble {
+    position: fixed;
+    z-index: 31000;
+    left: 0;
+    top: 0;
+    width: min(272px, 72vw);
+    padding: 10px 12px 9px;
+    border-radius: 14px;
+    --bc-main: #ffffff;
+    --bc-surface: #f7f8f9;
+    --bc-line: rgba(0, 0, 0, .08);
+    --bc-tx: #0b0c0e;
+    --bc-tx-2: #4a4d55;
+    --bc-tx-3: #666b73;
+    background: var(--bc-main, #fff);
+    color: var(--bc-tx, #0b0c0e);
+    border: 1px solid var(--bc-line, rgba(0, 0, 0, .1));
+    box-shadow: 0 12px 36px rgba(0, 0, 0, .28);
+    font-family: inherit;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    cursor: pointer;
+    transition: border-color .18s;
+}
+/* ⚠️ 易读模式那条**不在这里单独写** —— 它跟弹窗 / 右键菜单合并成一条（见本文件后段 ✓） */
+.bc-bubble:hover { border-color: var(--bc-blurple, #59609e); }
+/* ⚠️ 气泡的**深色自己那份**（底色 / 阴影）不在这一处写，在下面
+   「挂在 body 上的那几层」那一段的**紧后面** —— 那边那条集中写强调色，
+   两条挨在一起才读得顺 ✓
+   （断言从第一处 `.bc-bubble[data-theme="dark"]` 往后找 `--bc-main` ⇒ 两条必须挨着 ✓） */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   悬浮歌词条（外挂歌词那种悬浮歌词 ✓）
+
+   形态要求：**单行** / 跟着进度**逐渐变色** / 手机也要 / **面板关着也在** /
+     **独立于悬浮球**（自己的位置，不跟球走）/ 可以**锁位置** / 颜色透明度自己改 ✓
+
+   ⚠️ 它跟气泡、右键菜单一样挂在 <body> 上 ⇒ 变量自己带一份；
+      深色那份在下面"挂在 body 上的那几层"那条里（别在这儿再抄一遍 ✗）
+   ⚠️ 逐字变色用 `background-clip: text` + 一个 0~1 的 `--ly-p`（进度）推渐变；
+      **写在 @supports 里**：万一哪个宿主不支持，颜色就退回普通的纯色字
+      （绝不能让字变透明 ⇒ 那就成"看不见歌词"了 ✗）
+   ═══════════════════════════════════════════════════════════════════════════ */
+.bc-lyrics {
+    position: fixed;
+    left: 50%;
+    bottom: 92px;
+    transform: translateX(-50%);
+    z-index: 31000;
+    max-width: min(680px, 88vw);
+    padding: 7px 16px;
+    border-radius: 14px;
+    --bc-main: #ffffff;
+    --bc-surface: #f7f8f9;
+    --bc-line: rgba(0, 0, 0, .08);
+    --bc-tx: #0b0c0e;
+    --bc-tx-2: #4a4d55;
+    --bc-tx-3: #666b73;
+    /* 这三个是"运行时变量"：**默认值在这儿声明**（跟着主题走 ✓），自定义颜色/进度时
+       由 JS 写 inline 覆盖（inline 优先 ✓）—— 顺带满足"每个 var 都得有定义"那条守卫 ✓ */
+    --ly-sung: var(--bc-blurple);
+    --ly-unsung: var(--bc-tx-3);
+    --ly-p: 0;
+    --ly-scale: 1.25;   /* 默认本来就小 ⇒ 出厂 1.25 ✓ */
+    background: var(--bc-main, #fff);
+    border: 1px solid var(--bc-line);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, .22);
+    font-family: inherit;
+    /* ★ 大小：`--ly-scale`（面板那条"大小"滑杆，0.8~2）叠在易读模式那档上面 ✓ */
+    font-size: calc(14px * var(--ly-scale, 1.25) * var(--bc-fs-scale, 1));
+    font-weight: 600;
+    line-height: 1.5;
+    text-align: center;
+    overflow-wrap: anywhere;
+    cursor: grab;
+    user-select: none;
+    /* 拖过之后走存下来的坐标（这时底/左都交出去 ✓） */
+}
+.bc-lyrics.bc-positioned { transform: none; bottom: auto; }
+.bc-lyrics:active { cursor: grabbing; }
+.bc-lyrics.locked, .bc-lyrics.locked:active { cursor: default; }
+.bc-lyrics.nolyric .bc-lyrics-text { font-weight: 500; }
+/* 竖排（竖着的歌词条也要有 ✓）——
+   文字从上往下读；太长的句子自己折成第二列（vertical-rl 的折列方向是从右往左 ✓）；
+   高度封在 70vh，别插到屏幕外去 ✓（`text-orientation` 用默认的 mixed：
+   中日文是正立的、拉丁字母转 90°，正好是竖排该有的样子 ✓） */
+.bc-lyrics.vertical {
+    writing-mode: vertical-rl;
+    max-width: none;
+    max-height: 70vh;
+    padding: 16px 7px;
+}
+/* 未唱那部分：默认用"最淡那档灰"（跟主题走 ✓；选了色就走 --ly-unsung） */
+.bc-lyrics-text { color: var(--ly-unsung, var(--bc-tx-3)); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .bc-lyrics-text {
+        background-image: linear-gradient(90deg,
+            var(--ly-sung, var(--bc-blurple)) calc(var(--ly-p, 0) * 100%),
+            var(--ly-unsung, var(--bc-tx-3)) 0);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+    }
+    /* 竖排时进度**从上往下**推 ⇒ 渐变也得从 90deg 换成 180deg ✓
+       ⚠️ 必须留在 @supports 里：不支持 background-clip:text 的宿主只画背景不裁字，
+          那样会变成"一条渐变底色块"，字反而看不清 ✗ */
+    .bc-lyrics.vertical .bc-lyrics-text {
+        background-image: linear-gradient(180deg,
+            var(--ly-sung, var(--bc-blurple)) calc(var(--ly-p, 0) * 100%),
+            var(--ly-unsung, var(--bc-tx-3)) 0);
+    }
+}
+@media (max-width: 560px) {
+    /* 手机上默认贴一条（输入框上方），拖过之后照样听坐标 ✓ */
+    .bc-lyrics { left: 12px; right: 12px; bottom: 92px; max-width: none; transform: none; }
+    /* ⚠️ 拖过之后必须把 `right` 还回去 —— 留着它的话，内联的 left 和它一夹，
+       宽度会变成"从落点到右边距"，看着就是拖完突然变宽 / 跳到别处 ✗ */
+    .bc-lyrics.bc-positioned { left: auto; right: auto; bottom: auto; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   番茄钟小读数（`.bc-timer-badge`）
+
+   单独一个可以计时器倒计时的栏位，绑定现实时间、避免沉迷酒馆；
+   而且**玩和挂机不一样**（会长时间挂后台 ✓）
+   ⇒ 计时开着的时候，悬浮球旁边挂一个"还剩几分"的小读数 ——
+     **不用点开面板**就知道还剩多久（挂机的人看的就是它 ✓）。
+
+   ⚠️ 跟气泡 / 歌词条一样挂在 <body> 上 ⇒ 变量自己带一份；
+      深色那份在下面"挂在 body 上的那几层"那条里（别在这儿再抄一遍 ✗）
+   ⚠️ 定位：**左下角**（悬浮球默认在右下角，右上角留给歌词条 ⇒ 三样互不打架 ✓）
+   ═══════════════════════════════════════════════════════════════════════════ */
+.bc-timer-ball {
+    position: fixed;
+    left: 18px;
+    bottom: 18px;
+    /* ⚠️ 它被压住就会"看着不像圆的、只露一角" ✗
+       ⇒ 层级抬到**所有层之上**（30900 会比歌词条 31000 还低、离面板 30000 只差 900 ✗）✓ */
+    z-index: 99999;
+    display: none;              /* 默认藏起来：没在计时就不该占地方 ✓ */
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 86px;
+    height: 76px;
+    /* 电子钟那一版：
+       ⇒ 外壳＝**红色圆角方块**（闹钟壳体）＋ 正中间一块**深色屏幕**（用径向渐变画出来），
+         数字用**奶油色**（暖白），顶上两颗**小按钮**（用 `::before` / `::after` ✓）
+       ⚠️ 只留这一版：红椭圆 ＋ 绿蒂 ＋ 白字白图标那套番茄皮**不画** ✗ */
+    border-radius: 22px;
+    cursor: grab;
+    user-select: none;
+    /* 挂在 body 上拿不到 .bc-root 那份变量 ⇒ 自己带一份（跟歌词条同一套写法 ✓） */
+    --bc-main: #ffffff;
+    --bc-surface: #f7f8f9;
+    --bc-line: rgba(0, 0, 0, .08);
+    --bc-tx: #0b0c0e;
+    --bc-tx-2: #4a4d55;
+    --bc-tx-3: #666b73;
+    --bc-blurple: #59609e;
+    --bc-green: #2d7a4f;
+    --bc-red: #bc4a4e;
+    /* 卡通红番茄那几样（下面 --tb-* 就是给它们用的）：
+         ① **扁**（宽 > 高，椭圆而不是正圆）② **平涂红**（不是立体球）+ 一圈**很粗的深红描边**
+         ③ 中间一块**浅红高光** ④ 头上**五角星绿蒂**，而且它**自己也有深色描边**
+       ⚠️ **番茄永远是红的** —— "休息整颗变绿"是错的 ✗（绿了就不像番茄了）
+       ⚠️ 颜色仍走变量（深色模式下由下面那组主题规则覆盖 ✓），不许写死 ✗ */
+    --tb-body: #d0201f;        /* 主体（平涂红） */
+    --tb-line: #6d1611;        /* 那圈粗描边 */
+    --tb-hi: rgba(255, 255, 255, .24);  /* 中间那块浅红高光 */
+    --tb-leaf: #4caf50;        /* 绿蒂 */
+    --tb-leaf-line: #1f5d24;   /* 绿蒂自己的描边 */
+    /* 屏幕那块暗色 + 数字色（电子钟那版用 ✓） */
+    --tc-screen: #241d18;
+    --tc-digit: #f6e7c0;
+    /* 屏幕那块改由内部那个 `.bc-tc-screen` 画（这样**贴图只贴屏幕** ✓）——
+       这里只留红壳（它俩一叠加就是"闹钟"那个样子 ✓） */
+    background-color: var(--tb-body);
+    border: 3px solid var(--tb-line);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .28);
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+}
+/* 只有那块黑色屏幕可以换图贴上去，周围那一圈不替换 ✓
+   ⇒ 屏幕单独一个元素（平时深色）—— 贴的图**只进这一块**，红壳一点不动 ✓
+   ⚠️ 绝对定位 ⇒ 不参与球的 flex 排版，数字和按键照旧居中 ✓ */
+.bc-timer-ball .bc-tc-screen {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 62px;
+    height: 52px;
+    transform: translate(-50%, -50%);
+    /* 屏幕用**圆角方形**（13px）：椭圆不好看 ✗ */
+    border-radius: 14px;
+    background-color: var(--tc-screen);
+    overflow: hidden;          /* 里面那层图案按屏幕边缘裁掉（圆角方形 ✓） */
+    pointer-events: none;   /* 别挡了拖拽和那颗按键 ✓ */
+    /* ⚠️ 它是绝对定位的 ⇒ 会压在"普通流"的数字和按键**上面**（DOM 顺序救不了 ✗）
+       ⇒ 屏幕给 z-index:0，数字和按键给 1（见下面两条 ✓） */
+    z-index: 0;
+}
+/* 玩家那张图**单独一层** —— 这样它能自己调透明度 ✓ */
+.bc-timer-ball .bc-tc-shot {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    pointer-events: none;
+}
+/* 数字和按键要**压在屏幕上面**（屏幕可能是玩家贴的图 ✓） */
+.bc-timer-ball .bc-tb-time,
+.bc-timer-ball .bc-tb-btn { position: relative; z-index: 1; }
+/* 顶上那两颗**小按钮**（照片里闹钟顶上那两粒 ✓）—— 只有电子钟那版才有 */
+.bc-timer-ball:not(.tomato)::before,
+.bc-timer-ball:not(.tomato)::after {
+    content: '';
+    position: absolute;
+    top: -7px;
+    width: 16px;
+    height: 9px;
+    border-radius: 6px;
+    background: #f2cdc9;
+    border: 2px solid var(--tb-line);
+}
+.bc-timer-ball:not(.tomato)::before { left: 12px; }
+.bc-timer-ball:not(.tomato)::after { right: 12px; }
+.bc-timer-ball:active { cursor: grabbing; }
+.bc-timer-ball.bc-positioned { left: auto; bottom: auto; }
+.bc-timer-ball .bc-tb-time {
+    font-size: calc(19px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    line-height: 1;
+    /* 电子钟那版：**奶油色数字**（照片里那种暖白）+ 一点点辉光 ✓ */
+    color: var(--tc-digit);
+    letter-spacing: .5px;
+    text-shadow: 0 0 6px rgba(246, 231, 192, .35);
+    /* 电子钟那种"七段数码"的味道：数字用等宽字体 ✓ */
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+/* 那一行"专注 / 休息"**不画**（球变小、字太多反而乱）⇒ 番茄**永远是红的**，
+   休息不再换色（见下面 `.bc-timer-ball.rest` 那段注释 ✓） */
+
+/* ⚠️ 那颗圆键不要**实心紫底**（在球里看着像一团高亮）⇒ 去掉底色，
+   只留一个**看得出来的小图标**（形状还在、一眼知道能点 ✓），hover 时也只轻轻亮一下 ✓ */
+.bc-timer-ball .bc-tb-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: none; color: #fff; cursor: pointer;
+    /* 它必须是**真的 `<button>`** —— 用 span 的话会被球那套"指针捕获"吞掉点击、
+       点了没用 ✗ ⇒ 把浏览器默认的按钮外观全清掉 ✓ */
+    border: 0; padding: 0; margin: 0; font: inherit; line-height: 0;
+    -webkit-appearance: none; appearance: none;
+    /* ⚠️ 中间那颗按键不能是透明的：玩家看不出那里有按键 ✗
+       ⇒ 给它一圈**看得见的描边圆底**（一眼就知道"这儿能点" ✓）——
+         ⚠️ 不是"实心紫块"，是**半透明 + 描边**，跟外壳搭 ✓
+       ⚠️ 电子钟这版用**奶油色**（跟数字同色）✓ */
+    width: 26px; height: 26px;
+    background: rgba(246, 231, 192, .16);
+    box-shadow: inset 0 0 0 1.5px rgba(246, 231, 192, .72);
+}
+.bc-timer-ball .bc-tb-btn:hover { background: rgba(246, 231, 192, .30); }
+.bc-timer-ball .bc-tb-btn:active { background: rgba(246, 231, 192, .44); }
+.bc-timer-ball .bc-tb-btn:focus-visible { outline: 2px solid rgba(246, 231, 192, .85); outline-offset: 1px; }
+/* ⚠️ 图只给 `background-image`、不设 `background-size` 会"只看得见中间一块" ——
+   默认 `auto` ＝ 按原始尺寸（上传缩到 256px）画 ✗
+   ⇒ 图贴在**屏幕**那一块上（`.bc-tc-screen` 已设 cover + 居中 ✓），红壳保持原样 ✓
+   （上传那步本身**不裁剪**、只等比缩到 256px ⇒ 没有特殊分辨率要求 ✓） */
+/* 带图时数字压在图上面 ⇒ 阴影加深一点（图可能是任意颜色 ✓） */
+.bc-timer-ball.has-img .bc-tb-time { text-shadow: 0 1px 4px rgba(0, 0, 0, .85), 0 0 2px rgba(0, 0, 0, .7); }
+.bc-timer-ball .bc-tb-ico {
+    display: block;
+    /* ⚠️ 播放 / 暂停那个图标**不能用 `h('svg')`**（HTML 命名空间 ⇒ 不渲染 ✗）
+       ⇒ **纯 CSS 画**：不跑时是 ▶（边框三角），跑着时是 ‖（两条竖杠）✓ */
+    width: 0; height: 0;
+    border-left: 9px solid var(--tc-digit);
+    border-top: 5.5px solid transparent;
+    border-bottom: 5.5px solid transparent;
+    margin-left: 3px;
+}
+.bc-timer-ball:not(.paused) .bc-tb-ico {
+    width: 9px; height: 11px;
+    border: 0; margin-left: 0;
+    background:
+        linear-gradient(to right, var(--tc-digit) 0 3px, transparent 3px 6px, var(--tc-digit) 6px 9px);
+}
+/* ⚠️ 番茄那一整套（红椭圆 ＋ 顶上两颗小按钮 ＋ 白字白图标）不画；
+   只有电子钟那一套（基础 `.bc-timer-ball` ✓）—— 球身上不带任何番茄皮肤的类 ✓
+   ⚠️ "休息整颗变绿"那套也不画（球不换色；页面/气泡里本来就写着「休息」，球只负责"还剩多久" ✓）
+   ⚠️ 要再加"正在休息"的小提示也行，但**不许靠换色** ✗ */
+.bc-timer-ball.rest { /* 保留这个类只为将来挂钩，不再改颜色 ✓ */ }
+/* 暂停着的时候整块淡一点（但**不许靠降透明度到看不清**：只压到 .72 ✓） */
+.bc-timer-ball.paused { opacity: .72; }
+/* 过点了（挂机回来发现早就到点了）：红一点，提示"这一段结束了" ✓ */
+.bc-timer-ball.over { border-color: var(--bc-red, #bc4a4e); }
+.bc-timer-ball.over .bc-tb-time { color: var(--bc-red, #bc4a4e); }
+
+/* 到点那个页内气泡
+   —— 它贴在**番茄钟那个球**旁边（位置由 JS 算，见 ui.js 的 placeTimerBubble ✓）；
+   长相跟日历那个提醒气泡同族（标题 + 内容 + ✕）✓ */
+.bc-timer-bubble {
+    position: fixed;
+    z-index: 30910;
+    max-width: min(300px, 76vw);
+    padding: 10px 12px;
+    border-radius: 14px;
+    --bc-main: #ffffff;
+    --bc-surface: #f7f8f9;
+    --bc-line: rgba(0, 0, 0, .08);
+    --bc-tx: #0b0c0e;
+    --bc-tx-2: #4a4d55;
+    --bc-tx-3: #666b73;
+    --bc-blurple: #59609e;
+    background: var(--bc-main, #fff);
+    color: var(--bc-tx, #0b0c0e);
+    border: 1px solid var(--bc-line);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, .28);
+    font-family: inherit;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    cursor: pointer;
+}
+.bc-timer-bubble-head { display: flex; align-items: center; gap: 6px; }
+.bc-tb-sp { flex: 1 1 auto; }
+.bc-timer-bubble-title { font-weight: 700; color: var(--bc-blurple, #59609e); }
+.bc-timer-bubble-x {
+    position: relative;
+    flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--bc-tx-3); font-size: calc(12px * var(--bc-fs-scale, 1));
+}
+/* ⚠️ 这个 ✕ 只有 22×22，比项目定的最小命中区（44×44）**小一半** ⇒ 手机上/点偏一点就点不着 ✗
+   ⇒ **视觉一个字不动**，只用一圈**透明**的 `::before` 把"点到就算"的范围撑到 44×44 ✓ */
+.bc-timer-bubble-x::before {
+    content: '';
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+}
+.bc-timer-bubble-x:hover { background: var(--bc-surface); color: var(--bc-tx); }
+.bc-timer-bubble-body { margin-top: 4px; color: var(--bc-tx-2); line-height: 1.6; }
+
+/* ---------- 成就解锁气泡（右上角） ----------
+   挂在 <body> 上 ⇒ 主题 / 易读模式自己带（跟番茄钟气泡一个道理 ✓）
+   它不走 `.bc-root` 那套变量，避免和面板里的成就卡片样式互相影响 ✓ */
+/* ---- 成就页「吐槽风格」那一组（2026-10-21 她报"跟上面的文字间隔太近"）------ */
+/* 它上面是几行只读正文（固定部分），紧贴着下面的小标题会糊成一片 ⇒ 这一组整体往上留白 ✓
+   ⚠️ 只给成就页这一组用，别去改全局 `.bc-label` 的 margin —— 别的页间距是按原来的排的 ✗ */
+.bc-ach-style-group { margin-top: 18px; }
+.bc-ach-style-group > .bc-label-block { display: block; margin-bottom: 6px; }
+.bc-ach-style-group > .bc-textarea { margin-top: 0; }
+.bc-ach-style-group > .bc-row { margin-top: 8px; }
+
+.bc-ach-toasts {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 40000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: min(380px, calc(100vw - 24px));
+    pointer-events: none;
+    /* 酒馆提示条在的时候会把这摞往下让 ⇒ 挪的时候带一点过渡，别硬跳 ✓ */
+    transition: top .2s ease;
+}
+.bc-ach-toast {
+    pointer-events: auto;
+    display: flex;
+    gap: 10px;
+    padding: 14px 14px 13px;
+    border-radius: 14px;
+    background: #ffffff;
+    color: #1b1c22;
+    border: 1px solid rgba(0, 0, 0, .08);
+    box-shadow: 0 14px 38px rgba(0, 0, 0, .22);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.65;
+    animation: bc-ach-in .28s cubic-bezier(.2, .9, .3, 1);
+}
+.bc-ach-toast[data-theme="dark"] {
+    background: #2a2a36;
+    color: #ececf4;
+    border-color: rgba(255, 255, 255, .1);
+    box-shadow: 0 14px 38px rgba(0, 0, 0, .5);
+}
+.bc-ach-toast[data-vision="large"] {
+    font-size: 17px;
+    padding: 16px 16px 15px;
+}
+.bc-ach-ico {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    background: rgba(229, 164, 31, .16);
+}
+.bc-ach-toast[data-theme="dark"] .bc-ach-ico { background: rgba(224, 177, 80, .18); }
+.bc-ach-main { flex: 1 1 auto; min-width: 0; }
+.bc-ach-kicker {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    color: #7a5408;
+}
+.bc-ach-toast[data-theme="dark"] .bc-ach-kicker { color: #e0b150; }
+.bc-ach-name { font-weight: 700; font-size: 1.15em; margin-top: 1px; }
+.bc-ach-why, .bc-ach-target, .bc-ach-quip {
+    font-size: 1em;
+    color: #3c3f48;
+    margin-top: 3px;
+    overflow-wrap: anywhere;
+}
+.bc-ach-toast[data-theme="dark"] .bc-ach-why,
+.bc-ach-toast[data-theme="dark"] .bc-ach-target,
+.bc-ach-toast[data-theme="dark"] .bc-ach-quip { color: #d8d8e2; }
+.bc-ach-quip { font-style: normal; }
+.bc-ach-x {
+    position: relative;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #5f626b;
+    font-size: 14px;
+}
+/* 视觉不动，只用透明范围把命中区撑到 44×44（和番茄钟气泡同一个规矩 ✓） */
+.bc-ach-x::before {
+    content: '';
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+}
+.bc-ach-x:hover { background: rgba(128, 128, 128, .16); color: inherit; }
+.bc-ach-toast.out { animation: bc-ach-out .18s ease forwards; }
+@keyframes bc-ach-in {
+    from { opacity: 0; transform: translateX(18px) scale(.98); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes bc-ach-out {
+    to { opacity: 0; transform: translateX(18px) scale(.98); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   挂在 <body> 上的那几层
+   —— 弹窗（`.bc-modal-overlay`）/ 悬浮球右键菜单（`.bc-fab-menu`）/ 提醒气泡（`.bc-bubble`）
+   / 悬浮歌词条（`.bc-lyrics`）
+
+   它们**不在 .bc-root 里面** ⇒ 拿不到 `.bc-root[data-theme="dark"]` 那份变量，
+   于是深色主题下一直用着 :root 里的**浅色**强调色 ✗
+   （气泡标题深色下只有 2.54:1：深底上压了个浅浅的强调紫）。
+   ⇒ 三层的深色强调色**集中写这一条**（一个来源，别再各自抄一份 ✗）；
+      units 里有断言：选择器组必须三层齐全 + 整套强调色一个都不许漏 ✓
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* ⚠️ 选择器顺序：组里**前四个必须是**
+   `.bc-bubble` / `.bc-fab-menu` / `.bc-modal-overlay` / `.bc-lyrics`（这个顺序），
+   新加的层**一律接在 `.bc-lyrics` 后面** ✓；
+   units 那条老断言就是从第一处 `.bc-bubble…` 开始、按这个顺序往下读到那一组里找强调色 ✓ */
+.bc-bubble[data-theme="dark"],
+.bc-fab-menu[data-theme="dark"],
+.bc-modal-overlay[data-theme="dark"],
+.bc-lyrics[data-theme="dark"],
+.bc-timer-ball[data-theme="dark"],
+.bc-timer-bubble[data-theme="dark"],
+.bc-floor[data-theme="dark"] {
+    --bc-blurple: #8b93d6;
+    --bc-blurple-2: #a9afdd;
+    --bc-green: #57c08a;
+    --bc-red: #e07f83;
+    --bc-yellow: #e0b150;
+    --bc-sel-bg: #a9afdd;
+    --bc-sel-bg-2: #c2c7ea;
+    --bc-sel-tx: #1f1d1b;
+}
+/* 气泡自己那份深色底（底色 / 阴影）—— **必须紧跟在上面那条后面** ✓
+   （units 那条对比度断言是从第一处 `.bc-bubble…` 往后读 400 字找 `--bc-main`✓） */
+.bc-bubble[data-theme="dark"] {
+    --bc-main: #2a2724;
+    --bc-surface: #302d29;
+    --bc-line: rgba(255, 255, 255, .055);
+    --bc-tx: #e8e3da;
+    --bc-tx-2: #a8a29a;
+    --bc-tx-3: #a49e95;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, .55);
+}
+.bc-bubble-head { display: flex; align-items: center; gap: 6px; }
+/* 标题在设置里可以自己写（设置 → 时间与日历 → 提醒气泡）——
+   **不给内容设字数上限**：不裁字，让它自己折行，别把右边那颗 ✕ 挤出去 ✓ */
+.bc-bubble-title {
+    font-weight: 700;
+    color: var(--bc-blurple, #59609e);
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow-wrap: anywhere;
+}
+.bc-bubble-tag {
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    border-radius: 20px;
+    font-size: calc(10px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    border: 1px solid var(--bc-line);
+}
+.bc-bubble-sp { flex: 1 1 auto; }
+.bc-bubble-x { flex: 0 0 auto; padding: 0 5px; color: var(--bc-tx-3); cursor: pointer; }
+.bc-bubble-x:hover { color: var(--bc-red, #bc4a4e); }
+.bc-bubble-list { margin-top: 6px; }
+.bc-bubble-item { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; line-height: 1.6; }
+.bc-bubble-note { flex: 1 1 auto; min-width: 0; word-break: break-word; color: var(--bc-tx); }
+.bc-bubble-when {
+    flex: 0 0 auto;
+    color: var(--bc-tx-3);
+    font-size: calc(11px * var(--bc-fs-scale, 1));
+    font-variant-numeric: tabular-nums;
+}
+.bc-bubble-more { padding: 3px 0; color: var(--bc-tx-3); }
+.bc-bubble-foot { margin-top: 4px; color: var(--bc-tx-3); font-size: calc(11px * var(--bc-fs-scale, 1)); }
+/* ★ 推演那一档气泡里那颗「停止推演」（2026-10-15）—— 只在这时候出现 ✓ */
+.bc-bubble-act { margin-top: 8px; display: flex; }
+.bc-bubble-act .bc-btn { padding: 3px 12px; font-size: calc(12px * var(--bc-fs-scale, 1)); }
+
+/* 楼层那一行自己那份深色底（跟 `.bc-bubble[data-theme="dark"]` 同一个做法 ✓）——
+   它挂在聊天消息上、拿不到 `.bc-root` 那份变量 ⇒ 必须自己来一份 ✓ */
+.bc-floor[data-theme="dark"] {
+    --bc-main: #2a2724;
+    --bc-surface: #302d29;
+    --bc-line: rgba(255, 255, 255, .055);
+    --bc-tx: #e8e3da;
+    --bc-tx-2: #a8a29a;
+    --bc-tx-3: #a49e95;
+}
+
+/* =========================================================================
+   诊断面板（🔍）—— 把关键状态画在界面上，不依赖控制台
+   ========================================================================= */
+.bc-diag-box {
+    position: absolute;
+    right: 12px; bottom: 12px; z-index: 40;
+    width: min(420px, 86%);
+    max-height: 60%;
+    overflow: auto;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--bc-main, #fff);
+    color: var(--bc-tx, #0b0c0e);
+    border: 1px solid var(--bc-line, rgba(0, 0, 0, .12));
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+}
+.bc-diag-title { font-weight: 700; margin-bottom: 8px; font-size: calc(12px * var(--bc-fs-scale, 1)); }
+.bc-diag-line { display: flex; align-items: flex-start; gap: 8px; padding: 2px 0; line-height: 1.7; }
+.bc-diag-ok, .bc-diag-bad, .bc-diag-q { width: 14px; flex: 0 0 14px; text-align: center; font-weight: 700; }
+.bc-diag-ok { color: #22a559; }
+.bc-diag-bad { color: #e5484d; }
+.bc-diag-q { color: var(--bc-tx-3, #8a8f98); }
+.bc-diag-label { flex: 0 0 auto; }
+.bc-diag-extra { color: var(--bc-tx-3, #8a8f98); }
+.bc-diag-hint { margin-top: 8px; color: var(--bc-tx-3, #8a8f98); }
+
+/* =========================================================================
+   图标外观编辑器
+   ========================================================================= */
+.bc-icon-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--bc-line);
+}
+.bc-icon-row:last-of-type { border-bottom: 0; }
+.bc-icon-preview {
+    width: 36px; height: 36px;
+    flex: 0 0 36px;
+    border-radius: 50%;
+    background-size: cover;
+    background-position: center;
+    border: 1px solid var(--bc-line);
+}
+/* 壳的颜色可以自定义（方便换不同色系的图）⇒ 这两条是配色块和滑杆 ✓ */
+.bc-swatch {
+    width: 26px;
+    height: 26px;
+    flex: 0 0 26px;
+    border-radius: 50%;
+    border: 2px solid var(--bc-line);
+    padding: 0;
+    cursor: pointer;
+    background: transparent;
+}
+.bc-swatch.on { box-shadow: 0 0 0 2px var(--bc-sel-bg, #4338ca); border-color: transparent; }
+/* 「默认」那颗放不下两个字 ✗ ⇒ 它是**胶囊**、不是圆 ✓ */
+.bc-swatch-def {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 0 10px;
+    border-radius: 14px;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-2);
+    background: var(--bc-surface);
+}
+/* 色号输入框（在后面直接输色号换色 ✓） */
+.bc-hex {
+    flex: 0 0 auto;
+    width: 96px;
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+.bc-readout { font-size: calc(12.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-2); min-width: 3.6em; text-align: right; }
+.bc-range {
+    flex: 1 1 auto;
+    min-width: 120px;
+    accent-color: var(--bc-sel-bg, #4338ca);
+    /* 手机上好按一点（控件别太细 ✓） */
+    height: 22px;
+}
+.bc-icon-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+/* 这两行并排、不无限往下拉 ——
+   「悬浮球头像」那张卡里那两行（悬浮球 / 番茄钟悬浮球）**并排**各占一半；
+   窄屏（≤560px，跟别处同一个断点 ✓）才折回上下 ✓ */
+
+/* 并排时把每一行自己的那条分隔线收掉（两行齐平，别一人一条 ✗） */
+
+@media (max-width: 560px) {
+    
+    
+}
+.bc-icon-row-main .bc-label { font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 600; }
+
+/* 可折叠的设置区块 */
+.bc-sec-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+}
+.bc-sec-toggle:hover { color: var(--bc-blurple, #5a65f0); }
+.bc-sec-caret { width: 11px; flex: 0 0 11px; opacity: .7; font-size: calc(10px * var(--bc-fs-scale, 1)); }
+.bc-section.collapsed .bc-section-body { display: none; }
+
+/* 自定义图标把边框去掉 —— 透明底的图套个圆圈很碍眼。
+   其实不透明的图也不需要这圈线，填满圆形本身就够清楚。 */
+.bc-icon-preview.has-image { border-color: transparent; }
+
+/* 接口渠道列表（插件 API 是"列表 + 弹窗"的形态）——
+   样式用我们自己的：一行一条、点一下切换、
+   正在用的那条加个「使用中」徽章（不靠降透明度 ✗） */
+.bc-api-list { display: flex; flex-direction: column; }
+.bc-api-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 10px; border-radius: 6px; cursor: pointer;
+    border-bottom: 1px solid var(--bc-line);
+}
+.bc-api-row:last-child { border-bottom: 0; }
+.bc-api-row:hover { background: var(--bc-hover); }
+.bc-api-row.on { background: var(--bc-hover); }
+.bc-api-row-main { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.bc-api-name { font-size: calc(13px * var(--bc-fs-scale, 1)); font-weight: 600; color: var(--bc-tx); overflow-wrap: anywhere; }
+.bc-api-model { font-size: calc(12px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); word-break: break-all; }
+.bc-api-row .bc-btn { flex: 0 0 auto; }
+
+/* 阶段插图（设置页那六个槽位）——
+   每行：一张小预览 + 名字/一句话 + 地址框 + 上传/清空 ✓
+   预览跟面板那块同一比例 ⇒ 一眼看得出构图对不对 ✓ */
+.bc-stage-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--bc-line);
+}
+.bc-stage-row:last-of-type { border-bottom: 0; }
+.bc-stage-preview {
+    /* 跟着面板那块图走 **4:3**（104×78）——
+       缩略图必须和实际显示比例一致，不然设置页看到的样子跟面板里不一样 ✗ */
+    width: 104px; height: 78px;
+    flex: 0 0 104px;
+    border-radius: 6px;
+    background: var(--bc-hover);
+    background-size: cover;
+    background-position: center;
+    border: 1px solid var(--bc-line);
+}
+.bc-stage-preview.has-image { border-color: transparent; }
+.bc-stage-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.bc-stage-row-main .bc-label { font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 600; }
+.bc-stage-row-main .bc-hint { margin-top: 0; }
+
+/* =========================================================================
+   数据预览（后门）
+   ========================================================================= */
+.bc-dump { margin-top: 6px; }
+.bc-dump .bc-section-title { margin-top: 14px; }
+.bc-dump-card {
+    padding: 8px 11px;
+    border-radius: 10px;
+    background: var(--bc-hover);
+    border: 1px solid var(--bc-line);
+    margin-bottom: 10px;   /* A11：原 7px ⇒ "块与块"档（10px ✓） */
+}
+.bc-dump-title { font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 700; margin-bottom: 5px; color: var(--bc-tx); }
+.bc-dump-kv { display: flex; gap: 8px; font-size: calc(11.5px * var(--bc-fs-scale, 1)); line-height: 1.8; }
+.bc-dump-k { flex: 0 0 auto; color: var(--bc-tx-3); min-width: 96px; }
+.bc-dump-v { flex: 1 1 auto; min-width: 0; word-break: break-all; color: var(--bc-tx-2); }
+.bc-dump-block { margin-top: 5px; }
+.bc-dump-head {
+    display: flex; align-items: center; gap: 6px;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-blurple);
+    cursor: pointer; user-select: none;
+}
+.bc-dump-head:hover { text-decoration: underline; }
+.bc-dump-pre {
+    margin: 5px 0 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--bc-main);
+    border: 1px solid var(--bc-line);
+    font-size: calc(11px * var(--bc-fs-scale, 1));
+    line-height: 1.6;
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: ui-monospace, Consolas, monospace;
+}
+
+/* 诊断面板的页签 / 工具条 / 关闭按钮 */
+.bc-diag-title { display: flex; align-items: center; gap: 8px; }
+.bc-diag-title .bc-spacer { flex: 1 1 auto; }
+.bc-diag-x { cursor: pointer; opacity: .6; padding: 0 4px; }
+.bc-diag-x:hover { opacity: 1; color: var(--bc-red, #e5484d); }
+.bc-diag-tabs { display: flex; gap: 5px; margin: 8px 0 10px; }
+.bc-diag-tab {
+    padding: 4px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    background: var(--bc-hover);
+    border: 1px solid transparent;
+    color: var(--bc-tx-2);
+}
+.bc-diag-tab:hover { color: var(--bc-tx); }
+.bc-diag-tab.active { background: var(--bc-sel-bg, #59609e); color: var(--bc-sel-tx); }
+.bc-diag-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.bc-diag-bar .bc-spacer { flex: 1 1 auto; }
+.bc-diag-toggle {
+    padding: 3px 10px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    background: var(--bc-hover);
+    border: 1px solid var(--bc-line);
+}
+.bc-diag-toggle:hover { border-color: var(--bc-blurple, #5a65f0); color: var(--bc-blurple, #5a65f0); }
+.bc-diag-toggle.on { background: rgba(229, 164, 31, .18); border-color: rgba(229, 164, 31, .5); color: var(--bc-yellow); }
+.bc-diag-box { max-height: 70%; }
+.bc-diag-box .bc-section-title { font-size: calc(11.5px * var(--bc-fs-scale, 1)); margin-top: 12px; }
+
+/* =========================================================================
+   预览效果的大按钮（临时功能，正式发布前可删）
+   ========================================================================= */
+/* ---- 预览效果条：**已删除**（2026-10-15 她点的）----
+   ⚠️ 这条（`.bc-preview-bar` / `.bc-preview-fold` / `.bc-preview-btn`）原来长在面板最上面，
+   踩过三次：① 压住名字栏 ✗ ② 挪到最上面还是挡住（两个按钮各占一整行）✗
+   ③ 收起成一个小按钮后跟状态条挤在一起（那颗提示胶囊位置有点奇怪就是它 ✓）
+   ⇒ 预览入口已搬去「设置 → 常规 → 诊断与数据（排查用）」，样式用那边通用的 `.bc-btn` ✓
+   ⇒ **别再往面板顶上放预览控件，也别把这几条样式加回来** ✗ */
+
+/* =========================================================================
+   时光机
+   ========================================================================= */
+.bc-tm { display: flex; flex-direction: column; gap: 10px; }
+.bc-tm-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+.bc-tm-info { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); }
+/* 时光机的搜索框：占满一行，窄屏也不挤（楼层搜索跳转） */
+.bc-tm-search { display: flex; }
+.bc-tm-search > * { flex: 1 1 auto; }
+/* 时光机里的推演状态（弹窗盖住了楼层那一行和气泡 ⇒ 这里自己报一档 ✓） */
+.bc-tm-status { display: flex; align-items: center; gap: 8px; }
+.bc-tm-status:empty { display: none; }
+.bc-tm-status-txt { font-size: calc(13px * var(--bc-fs-scale, 1)); font-weight: 600; color: var(--bc-tx-2); }
+.bc-tm-cols {
+    display: grid;
+    grid-template-columns: minmax(200px, 280px) 1fr;
+    gap: 12px;
+    min-height: 340px;
+    max-height: 60vh;
+}
+@media (max-width: 720px) { .bc-tm-cols { grid-template-columns: 1fr; } }
+
+.bc-tm-list {
+    overflow: auto;
+    border: 1px solid var(--bc-line);
+    border-radius: 10px;
+    background: var(--bc-surface);
+    padding: 5px;
+}
+.bc-tm-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+.bc-tm-row:hover { background: var(--bc-hover); }
+.bc-tm-row.active { background: rgba(90, 101, 240, .12); border-color: rgba(90, 101, 240, .35); }
+.bc-tm-no {
+    flex: 0 0 auto;
+    font-size: calc(11px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    color: var(--bc-blurple);
+    min-width: 32px;
+}
+.bc-tm-when { min-width: 0; flex: 1 1 auto; }
+.bc-tm-vt { font-size: calc(12.5px * var(--bc-fs-scale, 1)); font-weight: 600; color: var(--bc-tx); }
+.bc-tm-rt { font-size: calc(11px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); }
+
+.bc-tm-detail {
+    overflow: auto;
+    border: 1px solid var(--bc-line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: var(--bc-main);
+}
+.bc-tm-head { margin-bottom: 10px; }
+.bc-tm-head-title { font-size: calc(14px * var(--bc-fs-scale, 1)); font-weight: 700; }
+.bc-tm-head-sub { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); margin-top: 2px; }
+.bc-tm-keys { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; }
+.bc-tm-key {
+    padding: 3px 11px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    background: var(--bc-hover);
+    border: 1px solid transparent;
+}
+.bc-tm-key.active { background: var(--bc-sel-bg); color: var(--bc-sel-tx); }
+.bc-tm-fields { display: flex; flex-direction: column; gap: 2px; }
+.bc-tm-field { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--bc-line); }
+.bc-tm-field-k {
+    flex: 0 0 96px;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    padding-top: 1px;
+}
+.bc-tm-field-v { flex: 1 1 auto; min-width: 0; font-size: calc(12.5px * var(--bc-fs-scale, 1)); line-height: 1.7; word-break: break-word; }
+.bc-tm-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; height: 100%; min-height: 160px;
+    color: var(--bc-tx-3); font-size: calc(12.5px * var(--bc-fs-scale, 1)); text-align: center;
+}
+/* 时光机里「这一楼变了什么」那个折叠区 ✓ */
+.bc-tm-diff {
+    margin-top: 12px;
+    border: 1px solid var(--bc-line);
+    border-radius: 6px;
+    padding: 8px 12px;
+    background: var(--bc-surface);
+}
+.bc-tm-diff > summary {
+    cursor: pointer;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    font-weight: 600;
+    color: var(--bc-tx-2);
+}
+.bc-tm-diff-row {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 4px 0;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    flex-wrap: wrap;
+}
+.bc-tm-diff-k { color: var(--bc-tx-3); min-width: 4.5em; }
+.bc-tm-diff-v { color: var(--bc-tx-2); }
+.bc-tm-diff-v.to { color: var(--bc-tx); font-weight: 600; }
+.bc-tm-diff-arrow { color: var(--bc-tx-3); }
+.bc-tm-lock {
+    margin-top: 12px;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    text-align: center;
+    padding: 7px;
+    border-radius: 6px;
+    background: var(--bc-hover);
+}
+
+/* 图标槽位分组：分组标题当分隔用，不做成可折叠的子组 */
+.bc-icon-group { margin-bottom: 10px; }
+.bc-icon-group > .bc-section-title { margin-top: 4px; }
+
+/* 互斥模块卡片的「二选一」提示 */
+.bc-card-hint {
+    /* 往右挪一点（贴边了不好看）；但不要竖线 ✗ */
+    margin: 7px 0 3px 10px;
+    padding-left: 2px;
+    /* ⚠️ 11px 太小、字阶也不统一 ⇒ 小灰字这一档是 12.5px；行高也放宽 ✓ */
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    line-height: 1.7;
+    color: var(--bc-yellow);
+    opacity: .9;
+}
+
+/* =========================================================================
+   提示词档案
+   ========================================================================= */
+.bc-arch-card {
+    padding: 11px 13px;
+    margin-bottom: 24px;   /* 卡片档（24px ✓），别新造数字 ✗ */
+    border-radius: 10px;
+    background: var(--bc-hover);
+    border: 1px solid var(--bc-line);
+}
+.bc-arch-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.bc-arch-name { font-size: calc(13.5px * var(--bc-fs-scale, 1)); font-weight: 700; color: var(--bc-tx); text-wrap: balance; overflow-wrap: anywhere; }
+.bc-arch-time { font-size: calc(11px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); }
+.bc-arch-sum { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 9px; }
+.bc-arch-chip {
+    font-size: calc(11px * var(--bc-fs-scale, 1));
+    padding: 2px 9px;
+    border-radius: 20px;
+    background: var(--bc-surface);
+    border: 1px solid var(--bc-line);
+    color: var(--bc-tx-2);
+}
+
+/* 空状态提示（档案列表等地方用） */
+.bc-empty {
+    padding: 26px 16px;
+    text-align: center;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    border: 1px dashed var(--bc-line);
+    border-radius: 10px;
+}
+
+/* 敏感带档案切换条 */
+.bc-zone-arch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--bc-line);
+}
+.bc-zone-arch-dd { flex: 1 1 200px; min-width: 160px; }
+
+/* 有改动还没保存的按钮：让它显眼一点 */
+.bc-unsaved {
+    box-shadow: 0 0 0 3px rgba(229, 164, 31, .35) !important;
+    border-color: var(--bc-yellow) !important;
+}
+
+/* 预设条右侧那句「当前 = 本聊天的记录」 */
+.bc-zone-arch-note {
+    flex: 1 1 100%;
+    font-size: calc(11px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    margin-top: 2px;
+}
+
+/* 硬条件没满足的警告行（如「需要先打开：血脉遗传特质」） */
+.bc-card-hint-warn {
+    border-left-color: var(--bc-yellow);
+    color: var(--bc-yellow);
+    /* ⚠️ 间隔太小会都塞一起 —— 这一行里装的是「⚠️ 文字 + 🔓 去开启那颗按钮」，
+       **块级 + 行内按钮**的话按钮紧贴着文字、看着像糊在一起 ✗
+       ⇒ flex 行：文字与按钮之间留 10px，窄了自动换行，上下也拉开一点 ✓ */
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 9px 0 4px 10px;
+}
+.bc-card-hint-warn > span { flex: 1 1 auto; min-width: 0; }
+.bc-card-hint-warn > .bc-btn { flex: 0 0 auto; }
+
+/* 「生理期名字（两档各一套）」那张表：三列 —— 项目 / 有月经那档 / 无月经那档 ✓ */
+.bc-names-grid { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 8px; }
+.bc-names-row { display: grid; grid-template-columns: 1.1fr 1.2fr 1.2fr; gap: 8px; align-items: center; }
+.bc-names-row .bc-names-cell { min-width: 0; }
+.bc-names-head .bc-names-cell { font-size: calc(11px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); }
+.bc-names-group { margin-top: 6px; }
+.bc-names-group .bc-names-cell { font-size: calc(11.5px * var(--bc-fs-scale, 1)); color: var(--bc-tx-2); }
+
+/* 生理期参数面板头部右侧的「哪些词会上色」徽章 + 展开面板 */.bc-param-colorhint {
+    font-size: calc(10.5px * var(--bc-fs-scale, 1));
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--bc-hover);
+    border: 1px solid var(--bc-line);
+    color: var(--bc-tx-3);
+    white-space: nowrap;
+}
+.bc-param-colorhint.on { border-color: var(--bc-yellow); color: var(--bc-yellow); }
+/* ⚠️ 不能做成"浮层"（position:absolute 挂进 flex 头部里）——
+ *   那样上色词会被挤没、被祖先容器裁掉、被下一张卡盖住 ✗
+ *   ⇒ 改成"在参数面板里占一整行展开"：它排在头部下面，永远不会被裁 ✓
+ *   （宽度自适应，不定死 420px ✓） */
+.bc-colorhint-panel {
+    margin: 4px 0 8px;
+    padding: 11px 13px;
+    border-radius: 10px;
+    background: var(--bc-surface);
+    border: 1px solid var(--bc-line);
+}
+.bc-colorhint-row { display: flex; gap: 8px; margin: 5px 0; font-size: calc(11.5px * var(--bc-fs-scale, 1)); line-height: 1.5; }
+.bc-colorhint-row b { flex: 0 0 34px; color: var(--bc-tx-2); }
+.bc-colorhint-row span { color: var(--bc-tx-3); }
+
+/* 跳转过去时闪一下，让人看清到了哪 */
+.bc-jump-flash {
+    animation: bc-jump-glow 1.6s ease-out;
+}
+@keyframes bc-jump-glow {
+    0%   { box-shadow: 0 0 0 3px var(--bc-yellow); }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+/* 「跳回来」那一行 */
+.bc-jump-back { display: flex; align-items: center; gap: 8px; }
+
+/* ===========================================================================
+   BC-DC-FLAT:START
+   设置页：去掉卡片框，改成 聊天软件 那种「平铺 + 分隔线」
+
+   为什么放在文件末尾：这是一层**覆盖**，原规则一行不动。
+   想回退就把这一整块删掉，立刻恢复成卡片风。
+
+   DC 的特征（也就是这次要借的）：
+     · 没有圆角框、没有边框、没有阴影
+     · 区块之间用一条 1px 分隔线断开
+     · 组标题/小节标题是「小字 + 灰色 + 字距」
+     · 打开的项只用一个很淡的底色调区分，不画框
+   =========================================================================== */
+
+/* ---- 卡片 → 平铺 ---- */
+.bc-card {
+    border-radius: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    margin-bottom: 0;
+    padding: 2px 0 14px;
+    border-bottom: 1px solid var(--bc-line);
+    overflow: visible;
+}
+.bc-card:last-child { border-bottom: 0; padding-bottom: 4px; }
+
+/* 卡头：去掉那块灰底和分隔线，只留标题 */
+.bc-card-head {
+    padding: 14px 0 6px;
+    background: transparent;
+    border-bottom: 0;
+}
+/* 打开状态：只给一个很淡的底（不画框、不加阴影），跟 DC 的选中态一样克制 */
+/* 展开的卡片：**不加任何效果**（对齐 DC，底色也算效果）。
+   它展开没展开，看正文有没有出来就够了。 */
+.bc-card.on {
+    border-color: transparent;
+    box-shadow: none;
+    background: transparent;
+}
+/* ⚠️ 上面那句 border-color 是四边一起设的 —— 会把 `border-bottom`（也就是卡片之间
+   那条分隔线）一起刷成透明 ⇒ 表现就是「把某个条目打开（= 开关打开）之后，
+   它下面的分隔线消失了」✗
+   DC 化那里只想清掉**框**（左右上），底边那条线必须留着。 */
+.bc-card.on { border-bottom-color: var(--bc-line); }
+.bc-card.on:last-child { border-bottom-color: transparent; }
+.bc-card.on .bc-card-head { background: transparent; }
+
+/* 卡身/说明：左右 padding 交给外层两列管，这里只留上下 */
+.bc-card-body { padding: 4px 0 0; }
+.bc-card-desc { padding: 3px 0 0; font-size: calc(11.5px * var(--bc-fs-scale, 1)); }
+
+/* ---- 组标题：小字 + 灰色 + 字距（对应 DC 的 USER SETTINGS 那种） ---- */
+/* 它也是设置页的"分组标题" ⇒ 字号 12.5px，上下留白加大（簇与簇之间要明显分得开 ✓） */
+.bc-card-group-title {
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--bc-tx-3);
+    margin: 28px 0 10px;
+    padding-bottom: 4px;
+    border-bottom: 0;
+}
+.bc-card-group-title:first-child { margin-top: 8px; }
+
+/* ---- 小节标题：同样的小字灰，但保留一条淡分隔线（DC 的分节感） ---- */
+/* 字号 13px：一页要扫很多个标题，11px 太难认 ✓ */
+.bc-section-title {
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--bc-tx-3);
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--bc-line);
+}
+
+/* ---- 卡片右上角那个「？」：点开一个居中弹窗
+   形态：点开要弹小窗 —— 在面板中间弹那种窗口，而不是直接显示字，这样看得更清楚 ✓
+   ⇒ 卡片上不留说明文字，全在弹窗里（字号大、能分点 ✓）
+   ⚠️ 触控区 26px：别抠成 18px 那种小点点 ✗ ---- */
+.bc-sec-titlerow { display: flex; align-items: center; gap: 8px; margin: -2px 0; }
+/* ★★ 一个分区**里面**的小标题（比如「插件 API（状态推演）」里面那两块：
+   「从酒馆预设导入」/「插件自己的接口配置」/「预设条目…」/「人设版本」）——
+   它紧跟在上一块的内容后面，只有 margin-bottom、没有上边距的话 ⇒ 两块的间距比别处紧一截 ✗
+   （要和其他密度对齐）
+   ⚠️⚠️ **不能写 `.bc-section-body > .bc-section-title`（直接子元素）—— 那样根本不生效** ✗
+     —— 因为那几个小标题外面还多包了一层（`ownBox` / `entryHost`）⇒ 它们不是直接子元素，
+     必须用后代选择器 ✓
+   ⚠️ 只管**嵌在分区里面**的小标题（挨着内容的）；**分区自己的标题**（`.bc-section >
+     .bc-section-title`）前面没有 `.bc-section-body` ⇒ 不受影响 ✓ */
+.bc-section-body .bc-section-title { margin-top: 18px; }
+.bc-sec-help {
+    flex: 0 0 auto;
+    display: inline-flex;          /* ⚠️ 别靠 line-height 凑居中，会偏 ✗ */
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    /* ★ letter-spacing 必须归零：标题那层有 .04em，会在字右边留一截空隙 ⇒ 看着就是"歪的" ✗ */
+    letter-spacing: 0;
+    border-radius: 50%;
+    border: 1px solid var(--bc-line);
+    background: var(--bc-main);
+    color: var(--bc-tx-2);
+    font-size: calc(15px * var(--bc-fs-scale, 1));
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+}
+.bc-sec-help:hover { border-color: var(--bc-blurple); color: var(--bc-blurple); }
+.bc-help-item {
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    line-height: 1.9;
+    color: var(--bc-tx-2);
+    padding: 8px 0;
+    border-bottom: 1px solid var(--bc-line);
+}
+.bc-help-item:last-child { border-bottom: 0; }
+
+/* ---- 悬浮球那类"卡片"也一起去框？不 —— 只改设置页，别影响状态面板 ---- */
+.bc-setcontent .bc-card,
+.bc-setcontent .bc-card-head,
+.bc-setcontent .bc-card-body { /* 上面已经在 .bc-setcontent 作用域里生效 */ }
+
+/* BC-DC-FLAT:END */
+
+/* 注：「致孕方锁定」的卡片样式放在 assets/bodycord.html 自己的 <style> 里。
+   面板跑在 iframe 中，外层 style.css 对它不生效，写这边等于白写。 */
+
+/* ---------------------------------------------------------------------------
+   周期结算方式：分段单选（规则变体）
+
+   放在设置页面很合适 —— 这相当于选择难度，而不是随手的啃面包
+   ⇒ 写成"选一种"，不是"开/关"；并且标明哪个在生效、哪个等下一个周期 ✓
+   ⚠️ 设置页是**外层** UI，样式写这里 ✓（面板那种 iframe 里的才写 bodycord.html）
+   --------------------------------------------------------------------------- */
+.bc-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 6px 0 2px;
+}
+.bc-choice-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 9px 13px;
+    border: 1px solid var(--bc-line);
+    border-radius: 6px;
+    background: var(--bc-surface);
+    cursor: pointer;
+    transition: border-color .12s ease, background-color .12s ease;
+}
+.bc-choice-row:hover { border-color: var(--bc-blurple); }
+.bc-choice-row.active {
+    border-color: var(--bc-blurple);
+    background: rgba(90, 101, 240, .10);
+}
+.bc-choice-dot {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+    border: 2px solid var(--bc-tx-3);
+    border-radius: 50%;
+}
+.bc-choice-dot.on {
+    border-color: var(--bc-sel-bg);
+    background: var(--bc-sel-bg);
+    box-shadow: inset 0 0 0 2px var(--bc-surface);
+}
+/* 孩子编辑器的「名字面板」（形态：名字面板在上、点一下切人）
+   孩子多了也不能把弹窗顶满 ⇒ 给它自己的滚动区，下面那份表单始终看得见 ✓ */
+.bc-child-names {
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 6px 2px;
+    margin-bottom: 10px;
+}
+.bc-child-names .bc-pill {
+    padding: 8px 14px;
+    font-size: calc(14px * var(--bc-fs-scale, 1));
+}
+/* ★ 2026-10-24：孩子那一段的排版 —— 清单和表单之间、表单里每张卡之间都留开一点 */
+.bc-child-form > .bc-section + .bc-section { margin-top: 14px; }
+.bc-child-form > .bc-section { margin-bottom: 0; }
+/* ★ 2026-10-24：世界书「多选模式」——整行点选，选中给底色 + 勾 */
+.bc-wi-multi { gap: 8px; margin-bottom: 6px; }
+.bc-wi-pick { cursor: pointer; border-radius: 6px; padding: 2px 6px; }
+.bc-wi-pick:hover { background: var(--bc-hover, rgba(0,0,0,.05)); }
+.bc-wi-picked { background: var(--bc-sel-bg, rgba(138,123,216,.16)); }
+.bc-wi-tick { font-size: calc(11.5px * var(--bc-fs-scale, 1)); font-weight: 700; color: var(--bc-accent, #8a7bd8); white-space: nowrap; }
+/* ★ 2026-10-24（她：重掷窗口里显性来源和上面的选项贴在一起）——
+   弹窗里每一段之间留开距离，行内控件之间也留 gap ✓ */
+.bc-reroll-sec { margin-top: 14px; }
+.bc-reroll-sec:first-child { margin-top: 0; }
+.bc-reroll-row { gap: 8px; align-items: center; margin-top: 6px; }
+.bc-choice-body { min-width: 0; }
+.bc-choice-label {
+    font-weight: 600;
+    color: var(--bc-tx);
+    line-height: 1.5;
+}
+.bc-choice-hint {
+    margin-top: 2px;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    line-height: 1.6;
+    color: var(--bc-tx-3);
+}
+.bc-choice-tag {
+    margin-left: 8px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: calc(11px * var(--bc-fs-scale, 1));
+    font-weight: 500;
+    background: rgba(90, 101, 240, .16);
+    color: var(--bc-blurple);
+}
+.bc-choice-tag.pending {
+    background: var(--bc-hover);
+    color: var(--bc-tx-2);
+}
+
+/* ---------------------------------------------------------------------------
+   周期结算方式：卡片上的紧凑两档切换
+
+   位置：补丁页 → 「生理周期模块」卡片，占「🔒 必开」那个位子（把它替换掉 ✓）
+   它是**规则变体**（选难度），所以做成两档切换而不是开关 ✓
+   --------------------------------------------------------------------------- */
+.bc-modesw {
+    display: inline-flex;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid var(--bc-line);
+    border-radius: 6px;
+    background: var(--bc-surface);
+}
+.bc-modesw-opt {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    line-height: 1.4;
+    color: var(--bc-tx-2);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color .12s ease, color .12s ease;
+}
+.bc-modesw-opt:hover { color: var(--bc-tx); }
+.bc-modesw-opt.active {
+    background: var(--bc-sel-bg);
+    color: var(--bc-sel-tx);
+    font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   「精子怎么算」这一组（生理周期模块卡片上那三行）
+   三行是同一个问题的三层：过期怎么处理 / 存活期多长 / 判定取哪个数
+   ⇒ 用一个浅边框包起来，免得被当成"三个并列的开关" ✓
+   --------------------------------------------------------------------------- */
+.bc-spermblock {
+    margin: 10px 0 4px;
+    padding: 8px 10px 2px;
+    border: 1px solid var(--bc-line);
+    border-radius: 8px;
+}
+.bc-spermblock-title {
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    font-weight: 600;
+    color: var(--bc-tx-2);
+    margin-bottom: 6px;
+}
+.bc-rule-row { flex-wrap: wrap; }
+.bc-rule-row + .bc-rule-row { margin-top: 6px; }
+
+/* ---------------------------------------------------------------------------
+   精子存活期的范围输入（挂在补丁页「生理周期模块」卡片上）
+   做一个最长最短就行，不需要做加权
+   ⚠️ 设置页是**外层** UI ⇒ 样式写这里 ✓（面板那个 iframe 里的才写 bodycord.html）
+   --------------------------------------------------------------------------- */
+.bc-spermlife {
+    margin-top: 8px;
+    gap: 6px;
+}
+.bc-spermlife .bc-num-sm {
+    flex: 0 0 auto;
+    width: 64px;
+    padding: 3px 6px;
+    border: 1px solid var(--bc-line);
+    border-radius: 6px;
+    background: var(--bc-surface);
+    color: var(--bc-tx);
+    /* ⚠️ 别用 calc(12px * --bc-fs-scale)：视力模式 1.3 会算出 15.6px 这种非整数，
+       再叠加表单默认字体，数字就发糊。整数 + 界面字体最清楚 ✓ */
+    font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    font-size: var(--bc-num-fs, 13px);
+    text-align: center;
+    /* 数字框的上下箭头会占掉右边一块 ⇒ 看着不居中，也一起关掉 */
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.bc-spermlife .bc-num-sm::-webkit-outer-spin-button,
+.bc-spermlife .bc-num-sm::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.bc-spermlife .bc-num-sep {
+    color: var(--bc-tx-3);
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+}
+.bc-spermlife .bc-hint-inline {
+    margin: 0;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    line-height: 1.5;
+}
+.bc-spermlife.off {
+    opacity: .55;
+}
+
+/* ---------------------------------------------------------------------------
+   受精判定口径（两档：累计受孕率 / 仅存活精子）
+   跟上面「精子存活期」是同一件事的另一个旋钮 ⇒ 同一张卡、同一种排法 ✓
+   ⚠️ 设置页是**外层** UI ⇒ 样式写这里 ✓
+   --------------------------------------------------------------------------- */
+.bc-judgebasis {
+    margin-top: 6px;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.bc-judgebasis .bc-hint-inline {
+    margin: 0;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    line-height: 1.5;
+}
+.bc-judgebasis.off {
+    opacity: .55;
+}
+
+/* ---------------------------------------------------------------------------
+   固定字段表（弹窗形式）+ 两处入口的一行提示
+   用户要求：现在这个东西很多，建议单独搞一个表；点那个按钮，表就弹出一个窗口
+   ⚠️ 设置页是外层 UI ⇒ 样式写这里 ✓
+   --------------------------------------------------------------------------- */
+.bc-ff-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--bc-line);
+    border-radius: 6px;
+    background: var(--bc-surface);
+}
+.bc-ff-bar .bc-hint { margin: 0; }
+.bc-ff-bar-top { margin-bottom: 8px; }
+
+.bc-ff-table {
+    display: flex;
+    flex-direction: column;
+    margin-top: 10px;
+    border: 1px solid var(--bc-line);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.bc-ff-row {
+    display: grid;
+    grid-template-columns: 190px 1fr 1fr;
+    gap: 10px;
+    padding: 7px 12px;
+    border-top: 1px solid var(--bc-line);
+    /* ⚠️ 三列字号本来就不一样（字段名那列是 code 字，其余两列 12px）
+       ⇒ 必须用 `baseline` 让它们**首行基线**对齐（`start` 只是顶边对齐，
+       视力模式下会差出 4px 多，一眼就能看出"歪"✗）。网格布局也支持 baseline ✓ */
+    align-items: baseline;
+}
+.bc-ff-row:first-child { border-top: 0; }
+.bc-ff-head {
+    background: var(--bc-hover);
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    font-weight: 600;
+    color: var(--bc-tx-2);
+}
+.bc-ff-row code {
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx);
+    word-break: break-all;
+}
+.bc-ff-what { font-size: calc(12px * var(--bc-fs-scale, 1)); color: var(--bc-tx-2); line-height: 1.6; }
+.bc-ff-broke { font-size: calc(12px * var(--bc-fs-scale, 1)); color: var(--bc-tx-3); line-height: 1.6; }
+
+/* ---------------------------------------------------------------------------
+   易读模式（⚠️ 注释里也不写"谁适合用"这类说法 ✗）
+
+   只改两个变量，全站生效 ✓
+     · --bc-fs-scale  字号缩放（138 处 font-size 都写成 calc(原值 * 这个) ✓）
+     · --bc-tx-3      最淡那档灰，借 --bc-tx-2 的浓度 ⇒ 约 8:1（AAA 是 7:1 ✓）
+
+   ⚠️ 只挂 `.bc-root` 不够 ⇒ **弹窗和悬浮球右键菜单不跟着放大** ✗ ——
+     它们挂在 <body> 上、不是 .bc-root 的孩子，拿不到 --bc-fs-scale
+     （`var(--bc-fs-scale, 1)` 的兜底就是 1 ⇒ 弹窗里字号纹丝不动），那份深灰也拿不到 ✗。
+     ⇒ 这几层必须并进同一条；
+       同时 dom.js 的弹窗 / ui.js 的右键菜单**必须自己带上 `data-vision`**（不带就永远匹配不上 ✗）
+   --------------------------------------------------------------------------- */
+.bc-root[data-vision="large"],
+.bc-bubble[data-vision="large"],
+.bc-fab-menu[data-vision="large"],
+.bc-modal-overlay[data-vision="large"],
+.bc-timer-ball[data-vision="large"],
+.bc-timer-bubble[data-vision="large"],
+.bc-lyrics[data-vision="large"],
+.bc-floor[data-vision="large"] {
+    --bc-fs-scale: 1.3;
+    --bc-tx-3: #4a4d55;
+}
+
+/* 数字输入框的字号用整数（13 / 17），别拿 12px × 1.3 去算 15.6px 那种非整数。
+   ⚠️ 这两条必须**自己单独成规则**，不能插进上面那串选择器里 ——
+      插进去会把那条规则劈成两半，`--bc-fs-scale: 1.3` 只剩最后一行生效，
+      整个易读模式的放大就失效了（2026-10-20 踩过 ✗） */
+:root { --bc-num-fs: 13px; }
+[data-vision="large"] { --bc-num-fs: 17px; }
+.bc-root[data-vision="large"][data-theme="dark"],
+.bc-bubble[data-vision="large"][data-theme="dark"],
+.bc-fab-menu[data-vision="large"][data-theme="dark"],
+.bc-modal-overlay[data-vision="large"][data-theme="dark"],
+.bc-timer-ball[data-vision="large"][data-theme="dark"],
+.bc-timer-bubble[data-vision="large"][data-theme="dark"],
+.bc-lyrics[data-vision="large"][data-theme="dark"],
+.bc-floor[data-vision="large"][data-theme="dark"] {
+    --bc-tx-3: #c4bdb3;
+}
+.bc-root[data-vision="large"] .bc-hint,
+.bc-root[data-vision="large"] .bc-card-desc,
+.bc-root[data-vision="large"] .bc-gate-glossary-row,
+.bc-root[data-vision="large"] .bc-dump-pre,
+.bc-modal-overlay[data-vision="large"] .bc-hint,
+.bc-modal-overlay[data-vision="large"] .bc-dump-pre {
+    line-height: 1.85;
+}
+.bc-root[data-vision="large"] .bc-btn,
+.bc-modal-overlay[data-vision="large"] .bc-btn {
+    padding: 5px 12px;
+}
+.bc-root[data-vision="large"] .bc-toggle,
+.bc-modal-overlay[data-vision="large"] .bc-toggle {
+    transform: scale(1.15);
+    transform-origin: left center;
+}
+
+/* ---------------------------------------------------------------------------
+   设置页分区隔断（推演与追踪里面没有隔断会全都挤在一起，阅读起来很麻烦）
+
+   根因：`.bc-section-title` 上面有两条规则，后一条（DC 化那层）把它改成了
+        11px + 最淡的灰 ✗ —— 那规格适合「分组小标签」，
+        但**分区标题**得看得见边界才行 ✓ 否则整页糊成一片 ✗
+   --------------------------------------------------------------------------- */
+.bc-pane .bc-section {
+    margin-bottom: 28px;          /* 拉开区间距 */
+}
+.bc-pane .bc-section + .bc-section {
+    padding-top: 6px;
+}
+.bc-pane .bc-section-title {
+    font-size: calc(13.5px * var(--bc-fs-scale, 1));   /* 11px 太小，提回来 */
+    font-weight: 700;
+    color: var(--bc-tx-2);                              /* 别再是最淡那档 */
+    letter-spacing: 0;
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--bc-line);
+}
+/* 需要折叠的区块，标题右边给个更清楚的抓手 */
+.bc-pane .bc-sec-toggle {
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+}
+
+/* ---------------------------------------------------------------------------
+   异种比例的"可改数值"小抄（挂「异种扩展包（西方与通用）」卡片上）
+   说明里给就行，提示词不要 ⇒ 只进界面 ✓
+
+   ⚠️ 内容里有换行 ⇒ 必须 white-space: pre-line，否则 \n 不生效 ✗
+   ⚠️ 用等宽字体，玩家要照着抄数字，对齐了才好认 ✓
+   --------------------------------------------------------------------------- */
+.bc-numhint {
+    margin: 5px 0 2px 10px;
+    padding: 8px 11px;
+    font-family: ui-monospace, Consolas, 'Courier New', monospace;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    line-height: 1.75;
+    color: var(--bc-tx-2);
+    background: var(--bc-surface, #f7f8f9);
+    border-radius: 6px;
+    white-space: pre-line;
+}
+.bc-root[data-vision="large"] .bc-numhint {
+    line-height: 1.9;
+}
+
+/* 「补丁数值」格里的下拉：尺寸跟数字框对齐就够 ✓
+   （配色/边框**交给 .bc-select** —— 它已经用 !important 压制了酒馆主题 ✓
+    别在这里重写颜色 ✗ 那样又会冒出一块不属于这里的样式） */
+.bc-param-field .bc-select {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: calc(12.5px * var(--bc-fs-scale, 1));
+}
+
+/* ---------------------------------------------------------------------------
+   世界书（给推演看）那张表（表格 + 分页 + 展开看条目 ✓）
+
+   ⚠️ 字号一律走 `--bc-fs-scale`（视力那档要跟着放大 ✓）
+   ⚠️ 被排除的书**不许降透明度** —— 降透明度＝掉对比度 ✗ ⇒ 只用底色区分 ✓
+   ⚠️ 条目区限制高度 + 自己滚动：一本书几百条也不把页面撑到天上去 ✓
+   --------------------------------------------------------------------------- */
+.bc-wi-list { margin-top: 4px; }
+
+.bc-wi-book {
+    margin-top: 6px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    background: var(--bc-hover);
+    border: 1px solid var(--bc-line);
+}
+.bc-wi-book.off { background: transparent; }
+.bc-wi-book .bc-row { margin-top: 0; }
+.bc-wi-entries {
+    margin-top: 6px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--bc-main);
+    border: 1px solid var(--bc-line);
+    max-height: 340px;
+    overflow: auto;
+}
+.bc-wi-entries .bc-row { margin-top: 4px; }
+.bc-wi-entries .bc-input { width: 100%; }
+.bc-wi-entries .bc-label { max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 「已排除的池子」—— 已排除的世界书单独一个池子 ✓
+   （要的是"一眼看出这些是不给推演看的"，所以用虚线框 + 淡底，不靠透明度 ✓） */
+.bc-wi-pool {
+    margin-top: 6px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    background: var(--bc-surface);
+    border: 1px dashed var(--bc-line);
+}
+.bc-wi-pool .bc-row { margin-top: 0; }
+/* 被单条排除的条目：左边一道竖线做记号（不划线、不降透明度 —— 那两种都掉可读性 ✗） */
+.bc-wi-off { border-left: 3px solid var(--bc-tx-3); padding-left: 6px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   手机「整屏」—— 悬浮窗铺满整个屏幕（竖着的手机 ＋ 横着的手机）
+
+   判据：`(max-width: 560px), (hover: none) and (max-height: 520px)`
+   ① 窄屏（≤560px）＝**竖着拿的手机**（不认 UA：酒馆在手机上也只是个网页，
+      桌面把窗口拖窄也自动走这一档 ✓）
+   ② 触屏 ＋ 矮屏 ＝**横着拿的手机**：横过来有 800 多宽，光看宽度会被当成平板 / 电脑，
+      可 88vh 只剩 330 上下，两栏挤在那点高度里很难用 ✗
+      带 `(hover: none)` 是为了**别误伤桌面**：鼠标设备怎么把窗口拉矮都不会命中 ✓
+   ⚠️ 这个字符串必须和另外三处**逐字相同**（不同步就静默失效）：
+      · `src/ui.js` 的 `PHONE_MQ_TEXT`
+      · `assets/bodycord.html` <style> 里那条「手机整屏」的 @media
+      · `assets/bodycord.html` JS 里的 `PHONE_MQ`
+      `_analysis/_shell-geom-check.mjs` 会比对这四处，改一处忘一处就红 ✓
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 560px), (hover: none) and (max-height: 520px) {
+    /* 铺满整屏：手机上一圈 8px 留白等于把内容再压窄一次 ✗
+       高度用 100dvh：地址栏收放时 vh 会跳（看着就是面板整个抖一下）✗ */
+    .bc-root {
+        left: 0; right: 0; top: 0; bottom: 0;
+        width: 100vw;
+        height: 100dvh;
+        margin: 0;
+        transform: none;
+        border: 0;
+        border-radius: 0;
+    }
+    /* ★ 兜底：以前在桌面上拖过面板、存档里留着 panelX / panelY ⇒ 那对**行内** left / top
+       会把整屏面板顶歪。JS（placeRoot）进手机形态时会清掉，这里再用 !important 兜一层，
+       两边任一失效都不至于歪 ✓
+       ⚠️ 宽高也要一起写：≤900 那档给 `.bc-root.bc-positioned` 写了明确尺寸（防塌成一条顶栏），
+          那条特异性比这里的 `.bc-root` 高 ⇒ 不重复写一遍，手机形态会变成「差 16px 没铺满」✗ */
+    .bc-root.bc-positioned {
+        left: 0 !important;
+        top: 0 !important;
+        width: 100vw;
+        height: 100dvh;
+    }
+    /* 顶栏让出刘海：竖屏在顶上，横屏时在左右两侧
+       （写法与面板里那套"两用写法"一致：TT 注了变量就用它，酒馆没有就退回 env() ✓） */
+    .bc-head {
+        height: auto;
+        min-height: 50px;
+        padding-top: var(--tt-inset-top, env(safe-area-inset-top, 0px));
+        padding-left: calc(14px + var(--tt-inset-left, env(safe-area-inset-left, 0px)));
+        padding-right: calc(12px + var(--tt-inset-right, env(safe-area-inset-right, 0px)));
+    }
+    /* 整屏之后**拖不动了**（拖出去就再也够不着）⇒ 头别再显示"能抓"的手型 ✓ */
+    .bc-head,
+    .bc-head:active { cursor: default; }
+    /* 手机上顶栏那一行要装下：品牌字 + 时钟 + 三个图标（她不想割舍品牌字 ✓）
+       ⇒ 品牌字缩到 12.5px、时钟把内边距和字号各收一点（收完 320 宽也放得下，量过 ✓） */
+    .bc-brand-text { font-size: 12.5px; }
+    .bc-clock {
+        padding: 3px 7px;
+        font-size: 12px;
+        min-width: 0;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   手机版（窄屏）—— 手机酒馆用户也要能用
+
+   这里管的是**外壳那半边**（弹窗 / 悬浮球 / 设置页的排版）；
+   · 悬浮窗铺满整屏那一条在上面（**横着的手机也要**，所以单独一块）
+   · 面板内部那套（侧栏改抽屉）在 `assets/bodycord.html` 自己那份 <style> 里 ✓
+   两个判据，都别改成别的：
+   ① 宽度 ≤560px ⇒ 手机形态（**不认 UA**：酒馆在手机上也只是个网页，
+      这样桌面把窗口拖窄也自动是手机形态 ✓）
+   ② `@media (hover: none)` ⇒ 触屏专属（去掉"点一下会粘住"的 hover、省掉毛玻璃）
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 560px) {
+    /* ⚠️ 整屏那几条（`.bc-root` / 顶栏让刘海）**不在这里** —— 见上面那块
+       （手机上横过来也要整屏，只写 560 会漏掉横屏 ✓） */
+    /* 设置页那些弹窗也铺满：内容长，居中卡片在手机上只能露出两三行 ✗ */
+    .bc-modal-overlay { align-items: stretch; }
+    .bc-modal-box {
+        max-width: none;
+        max-height: none;
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+    }
+    /* 定宽的下拉 / 表格格子改成整行（不改的话手机上一行放不下、被挤出横向滚动 ✗） */
+    .bc-toolbar .bc-select,
+    .bc-dd-wide,
+    .bc-zone-arch-dd { min-width: 0; width: 100%; }
+    /* 字段开关那张三列表（字段名 / 是什么 / 改了会怎样）：第一列就 190px ⇒ 手机上竖着叠开 ✓
+       （表头那行不藏 —— 叠开时它就是一段图例，藏了反而不知道每行在说什么 ✓） */
+    .bc-ff-row { grid-template-columns: 1fr; gap: 3px; }
+    /* 生理期名字那张三列表：标签列收窄，把宽度让给两个输入框（手机上 104px 一个太难打字 ✗） */
+    .bc-names-row { grid-template-columns: 78px 1fr 1fr; gap: 6px; }
+    /* 样式参考 iOS 设置 / DC 手机端：
+       **窄屏下多列的表单不再并排** —— 一格一行（标签在上、控件占满整行）。
+       ⚠️ 两个字段并排时每格只剩半屏，四个字就放不下了 ⇒ "周期长度"会被断成"周期长 / 度"✗
+       iOS / DC 手机端是同一条规矩：放不下就别硬挤，宁可页面长一点，也别把标签拆开 ✓
+       ⚠️ 只拆**表单字段**（`.bc-field` / `.bc-param-field`），按钮组照旧并排（`.bc-row-wrap`）✓ */
+    .bc-row:has(> .bc-field + .bc-field) { flex-wrap: wrap; }
+    .bc-row:has(> .bc-field + .bc-field) > .bc-field { flex: 1 1 100%; }
+    .bc-param-grid,
+    .bc-field-grid { grid-template-columns: 1fr; }
+    /* 中文标签不许在词中间断开（兜底：万一还有漏网的单行窄格子 ✓） */
+    .bc-field .bc-label,
+    .bc-field-item .bc-label,
+    .bc-param-field .bc-label { word-break: keep-all; }
+    /* 楼层面板里"键 + 值"那两列：108px 的键在手机上占太多，值只剩一点点 ✗ */
+    .bc-floor-key { flex: 0 0 84px; }
+    .bc-floor-btn { padding: 3px 10px; }
+    /* 骰子清单：手机上「编号 + 用途 + 结果 + 操作」挤一行放不下（用途框只剩几十 px）✗
+       ⇒ 拆两行：第一行 编号/用途/结果，第二行 操作 右对齐 ✓ */
+    .bc-dice-row {
+        grid-template-columns: 48px minmax(0, 1fr) 64px;
+        grid-template-areas:
+            "id label val"
+            "ops ops ops";
+        row-gap: 6px;
+    }
+    .bc-dice-row .bc-dice-id { grid-area: id; }
+    .bc-dice-row .bc-dice-label-input { grid-area: label; }
+    .bc-dice-row .bc-dice-val { grid-area: val; }
+    .bc-dice-row .bc-dice-ops { grid-area: ops; }
+    .bc-dice-row .bc-dice-expr-input { display: none; }
+    .bc-setcontent { padding: 10px 10px 18px 10px; }
+    /* 设置页那排导航：≤720 时每个分组的标题各占一整行 ⇒ 手机上光导航就 6 行（约 190px）✗
+       ⇒ 手机上让标题跟着项目一起连排、自动折行（从 6 行收到 2~3 行 ✓） */
+    .bc-setnav-group { width: auto; padding: 5px 6px 2px 4px; }
+    /* 悬浮球：离屏幕边留一点，也别压住酒馆的输入框 */
+    #bc-fab.bc-fab { right: 14px; bottom: 92px; }
+
+    /* 命中区（手机形态才撑）—— 上面那四类控件（弹窗 ✕ / 「？」/ 诊断 ✕ / 顶栏图标）
+       四周有富余，**随时**撑；下面这些旁边就挤着别的可点东西 ⇒ 只在手机上撑，
+       桌面上拿鼠标点得准、撑开反而容易误点 ✗ —— 每个的距离都量过才敢撑 ✓ */
+
+    /* 开关只有 42×23，矮的是**高度** ⇒ 只往上下撑到 44
+       （横向不撑：开关左右紧挨着文字，撑开会把"点文字"变成"切开关" ✗） */
+    .bc-toggle::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        transform: translateY(-50%);
+        height: 44px;
+    }
+    /* 名字胶囊里的 ✕（把一个追踪对象删掉）：胶囊本身就矮 ⇒ **加高胶囊** +
+       给 ✕ 左右留内边距，让它自己变成一只能点的小方块 ✓
+       ⚠️ 不往 44 撑：胶囊是一排排挨着的，撑出去会压到上一排那个名字（删错人 ✗） */
+    .bc-chip { padding: 8px 14px; }
+    .bc-chip-x { padding: 4px 6px; margin: -4px -6px -4px 0; font-size: calc(14px * var(--bc-fs-scale, 1)); }
+    /* 纯文字的小控件：宽度本来就够（左右 10~16px 内边距），矮的也是**高度**
+       ⇒ 手机上给它们加一档上下内边距（⚠️ 不用透明圈：它们上下紧挨着别的东西 ✗） */
+    .bc-btn { padding: 10px 14px; }
+    .bc-tool { padding: 7px 12px; }
+    .bc-tab { padding: 7px 16px; }
+    .bc-diag-tab { padding: 7px 12px; }
+    .bc-diag-toggle { padding: 6px 10px; }
+}
+
+@media (hover: none) {
+    /* 去掉点按那一下的灰色块 */
+    html { -webkit-tap-highlight-color: transparent; }
+    /* 触屏没有真 hover：手指点一下之后 `:hover` 会**一直粘着**（Android 尤其明显）✗
+       ⇒ 这几处"悬停才出的底"关掉，改用 :active 的即时反馈 ✓
+       ⚠️ 只关**设了 background 的**那几处：像 `.bc-floor:hover` 那种是"悬停才浮现"的
+          刻意设计（它改的是 opacity），一律关掉反而会让楼层卡片失去底色 ✗ */
+    .bc-setnav-item:hover,
+    .bc-icon-btn:hover,
+    .bc-tool:hover,
+    .bc-dd-item:hover,
+    .bc-preset-entry:hover,
+    .bc-fab-menu-item:hover { background: transparent; }
+    .bc-tool:active,
+    .bc-icon-btn:active,
+    .bc-setnav-item:active { background: var(--bc-hover); }
+    /* 球是压在滚动的聊天上的：每帧重算一次模糊在手机上是真开销 ⇒ 触屏不要毛玻璃
+       （⚠️ 自定义头像那个 `.has-img` 本来就不带模糊，别管它 ✓） */
+    #bc-fab.bc-fab {
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+    /* 面板是盖在聊天上的：里面滚到头时不许把滚动传给后面的聊天 ✗ */
+    .bc-setcontent,
+    .bc-modal-body,
+    .bc-pre { overscroll-behavior: contain; }
+}
+
+/* 系统里开了「减弱动态效果」就别做动画（有人会晕动；老机器也顺一点 ✓）
+   ⚠️ 用 .01ms 而不是 0：有的浏览器把 0 当"没设"，连 transitionend 都不发 ✗ */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}
+
+/* 点击放大 = 弹窗那种 ✓
+   ⇒ 「透视」频道里点那张插图 → **铺满整个酒馆页面的一层**看大图（点任意处或 Esc 关掉）✓
+   ⚠️ 为什么由外壳做：面板住在一个 iframe 里，它自己的 `position:fixed` **只盖得住那个小框** ✗
+   ⚠️ 下面那几条 `.stage-art` 是从**面板里抄过来的** —— 克隆过来的节点在外壳文档里拿不到面板那套
+      CSS（那些类定义在 iframe 的 <style> 里）⇒ 缩放要用的这几条在这边再写一份 ✓
+   ⚠️ z-index：面板本体是 30000、弹窗是 31000 ⇒ 这一层要压过它们 ⇒ 32000 ✓ */
+.bc-stage-zoom {
+    position: fixed;
+    inset: 0;
+    z-index: 32000;
+    background: rgba(0, 0, 0, .84);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    cursor: zoom-out;
+}
+.bc-stage-zoom .stage-art {
+    position: relative;
+    width: 100%;
+    max-width: min(94vw, calc(92vh * 4 / 3));
+    aspect-ratio: 4 / 3;
+    border-radius: 14px;
+    overflow: hidden;
+    margin: 0;
+}
+.bc-stage-zoom .stage-art img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.bc-stage-zoom .stage-art-stack img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* =========================================================================
+   按下反馈（补 2026-10-18）
+
+   悬停有 46 处、按下只有十来处 ⇒ 鼠标点列表行 / 频道 / 分组标题时"到底点没点上"
+   心里没底，尤其点下去那一下要等一整轮才有结果（推演）时更明显。
+   ⇒ 按下那一刻：下沉 1px + 压暗一点点，松手自动回去。
+
+   ⚠️ 为什么用 transform / filter 而不是换 background：
+      这些行里有"选中态"（`.bc-tab.active` / `.bc-cat-tab.active` / `.bc-tm-row.active`
+      都是实心底）—— 按下时改 background 会把选中色顶掉、看着像"点掉了选中" ✗。
+      transform 和 filter 不参与那个覆盖，选中态照样在，只是轻轻陷一下 ✓。
+   ⚠️ transform 不触发重排 ⇒ 一像素都不动旁边的元素 ✓
+   ========================================================================= */
+.bc-setnav-item:active,
+.bc-icon-btn:active,
+.bc-tool:active,
+.bc-tab:active,
+.bc-cat-tab:active,
+.bc-dd-item:active,
+.bc-preset-entry:active,
+.bc-fab-menu-item:active,
+.bc-api-row:active,
+.bc-tm-row:active,
+.bc-dump-head:active,
+.bc-sec-toggle:active {
+    transform: translateY(1px);
+    filter: brightness(.965);
+}
+
+/* =========================================================================
+   数字一律等宽（补 2026-10-18）
+
+   天数、次数、百分比、骰值都是实时刷新的；默认字体的数字宽度不相等
+   ⇒ 数值一变，那一行的字会左右挪（盯着一列数看时很明显 ✗）。
+   `font-variant-numeric` 会继承 ⇒ 在四层容器根上写一次就管住全部读数；
+   汉字是等宽的、不受影响，输入框里的数字也同样受益 ✓
+   ========================================================================= */
+.bc-root,
+.bc-embed,
+.bc-inline-host,
+.bc-modal-box {
+    font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================================
+   设置页：各页顶部对齐（常规最上面那块和别的页间隔不一样）
+
+   根因：有的页顶上是一条簇标题（自带 8~28px 上边距），有的页直接是卡片（0）
+   ⇒ 同一栏内容，各页第一块离顶的距离不一样 ✗
+   规矩：**每页第一块一律不带额外上边距**，顶部留白只由内容区自己的 padding 负责 ✓
+   ========================================================================= */
+.bc-setcontent > :first-child { margin-top: 0 !important; }
+/* 补丁页顶上那行（世界观 / 人物 ＋「？」）：不再套卡片，自己留一段和卡片一致的间距 */
+.bc-viewsw-head { margin: 0 0 12px; }
+

@@ -214,6 +214,9 @@ function bindEvents() {
 
     const on = (name, fn) => { if (et[name] && typeof es.on === 'function') es.on(et[name], fn); };
 
+    // 左下角扩展菜单那条入口：酒馆就绪后再确认一次（容器可能被重建）
+    on('APP_READY', () => { try { installWandMenuEntryWhenReady(); } catch { /* 忽略 */ } });
+
     // 在外面（酒馆的用户角色面板）换人设 —— 面板头像要跟着换，**名字也要跟着换** ✓
     //   （为什么要按名字分流：见上面 whoFingerprint() 那段注释 ✓）
     //   ⚠️ 读名字要**等一拍**：事件到的时候酒馆那边的 name1 可能还没换完 ✗
@@ -465,9 +468,53 @@ function bindEvents() {
 }
 
 // ---------------------------------------------------------------------------
-// 扩展抽屉里的设置块
+// 左下角「魔法棒」菜单入口
+//
+// 她 2026-10-31 报「手机版本没有悬浮球」，要一个左下角扩展菜单的入口。
+// 那个菜单就是酒馆的 wand 菜单（容器 `#extensionsMenu`，别的插件也是往这里加一条）。
+// ⚠️ 容器是酒馆在启动时现渲染出来的（wandMenu 模板），可能比我们晚 ⇒ 没拿到就重试几次 ✓
 // ---------------------------------------------------------------------------
 
+const WAND_ENTRY_ID = 'bc-wand-entry';
+
+/**
+ * 在左下角扩展菜单里加一条「生理孕育面板」。
+ * @returns {boolean} 已经挂上（或本来就有）返回 true
+ */
+function installWandMenuEntry() {
+    try {
+        const menu = document.querySelector('#extensionsMenu');
+        if (!menu) return false;
+        if (document.getElementById(WAND_ENTRY_ID)) return true;
+
+        const item = document.createElement('div');
+        item.id = WAND_ENTRY_ID;
+        item.className = 'list-group-item flex-container flexGap5';
+        item.innerHTML = '<div class="fa-solid fa-heart-pulse extensionsMenuExtensionButton"></div><span>生理孕育面板</span>';
+        item.addEventListener('click', () => {
+            try { openTab(settings().ui.openTab || 'status'); }
+            catch (e) { console.warn('[Bodycord] 从扩展菜单打开面板失败', e); }
+        });
+        menu.appendChild(item);
+        return true;
+    } catch (e) {
+        console.warn('[Bodycord] 挂扩展菜单入口失败', e);
+        return false;
+    }
+}
+
+/** 容器可能还没渲染出来 ⇒ 最多等 10 秒（每 250ms 一次），拿到就停 */
+function installWandMenuEntryWhenReady() {
+    if (installWandMenuEntry()) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+        if (installWandMenuEntry() || ++tries >= 40) clearInterval(timer);
+    }, 250);
+}
+
+// ---------------------------------------------------------------------------
+// 扩展抽屉里的设置块
+// ---------------------------------------------------------------------------
 async function mountDrawer() {
     let html;
     try {
@@ -512,6 +559,16 @@ async function mountDrawer() {
             save();
             if (settings().enabled) rebuildInjection();
             else clearInjection();
+        });
+    }
+
+    // ★ 抽屉里的「打开面板」：手机上找不到悬浮球时的进面板入口
+    //   （她 2026-10-31 报「手机版本没有悬浮球」⇒ 在这里给一颗按钮，位置就在酒馆左边的「扩展」里 ✓）
+    const openBtn = wrap.querySelector('#bc-drawer-openpanel');
+    if (openBtn) {
+        openBtn.addEventListener('click', () => {
+            try { openTab(settings().ui.openTab || 'status'); }
+            catch (e) { console.warn('[Bodycord] 从抽屉打开面板失败', e); }
         });
     }
 }
@@ -567,6 +624,7 @@ try {
 
     onChatChanged();
     bindEvents();
+    installWandMenuEntryWhenReady();
     mountDrawer().catch(e => console.warn('[Bodycord] 抽屉挂载失败', e));
 
     console.log('[Bodycord] 已加载。聊天：', chatKeySafe());

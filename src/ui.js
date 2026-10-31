@@ -1517,7 +1517,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-10-31-17';
+export const BUILD_STAMP = '2026-10-31-20';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -3496,6 +3496,10 @@ function buildPanelShell() {
     root.appendChild(head);
     root.appendChild(paneWrap);
     document.body.appendChild(root);
+
+    // ★ 面板里那颗「关闭」（手机形态才有）要能叫回外壳：面板是同源 iframe ⇒ 直接挂个函数 ✓
+    //   （TT 手机上外壳顶栏不一定显示，没有这个就只能困在面板里出不来了）
+    try { window.__bodycordClosePanel = () => closePanel(); } catch { /* 忽略 */ }
 
     return { root, head, paneWrap, panes, clock, navBtn: head.querySelector('#bc-nav') };
 }

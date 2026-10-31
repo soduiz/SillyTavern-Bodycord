@@ -176,6 +176,8 @@ body{background:transparent;font-family:"Inter","PingFang SC","Microsoft YaHei",
 .top-actions{display:flex;gap:4px;align-items:center;color:var(--tx-3)}
 .top-action-btn{width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--tx-3);transition:background-color .12s ease,color .12s ease}
 .top-action-btn:hover{background:var(--hover);color:var(--tx-1)}
+/* 面板里这颗「关闭」只在手机形态露出来：桌面上外壳顶栏已经有 ✕ 了，多一个会重复 ✓ */
+#btnClosePanel{display:none}
 .top-action-btn.masked{background:var(--red);color:#fff}
 .top-action-btn.masked:hover{background:#c93a3f;color:#fff}
 .channel-topic{padding:9px 18px;border-bottom:1px solid var(--line);font-size: calc(13px * var(--bc-fs-scale, 1));color:var(--tx-2);display:flex;align-items:center;gap:10px;flex-shrink:0}
@@ -922,6 +924,8 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
   #topChannelName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .top-bar .right{gap:0}
   .top-action-btn{width:36px;height:36px}
+  /* 手机形态：外壳顶栏在 TT 上不一定露出来 ⇒ 面板里给一颗「关闭」保底 ✓ */
+  #btnClosePanel{display:flex}
   /* 手机上那两颗 −/＋ 再放大一档（太小、判定范围也小 ⇒ 加大一点范围 ✓） */
   .lyric-step{width:38px;height:38px}
   .channel-topic{padding:8px 10px;gap:6px}
@@ -1420,6 +1424,8 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
             <div class="top-action-btn" id="btnMask" title="把面板上的名字和头像遮起来"><svg class="ico" id="maskIconSvg"><use href="#i-eye-off"/></svg></div>
             <div class="top-action-btn" id="btnSearch" title="搜索"><svg class="ico"><use href="#i-search"/></svg></div>
             <div class="top-action-btn" id="btnTheme" title="切换主题"><svg class="ico" id="themeIconSvg"><use href="#i-moon"/></svg></div>
+            <!-- 2026-10-31：TT 手机上外壳顶栏那排（品牌/时钟/关闭）没显示出来时，面板里也要有退出口 -->
+            <div class="top-action-btn" id="btnClosePanel" title="关闭面板"><svg class="ico"><use href="#i-x"/></svg></div>
           </div>
         </div>
       </div>
@@ -1631,7 +1637,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
          就是单纯没进聊天；别再把这两个概念混在一起 ✗ */
 
   // 面板自己的构建标记：用来确认到底加载了哪一版文件（拿到缓存的旧文件时一眼能看出来）
-  var PANEL_BUILD = '2026-10-31-17';
+  var PANEL_BUILD = '2026-10-31-20';
   // 界面上不显示它，但留个查询口 —— 报 BUG 时能确认加载的是哪一版 ✓
   try{ window.__bodycordPanelBuild = PANEL_BUILD; }catch(e){}
 
@@ -6658,6 +6664,16 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
   function bindEvents(){
     $('btnTheme').addEventListener('click', toggleTheme);
     $('btnMask').addEventListener('click', toggleMask);
+    /* ★ 关闭面板（2026-10-31）：TT 手机上外壳顶栏没显示出来 ⇒ 面板里自带一个退出口。
+       同源 iframe ⇒ 直接叫父页面的外壳函数；万一没有就自己把 .bc-root 的 show 摘掉 ✓ */
+    $('btnClosePanel').addEventListener('click', function(){
+      try{
+        var p = window.parent;
+        if(p && typeof p.__bodycordClosePanel === 'function'){ p.__bodycordClosePanel(); return; }
+        var root = p && p.document && p.document.getElementById('bc-root');
+        if(root){ root.classList.remove('show'); return; }
+      }catch(e){ /* 跨域时什么也做不了 */ }
+    });
     $('btnCopy').addEventListener('click', window.__copyStatus);
     $('serverHeader').addEventListener('click', function(){
       // 手机形态那颗标题是"抽屉的头"（点它 = 收起）；桌面才是老的"收起成图标栏" ✓

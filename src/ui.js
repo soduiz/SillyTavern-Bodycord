@@ -1519,7 +1519,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-11-01-1';
+export const BUILD_STAMP = '2026-11-01-2';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -3656,9 +3656,31 @@ function renderSettingsPane(force = false) {
 
     // 返回入口在顶部那个变身按钮上（状态页是⚙️，设置页是←），
     // 所以这里不再需要额外一条返回栏 —— 之前那条浮在页签上面很突兀。
+    // ★ 2026-11-01（她选的方案 A）：窄屏上整条左侧导航收成**一行「设置 / 当前页 ▼」**，
+    //   点开就在下面弹出一张分组清单。清单用的还是**同一份导航 DOM**，不另建一份
+    //   （⇒ 只有样式和开合两件事，两边的项目永远不会对不上 ✓）。
+    //   ⚠️ 桌面（>720）照旧是左侧竖排，这条栏 `display:none`（见 style.css 的 .bc-setbar）✓
     const sub = h('div', { class: 'bc-setnav' });
     const content = h('div', { class: 'bc-setcontent' });
-    const wrap = h('div', { class: 'bc-pane-inner bc-setlayout' }, sub, content);
+    const barCur = h('div', { class: 'bc-setbar-cur' });
+    const mask = h('div', { class: 'bc-setnav-mask' });
+    function closeNav() { sub.classList.remove('open'); mask.classList.remove('open'); }
+    function openNav() { sub.classList.add('open'); mask.classList.add('open'); }
+    function toggleNav() { if (sub.classList.contains('open')) closeNav(); else openNav(); }
+    mask.addEventListener('click', closeNav);
+    const bar = h('div', {
+        class: 'bc-setbar', role: 'button', tabindex: '0', title: '切换设置页',
+        onclick: () => toggleNav(),
+        onkeydown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleNav(); }
+        },
+    },
+        h('span', { class: 'bc-setbar-label', text: '设置' }),
+        barCur,
+        // ⚠️ 用「▼」这一个常见字符，别找冷门符号（她机器上会变豆腐块 ✓）
+        h('span', { class: 'bc-setbar-arrow', text: '▼' }),
+    );
+    const wrap = h('div', { class: 'bc-pane-inner bc-setlayout' }, bar, mask, sub, content);
     pane.appendChild(wrap);
 
     // 左侧竖排 + 分组（DC 那种排版；分组是为了"以后还会加很多东西"）
@@ -3671,8 +3693,13 @@ function renderSettingsPane(force = false) {
         //   ⇒ 名字「补丁与档案」（小项：规则补丁 / 记录档案 ✓）
         ['补丁与档案', [['modules', '规则补丁'], ['archive', '记录档案'], ['ach', '成就记录']]],
         // ★ 设置里面的推演与追踪拆成两个：一个是推演、一个是追踪 ✓
-        ['推演', [['judge', '推演'], ['tracking', '追踪']]],
+        // ⚠️ 组名**不许也叫「推演」**：组名和项目名一模一样时，清单里会连着出现两个「推演」
+        //   （2026-10-31 她手机截图里就长这样，看着像重复渲染 ✗）⇒ 组名写全「推演与追踪」✓
+        ['推演与追踪', [['judge', '推演'], ['tracking', '追踪']]],
     ];
+    // 窄屏那条栏要显示"现在在哪一页"：id → 中文名
+    const SUB_LABEL = new Map();
+    for (const [, items] of SUBS) for (const [id, label] of items) SUB_LABEL.set(id, label);
     const show = (which, keepScroll = false) => {
         // 点恢复默认之后还是折叠起来（重启酒馆也没好）——
         //   根因不止是段落内部重画：有些按钮走的是**整页重画**（`rebuild()` → `show()`），
@@ -3681,6 +3708,8 @@ function renderSettingsPane(force = false) {
         //     换左侧小项 = 换页 ⇒ 不迁延（新一页从它的默认来 ✓）
 
         for (const el of sub.querySelectorAll('.bc-setnav-item')) el.classList.toggle('active', el.dataset.sub === which);
+        // ★ 窄屏：那一行写着当前页名（页签换了它跟着换 ✓）
+        barCur.textContent = SUB_LABEL.get(which) || '';
         settings().ui.settingsSub = which;
         save();
         // ★ 同一页重画（开关、载入预设、保存正文…）⇒ **保住滚动位置** ✓
@@ -3743,7 +3772,8 @@ function renderSettingsPane(force = false) {
         for (const [id, label] of items) {
             sub.appendChild(h('div', {
                 class: 'bc-setnav-item', dataset: { sub: id }, text: label,
-                onclick: () => show(id),
+                // ★ 选完顺手收起那张清单（窄屏才是展开状态；桌面收起无副作用 ✓）
+                onclick: () => { show(id); closeNav(); },
             }));
         }
     }

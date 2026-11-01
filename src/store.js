@@ -3214,6 +3214,37 @@ export function setCycleDayOf(key, day, at) {
     return true;
 }
 
+/** 这个对象的周期长度（读身体补丁那一行；读不到 = 28 ✓） */
+export function cycleLenOf(key) {
+    try {
+        const c = Math.round(Number(bodyCycleParamsOf(key)?.cycle) || 28);
+        return (Number.isFinite(c) && c > 0) ? c : 28;
+    } catch { return 28; }
+}
+
+/**
+ * ★★ 周期日按周期长度折回（2026-11-01，结算点改按周期长度之后配套的）——
+ *   第 len+1 天 = 新周期第 1 天；一跳跨过好几个周期就取余落回。
+ *   例：len 28，第 29 天 ⇒ 1；第 60 天 ⇒ 4 ✓
+ * @returns {number} 折回后的周期日（读不到就退回 1，跟旧行为一致 ✓）
+ */
+export function wrapCycleDay(day, len) {
+    const d = Math.round(Number(day));
+    const l = Math.round(Number(len));
+    if (!Number.isFinite(d) || d <= 0) return 1;
+    if (!Number.isFinite(l) || l <= 0) return 1;
+    return ((d - 1) % l) + 1;
+}
+
+/** 这一跳跨过了几个周期（0 = 还没跨；折回用同一个数，别两处各算一份 ✓） */
+export function cyclesCrossed(day, len) {
+    const d = Math.round(Number(day));
+    const l = Math.round(Number(len));
+    if (!Number.isFinite(d) || d <= 0) return 0;
+    if (!Number.isFinite(l) || l <= 0) return 0;
+    return Math.max(0, Math.floor((d - 1) / l));
+}
+
 /** 今天这个对象处于周期第几天（算不出来返回 null —— 别把 null 当 0 ✗） */
 export function cycleDayNow(key) {
     const st = cycleStateOf(key);
@@ -3289,9 +3320,13 @@ export function nextPeriodFactOf(key) {
         const day = cycleDayNow(key);
         const cur = currentDate();
         if (!day || !cur) return null;
-        let ovu = 14;
-        try { ovu = Number(bodyCycleParamsOf(key)?.ovu) || 14; } catch { ovu = 14; }
-        const left = Math.round(cycleSettleDayOf(ovu) - day);
+        let ovu = 14, cycleLen = 28;
+        try {
+            const p = bodyCycleParamsOf(key) || {};
+            ovu = Number(p.ovu) || 14;
+            cycleLen = Number(p.cycle) || 28;
+        } catch { ovu = 14; cycleLen = 28; }
+        const left = Math.round(cycleSettleDayOf(ovu, cycleLen) - day);
         if (!(left >= 1)) return null;                    // 已经到（或过了）结算点 ⇒ 不假造一个负数 ✓
         const date = addDays(cur, left);
         if (!date) return null;
@@ -8811,7 +8846,8 @@ export function settleCycle(mode, reason, opts = {}) {
         }
         // ★ 2026-10-26：一次结算 = 一个周期走完 ⇒ 周期序号 +1
         //   （记录里"第几个周期"靠它；只用于相对定位，不碰时间轴 ✓）
-        if (tt) tt.cycleNo = Math.max(1, (Number(tt.cycleNo) || 1) + 1);
+        // ★ 2026-11-01：一次跳过多天可能跨过好几个周期 ⇒ 按跨过的数加（不给就是 +1 ✓）
+        if (tt) tt.cycleNo = Math.max(1, (Number(tt.cycleNo) || 1) + Math.max(1, Math.round(Number(opts.cycles) || 1)));
     } catch { /* 记不上不影响结算本身 */ }
     commit();
     return { mode, reason: finalReason, archived: true };

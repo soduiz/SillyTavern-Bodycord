@@ -11,6 +11,7 @@ import {
     isCycleDependent, patchSendGroups, patchGroupSuffix, patchBlockTitle,
     isNeutralMode, isGateEnabled, wiHeritageAuto, wiHeritageSources,
     achOn, achLenOf, buildAchText, currentApi, bodyCycleParamsOf, spanCapDaysOf, fetusCountOf,
+    isNoCycleMode,
     fetusOvumRangeOf, fetusMixRangeOf, judgeBasisOf,
 } from './settings.js';
 import { chatCompletion, extractJson } from './api.js';
@@ -27,6 +28,7 @@ import {
     cycleDayNum, timeUnitNow, setCurrentTime, storyDateTimeNow,
     refreshDueDates,
     cycleDayNow, cycleStartDateOf, setCycleDayOf, ensureCycleState,
+    wrapCycleDay, cyclesCrossed, cycleLenOf,
     setCheckpoint, checkpointInfo, restoreCheckpoint, hashText,
     getFloorCandidate, setFloorCandidate, restoreCandidate, bodyLockOf, periodModeOf, traceOnOf, xenoClassOf, getOvuJudgment,
     captureStateData, restoreStateData, addAchievements, collectReportedAchievements, addChildren, getImpregnatorLocks, isExcluded,
@@ -2795,11 +2797,15 @@ export function ensureFetusPlanFor(t) {
  *    插件自己决定"这个对象这个周期该结算了没有"，不再等 AI 报事件。
  *
  * 只判**时间型**这两条（事件型仍由 AI 报：来月经 / 分娩 / 妊娠终止）：
- *   A 到点：当前周期日 ≥ 排卵日 + 10（模块里那句"受孕窗口的最晚结束日"）
+ *   A 到点：当前周期日**超过周期长度**（走完一个周期 ⇒ 新周期从第 1 天起）
+ *      ⚠️ 2026-11-01 改：以前是「排卵日 + 10」，那个数比周期长度小几格 ⇒
+ *         黄体期还没走完就结算、结算完把周期日拨回第 1 天，日子永远停在第 1 天 ✗
+ *      ⚠️ 周期长度读**身体补丁**那一行（按对象 / 按种族 ✓），不读模型报的数
  *   B 超期：距上次结算日期 > 一个周期长（读 `lastSettleDate`，插件自己维护的那个 ✓）
  *
  * 跳过（跟模块【结算】那几条口径一致）：
  *   · 已怀孕 ⇒ 交给事件型（分娩 / 妊娠终止）
+ *   · 无月经档 ⇒ 没有周期，压根没有"结算"这回事（模块原文：这一档没有周期可等 ✓）
  *   · 已受精待着床、着床完成日还没到 ⇒ 继续等（模块原文："跳过周期结算，继续等着床完成"）
  *   · 这一轮已经由 AI 报事件结算过 ⇒ 不重复（调用方用 `settledThisRound` 拦 ✓）
  *
@@ -2809,6 +2815,8 @@ export function timeSettleDue(t) {
     const key = String(t?.key || '');
     if (!key) return { due: false, why: '没有对象键', reason: '' };
     if (isPregnant(t)) return { due: false, why: '已怀孕', reason: '' };
+    // 无月经档：没有周期 ⇒ 不结算（那一档的受孕账按轮走，见无月经那条口径 ✓）
+    try { if (isNoCycleMode(periodModeOf(key))) return { due: false, why: '无月经档（没有周期）', reason: '' }; } catch { /* 读不到就照常判 */ }
     let day = 0;
     try { day = Number(cycleDayNow(key)) || 0; } catch { /* 读不到 */ }
     if (!day) return { due: false, why: '读不到周期日', reason: '' };
@@ -2825,11 +2833,11 @@ export function timeSettleDue(t) {
         const done = ovu + Number(j.implantDays);
         if (Number.isFinite(done) && day < done) return { due: false, why: '已受精待着床（还没到完成日）', reason: '' };
     }
-    // A 到点
-    if (day >= ovu + 10) {
+    // A 到点：走完一个周期（超过周期长度）
+    if (day > cycleLen) {
         // 受精失败过 ⇒ 归档原因写「受精失败结算」；受精成功过 ⇒ 交给 settleCycle 派生成「着床失败」
         const reason = (j && j.passed === false) ? '受精失败结算' : '新周期开始';
-        return { due: true, why: '到点（排卵日 + 10）', reason };
+        return { due: true, why: '到点（走完一个周期）', reason };
     }
     // B 超期
     let last = '';
@@ -2878,8 +2886,12 @@ export function settleAfterTimeShift() {
         try { due = timeSettleDue(t); } catch (e) { console.warn('[Bodycord] 补时间后结算判据失败', e); }
         if (!due.due) continue;
         try {
-            const r = settleCycle(settings().cycleSettleMode || 'reset', due.reason, { pregnant: false, target: k });
-            if (currentDate()) setCycleDayOf(k, 1, currentDate());
+            // ★ 2026-11-01：结算后按**周期长度折回**，不再写死第 1 天
+            const _len = cycleLenOf(k);
+            const _dNow = Number(cycleDayNow(k)) || 1;
+            const _crossed = cyclesCrossed(_dNow, _len);
+            const r = settleCycle(settings().cycleSettleMode || 'reset', due.reason, { pregnant: false, target: k, cycles: _crossed });
+            if (currentDate()) setCycleDayOf(k, wrapCycleDay(_dNow, _len), currentDate());
             settled.add(k);
             out.settled.push({
                 name: displayName(t) || k,
@@ -3453,6 +3465,16 @@ export async function runJudge({ silent = false, signal = null, force = false, r
     //   等下面"日期"那一段跑完（当前日期定下来）再落账 ——
     //   不然按旧日期反推，会差出"这一轮剧情走过的天数" ✗
     const cycleStarts = new Map();
+    // ★★ 2026-11-01：这一轮开始前，每个人身上那格「上次月经日」是多少 ——
+    //   必须在 `upsertTargetResult` **之前**抄下来：它会把 t.vars 整份换成这一轮报的，
+    //   之后再读就永远"跟上一轮一样"，那条守卫一次都没生效过 ✗
+    //   （所以剧情报了月经日也挪不动锚点，日子只能停在系统自己的初始值上 ✓）
+    const prevCycleStart = new Map();
+    try {
+        for (const [k, v] of Object.entries(state().targets || {})) {
+            prevCycleStart.set(String(k), String(v?.vars?.Cycle_Start_Date ?? '').trim());
+        }
+    } catch { /* 读不到就当没有上一轮的值 ✓ */ }
     // ★ 这一轮 AI 报的「候选致孕方名单」按对象收着 —— 只在账本攒不出来时兜底用（见 judgeCycleFor）
     const aiCand = new Map();
     // ★★ 2026-10-28（d5 晚一轮）—— 把模型这一轮报的 d5 半截留着。
@@ -3498,8 +3520,11 @@ export async function runJudge({ silent = false, signal = null, force = false, r
                 const raw = String(item?.vars?.Cycle_Start_Date ?? item?.Cycle_Start_Date ?? '').trim();
                 // ★ 2026-10-26：跟上一轮存着的一样 ⇒ 那是照抄，不是剧情新交代的
                 //   （照单全收的话，旧档带进来的 2012 日期会把周期日一路算成 3548 ✗）
-                const prevRaw = String(t?.vars?.Cycle_Start_Date ?? '').trim();
-                if (raw && raw !== prevRaw && !/^（/.test(raw)) cycleStarts.set(t.key, raw);
+                // ★ 2026-11-01：跟**这一轮开始前**存着的那个比（不是跟刚替换完的比 ✗）
+                const prevRaw = prevCycleStart.get(String(t.key)) || '';
+                // ★ 跟我们自己算出来的那个一样 ⇒ 没有新信息，不动锚点 ✓
+                const ours = String(cycleStartDateOf(t.key) || '').trim();
+                if (raw && raw !== prevRaw && raw !== ours && !/^（/.test(raw)) cycleStarts.set(t.key, raw);
             }
         } catch { /* 忽略 */ }
 
@@ -3980,6 +4005,17 @@ export async function runJudge({ silent = false, signal = null, force = false, r
                 if (back !== null && back >= 0) setCycleDayOf(rt.key, back + 1, cur);
             }
             try { ensureCycleState(rt.key); } catch { /* 忽略 */ }
+            // ★ 2026-11-01：回喂给模型的那格「上次月经日」和「现在是周期第几天」用**同一个来源**
+            //   （以前 vars 里那格一直是模型上一次报的旧值，跟插件算的能差出好几天 ⇒ 它按旧的算天数，
+            //     面板却是另一个数，两边永远对不上 ✗）
+            try {
+                const csd = cycleStartDateOf(rt.key);
+                const t2 = state().targets?.[rt.key];
+                if (csd && t2) {
+                    if (!t2.vars || typeof t2.vars !== 'object') t2.vars = {};
+                    if (String(t2.vars.Cycle_Start_Date || '') !== csd) { t2.vars.Cycle_Start_Date = csd; commit(); }
+                }
+            } catch { /* 忽略 */ }
         }
     } catch (e) { console.warn('[Bodycord] 处理虚拟日期失败', e); }
 
@@ -4038,11 +4074,15 @@ export async function runJudge({ silent = false, signal = null, force = false, r
             try { due = timeSettleDue(t); } catch (e) { console.warn('[Bodycord] 结算判据失败', e); }
             if (!due.due) continue;
             try {
-                const r = settleCycle(settings().cycleSettleMode || 'reset', due.reason, { pregnant: false, target: tKey });
-                // ★ 结算完把周期**拨回第 1 天**（锚在今天）—— 不然下一轮周期日还 ≥ 排卵 + 10，
-                //   会**每轮重复结算** ✗
+                // ★ 2026-11-01：结算后按**周期长度折回**，不再写死第 1 天
+                const _len = cycleLenOf(tKey);
+                const _dNow = Number(cycleDayNow(tKey)) || 1;
+                const _crossed = cyclesCrossed(_dNow, _len);
+                const r = settleCycle(settings().cycleSettleMode || 'reset', due.reason, { pregnant: false, target: tKey, cycles: _crossed });
+                // ★ 结算完把周期**按周期长度折回**（第 len+1 天 = 新周期第 1 天）——
+                //   不然下一轮周期日还 > 周期长度，会**每轮重复结算** ✗
                 //   ⚠️ 但这一轮它已经报了新的上次月经日（剧情明说月经来潮）⇒ 以它为准，别抢锚点 ✗
-                if (!cycleStarts.get(tKey) && currentDate()) setCycleDayOf(tKey, 1, currentDate());
+                if (!cycleStarts.get(tKey) && currentDate()) setCycleDayOf(tKey, wrapCycleDay(_dNow, _len), currentDate());
                 settledThisRound.add(tKey);
                 console.log('[Bodycord] 时间型周期结算（' + (displayName(t) || tKey) + '）：'
                     + due.why + ' ⇒ ' + (r?.reason || due.reason));

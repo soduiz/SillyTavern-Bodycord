@@ -3269,13 +3269,19 @@ export function cycleDayInfoOf(day, ovu, pdays) {
 }
 
 /**
- * ★ 一个周期的**结算点**在哪一天 —— 跟正文那句「排卵后第 10 天」同源。
+ * ★ 一个周期的**结算点**在哪一天 —— 2026-11-01 起按**周期长度**算：
+ *   走完一个周期，下一天才是新周期第 1 天（28 天 ⇒ 第 29 天）。
+ *   以前按「排卵日 + 10」，可那个数跟周期长度不一定是同一个（14 + 10 = 24，而周期是 28）
+ *   ⇒ 黄体期还没走完就被判到点、结算完把周期日拨回第 1 天，日子永远停在开头 ✗
+ *   ⚠️ 读不到周期长度 ⇒ 退回旧口径（排卵日 + 10），别编一个数 ✓
  *
  * 为什么要抽出来：状态摘要里「预计下次月经」那一行、
  *   以及推演里的到点结算判据，读的必须是**同一个数** ——
  *   两处各写一份的话，正文说还有 4 天、面板却当场结算 ✗
  */
-export function cycleSettleDayOf(ovuDay) {
+export function cycleSettleDayOf(ovuDay, cycleLen) {
+    const c = Math.round(Number(cycleLen));
+    if (Number.isFinite(c) && c > 0) return c + 1;
     const o = Math.round(Number(ovuDay));
     return (Number.isFinite(o) && o > 0 ? o : 14) + 10;
 }

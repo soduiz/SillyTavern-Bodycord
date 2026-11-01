@@ -1467,6 +1467,12 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     --bc-tx: #0b0c0e;
     --bc-tx-2: #4a4d55;
     --bc-tx-3: #666b73;
+    /* ★★ 字色也**自己定**（2026-11-02 她报：白天配色下正文那几行值看不清）——
+       这一行挂在聊天消息里 ⇒ 没写字的颜色时会**继承宿主聊天那边的字色** ✗：
+       她的聊天是深色档（浅字）而插件开着白天配色 ⇒ 值那一列是浅字压白底，几乎看不见；
+       反过来插件开夜间配色、聊天是浅色档时，同一处又会变成深字压深底 ✓（两头都会坏）
+       ⇒ 在这里把整块的字色定成自己那份，别让宿主的主题决定它 ✓ */
+    color: var(--bc-tx);
     /* ★★ 字体 / 字渲染也**自己指定**，别继承聊天那边的 ——
        她 2026-10-14：这一行的字：很模糊，跟酒馆原生 UI 一比就糊，浏览器缩放是 100%、
        深浅两档都糊 ⇒ 判据落在"字渲染不一样"上：
@@ -1555,7 +1561,9 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.bc-floor-val { flex: 1 1 auto; min-width: 0; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+/* ⚠️ 值这一列原来**没写字色**（继承宿主 ⇒ 白天配色下看不见，见上面 `.bc-floor` 那段说明），
+   这里再单独点出来一次：这一格的字色只跟本块的主题走，不跟聊天那边的主题走 ✓ */
+.bc-floor-val { flex: 1 1 auto; min-width: 0; line-height: 1.6; white-space: pre-wrap; word-break: break-word; color: var(--bc-tx); }
 .bc-floor-empty { padding: 5px 2px; color: var(--bc-tx-2, #666); }
 .bc-floor-arrow { font-size: 1em; }   /* 跟着这一行的字阶走（⚠️ 别再写固定的 9px）✓ */
 

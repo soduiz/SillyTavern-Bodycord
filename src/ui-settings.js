@@ -60,7 +60,7 @@ import { settleAfterTimeShift, syncAfterTimeBack, splitStripTags } from './judge
 import {
     isGregorian, isUniformCalendar, calendarSummary, makeUniformCalendar, monthsPerYear,
     MAX_MONTHS, MAX_DAYS_PER_MONTH, MAX_WEEK_LEN, calendarPrint, GREGORIAN,
-    formatFictionDate, NUM_STYLES, checkStyle, TIME_UNITS, addDays, diffDays,
+    formatFictionDate, NUM_STYLES, checkStyle, TIME_UNITS, addDays, diffDays, ERA_MAX_LEN,
 } from './fiction-date.js';
 import { testConnection, listModels } from './api.js';
 import { pickAndCompressImage, pickImageFile, humanBytes } from './image.js';
@@ -3017,7 +3017,7 @@ function diagSection(container, onChange, actions) {
 /**
  * 「日期怎么写」—— 写法模板。
  *
- * 要解决的是：年月日都是自定义名字的情况 ⇒ 四样可配：三个单位名 / 每个月的名字 / 数字怎么写 / 连接符。
+ * 要解决的是：年月日都是自定义名字的情况 ⇒ 五样可配：纪元名前缀 / 三个单位名 / 每个月的名字 / 数字怎么写 / 连接符。
  *
  * ⚠️ 铁律：**数字是唯一真相，名字只是外衣** ——
  *   算数永远走"从纪元第一天起第几天"，写法只负责读进来和写出去 ⇒
@@ -3028,6 +3028,8 @@ function dateStyleSection(container, onChange) {
     const box = section('日期怎么写', {
         help: [
             '这里只改「日期看起来是什么样」，不改时间轴，周期第几天和孩子的年龄都不受影响',
+            '纪元名：日期最前面的那个前缀。填 某某历，日期就写成「某某历3年2月7日」；留空就不加',
+            '纪元名带不带都认，别人给你的日期、模型自己写的日期，漏了这个前缀也照样能读回来',
             '三个单位：年 / 月 / 日 各叫什么。比如都改成 轮 / 朔 / 辰',
             '单位里写 # 代表数字的位置。想写成「第三轮」就填 第#轮；填 年 就是老样子「3年」',
             '数字怎么写：阿拉伯（1 2 3）/ 中文数字（一 二 三）/ 中文序数（初一 初二）',
@@ -3069,6 +3071,13 @@ function dateStyleSection(container, onChange) {
         });
         paintPreview();
     };
+
+    // ---- 纪元名（日期最前面那个前缀；留空 = 不加，跟以前一字不差 ✓）----
+    b.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+        h('div', { style: { flex: '1 1 180px' } },
+            field('纪元名（日期最前面）', textInput(cur.style.era || '', (v) => {
+                apply({ era: String(v ?? '').slice(0, ERA_MAX_LEN) });
+            }, { placeholder: '例：某某历（留空就不加）' })))));
 
     // ---- 三个单位名 ----
     const unitInputs = ['年', '月', '日'].map((label, i) => h('div', { style: { flex: '1 1 90px' } },

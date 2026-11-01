@@ -4999,9 +4999,14 @@ export function renderSexLog(key, limit = null) {
  */
 export function stripDateText(text) {
     let s = String(text || '');
+    // ★ 2026-11-01：日期可能带「纪元名」前缀（日期写法里设了某某历）——
+    //   前缀要跟日期一起收掉，不然记录前面会剩下一个孤零零的名字 ✗
+    let era = '';
+    try { era = String(activeCalendar().style.era || '').trim(); } catch { era = ''; }
+    const eraRe = era ? (era.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*') : '';
     // 日期 ＋ 可选钟点（含 20:47~20:59 这种区间）＋ 后面那个分隔符一起收掉
     // ⚠️ 分隔符要连 `&` 一起收：row3 的出厂形状是「时间 & 人物 & 事件」✓
-    s = s.replace(/(\d{1,4})\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日(\s*\d{1,2}:\d{2}(\s*[~～-]\s*\d{1,2}:\d{2})?)?\s*([·・|｜,，&]\s*)?/g, '');
+    s = s.replace(new RegExp('(?:' + eraRe + ')?(\\d{1,4})\\s*年\\s*\\d{1,2}\\s*月\\s*\\d{1,2}\\s*日(\\s*\\d{1,2}:\\d{2}(\\s*[~～-]\\s*\\d{1,2}:\\d{2})?)?\\s*([·・|｜,，&]\\s*)?', 'g'), '');
     // 收完可能留下开头的分隔符 / 多余空格
     s = s.replace(/^[\s·・|｜,，&]+/, '').replace(/[·・|｜]\s*(?=[·・|｜])/g, '');
     return s;
@@ -10523,7 +10528,12 @@ function row3SexPartners(me) {
 
 /** 「日期 + 钟点」归一成一个认领键（去掉空白、全角冒号统一成半角） */
 function timeKeyOf(date, clk) {
-    const d = String(date || '').replace(/\s+/g, '');
+    let d = String(date || '').replace(/\s+/g, '');
+    // ★ 2026-11-01：日期串可能带纪元名前缀，认领要跟从正文里抽出来的那种（不带前缀）对上 ✓
+    try {
+        const era = String(activeCalendar().style.era || '').trim();
+        if (era && d.startsWith(era)) d = d.slice(era.length);
+    } catch { /* 忽略 */ }
     const t = String(clk || '').replace(/\s+/g, '').replace(/：/g, ':');
     return (d || t) ? (d + '|' + t) : '';
 }

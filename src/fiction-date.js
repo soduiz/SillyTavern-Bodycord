@@ -215,11 +215,12 @@ export function isUniformCalendar(cal) {
 // ★★ 日期「怎么写」（写法模板）
 //
 // 起因：有的历法年月日都是自定义的名字（前面还提过"古代那种或者其他什么称呼"）
-//   ⇒ 四样可配：
+//   ⇒ 五样可配：
 //     ① 三个**单位名**：年 / 月 / 日 各叫什么（「轮 / 朔 / 辰」）
 //     ② 每个月的**名字**（1 月叫「孟春」）
 //     ③ 每个数字**怎么写**：阿拉伯 / 中文数字 / 中文序数
 //     ④ 三段之间用什么**连接**（`·`）
+//     ⑤ 日期最前面的**纪元名**（「某某历3年2月7日」那个前缀）
 //
 // ⚠️⚠️ 一条铁律：**数字是唯一真相，名字只是外衣** ——
 //   算数永远走"从纪元第一天起第几天"这个整数，写法只负责**读进来**和**写出去** ✓
@@ -234,6 +235,9 @@ export const NUM_STYLES = [
     ['cn', '中文数字（一 / 二 / 三）'],
     ['ord', '中文序数（初一 / 初二 / 初三）'],
 ];
+
+/** 纪元名的长度上限（只是防手滑，不是玩法限制 ✓） */
+export const ERA_MAX_LEN = 12;
 
 const CN_DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
 
@@ -293,6 +297,9 @@ export function fromCnNum(text) {
 
 /** 出厂写法：`1年01月01日`（跟以前一字不差 ✓） */
 export const DEFAULT_STYLE = Object.freeze({
+    // ★ 纪元名（日期最前面的那个前缀，比如「某某历3年2月7日」）——
+    //   留空就是出厂那套，日期前面什么都不加 ✓
+    era: '',
     units: Object.freeze(['年', '月', '日']),
     nums: Object.freeze(['ar', 'ar', 'ar']),
     months: Object.freeze([]),
@@ -410,12 +417,15 @@ export function parseClock(text) {
  */
 export function normalizeStyle(raw, monthsCount) {
     const base = {
+        era: '',
         units: ['年', '月', '日'],
         nums: ['ar', 'ar', 'ar'],
         months: [],
         sep: '',
     };
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        // ★ 纪元名只是一个前缀，空着 = 不加（所以不许留首尾空白，不然拼出来会多一个空格 ✓）
+        if (typeof raw.era === 'string') base.era = raw.era.trim().slice(0, ERA_MAX_LEN);
         const u = Array.isArray(raw.units) ? raw.units : [];
         for (let i = 0; i < 3; i++) {
             const v = u[i];
@@ -442,7 +452,8 @@ export function normalizeStyle(raw, monthsCount) {
 /** 写法是不是就是出厂那套（是的话解析可以直接走老那条路 ✓） */
 export function isDefaultStyle(style) {
     const s = style || DEFAULT_STYLE;
-    return (s.months || []).every((v) => !v)
+    return !String(s.era || '').trim()
+        && (s.months || []).every((v) => !v)
         && (s.sep || '') === ''
         && (s.units || []).join('|') === '年|月|日'
         && (s.nums || []).join('|') === 'ar|ar|ar';
@@ -717,9 +728,15 @@ function checkParts(c, y, mo, d) {
  * @returns {{y:number,m:number,d:number}|null}
  */
 export function parseFictionDate(text, cal) {
-    const s = String(text ?? '').trim();
+    let s = String(text ?? '').trim();
     if (!s) return null;
     const c = cal ? normalizeCalendar(cal) : activeCalendar();
+    // ★ 纪元名（前缀）：**带不带都认** ✓
+    //   带着 ⇒ 先把这个前缀剥掉，后面照旧；
+    //   不带 ⇒ 也照旧认（老记录里没前缀，模型也可能漏写 —— 两种都不许因此推不动 ✗）
+    const era = String(c.style.era || '').trim();
+    if (era && s.startsWith(era)) s = s.slice(era.length).trim();
+    if (!s) return null;
     // ① 规范写法（日最多几位：跟着"最长的那个月"走 —— 公历 31 ⇒ 2 位，跟以前一字不差 ✓）
     const wide = c.months.some((v) => v > 99);
     let m = s.match(wide ? RE_CN3 : RE_CN2) || s.match(wide ? RE_NUM3 : RE_NUM2);
@@ -749,13 +766,15 @@ export function formatFictionDate(parts, cal) {
     if (!parts) return '';
     const c = cal ? normalizeCalendar(cal) : activeCalendar();
     const st = c.style;
+    // ★ 纪元名（前缀）：空着就什么都不加 ⇒ 出厂行为一字不变 ✓
+    const era = String(st.era || '').trim();
     const nM = c.months.length;
     const y = Math.max(1, Math.floor(parts.y));
     const m = Math.min(nM, Math.max(1, Math.floor(parts.m)));
     const d = Math.min(dimRaw(c, y, m), Math.max(1, Math.floor(parts.d)));
     // 出厂那套走老路（保证跟以前输出的字符串**一字不差** ✓）
     if (isDefaultStyle(st)) {
-        return `${y}${st.units[0]}${String(m).padStart(2, '0')}${st.units[1]}${String(d).padStart(2, '0')}${st.units[2]}`;
+        return era + `${y}${st.units[0]}${String(m).padStart(2, '0')}${st.units[1]}${String(d).padStart(2, '0')}${st.units[2]}`;
     }
     const name = String(st.months[m - 1] || '').trim();
     const yTxt = y > 9999 ? String(y) : renderNumBy(y, st.nums[0]).replace(/^0+(?=\d)/, '');
@@ -767,7 +786,7 @@ export function formatFictionDate(parts, cal) {
         name ? name : withUnit(mTxt, st.units[1]),
         withUnit(dTxt, st.units[2]),
     ];
-    return seg.join(sep);
+    return era + seg.join(sep);
 }
 
 /**
@@ -783,7 +802,8 @@ export function monthLabelOf(y, m, cal) {
     const name = String(st.months[mm - 1] || '').trim();
     const yTxt = yy > 9999 ? String(yy) : renderNumBy(yy, st.nums[0]).replace(/^0+(?=\d)/, '');
     const mTxt = renderNumBy(mm, st.nums[1]);
-    return withUnit(yTxt, st.units[0]) + styleSep(st) + (name || withUnit(mTxt, st.units[1]));
+    // ★ 顶上那行也要带纪元名（不然日历顶上比日期少一个前缀，看着像两套 ✓）
+    return String(st.era || '').trim() + withUnit(yTxt, st.units[0]) + styleSep(st) + (name || withUnit(mTxt, st.units[1]));
 }
 
 /** 往后推 n 天（n 可以给 0；负数就往前） */

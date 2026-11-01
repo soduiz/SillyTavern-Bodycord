@@ -793,6 +793,11 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-dd-host { flex: 1 1 240px; min-width: 0; }
 
 .bc-field { margin-bottom: 12px; }
+/* ★ 2026-11-01（她截图：开关那一行和下面那格标签贴在一起了）——
+   `.bc-inline` 本身只有横向排版、没有下边距 ⇒ 紧跟一个字段时上边距是 0。
+   这里跟字段自己的下边距取同一个数（12px），一整页的节奏才一致 ✓
+   ⚠️ 只补「卡里直接相邻」的那一对，不碰包在 div 里 / 行内并排的那些 ✓ */
+.bc-section-body > .bc-inline + .bc-field { margin-top: 12px; }
 .bc-field .bc-label { display: block; margin-bottom: 4px; }
 
 /* 角色基础信息那四格 = 「标签 + 徽章」一行 + 「下拉 + 恢复自动」一行

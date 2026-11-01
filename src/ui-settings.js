@@ -967,6 +967,7 @@ function feedSection(container, onChange) {
             '想剥别的就把标签名加进来（回车或点「添加」变成一个胶囊，点胶囊上的 ✕ 删掉）。一次填好几个的话，用顿号、逗号、斜杠或换行隔开都行 ✓',
             '标签名可以是中文。例如填 人物栏，就是把 <人物栏> 到 </人物栏> 之间整段删掉。两头带的那对括号不用自己写，写了也会帮你去掉',
             '⚠️ 要成对才剥得掉：只有开头、没有 </标签名> 结尾的那种（模型偶尔会写成两边都是开头）剥不了',
+            '「剥掉变量更新块」默认关。打开后，送进推演之前会把角色卡用来更新变量的那几段整段删掉：标签名带变量味儿的（variable / jsonpatch / setvar 这类）直接删；名字认不出来、但里面写着变量路径的也删。这类块只给酒馆的变量系统用，推演看了会当成正文。有些卡把叙述也写在里面，所以默认不剥，剥不剥你自己定',
             '例（可以直接复制）：details、summary、scratchpad、draft。想连折叠块一起剥，就把 details 加进来 ✓',
         ],
     });
@@ -1049,6 +1050,11 @@ function feedSection(container, onChange) {
         b.appendChild(field('推演前剥掉的标签（内置的会自动剥，这里加额外的）',
             h('div', {}, h('div', { class: 'bc-row' }, input, button('添加', add)), chipHost)));
         paintTags();
+        // ★★ 2026-11-01：变量块兼容剥离（开关默认关 ✓）
+        b.appendChild(h('div', { class: 'bc-inline' },
+            h('span', { class: 'bc-label', text: '剥掉变量更新块' }),
+            toggle(s.stripVarBlocks === true, v => { s.stripVarBlocks = v; save(); }),
+        ));
     }
 
     container.appendChild(box);
@@ -3664,7 +3670,7 @@ function bubbleSection(container, onChange, actions = {}) {
  * ⚠️ 都**不可逆**（现场结算过的那笔账收不回来）⇒ 按项目规矩：明面留一句最短的后果，
  *   详细解释进「？」；按钮上直接写清"几天"，点完如实报结果（不许含糊 ✗）。
  *
- * ★ 2026-11-01：**整块搬去「改数值」弹窗**（她原话「我认为时间跳跃与修正在时间与日历那里放着不合适」）——
+ * ★ 2026-11-01：**整块搬去「改数值」弹窗**（她定的：时间跳跃与修正放在时间与日历那页不合适）——
  *   时间与日历那页只留历法设定；翻天数并当场结算属于运行时修正，跟"直接改日期"住一处 ✓
  *   ⇒ 这里 export 出去，由 ui.js 的改数值弹窗调（本文件里不再有页面调它）。
  * @param {object} [opts] 传给 section 的选项（弹窗里默认收起：`{collapsible:true, open:false}` ✓）

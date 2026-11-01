@@ -594,6 +594,7 @@ export const DEFAULT_TEMPLATES = {
     stateRule: [
         '[状态摘要怎么用]',
         '状态摘要列出的是写这一轮正文之前的事实，请据此描写角色的身体与反应。不要在正文里输出任何面板、字段名、数值格式或状态标签，也不要把这些参考数据照抄进正文；那些级别与累计刺激尤其不要写。',
+        '正文里也不要用卵泡期、黄体期、排卵期这类周期术语，不写周期第几天。角色的身体变化用日常说法写（比如"这几天腰有点酸、胃口比平时好"），不要报生理阶段的名称。',
     ].join('\n'),
 
     // 每个追踪对象渲染一次；算出来是空的占位符所在行会自动消失
@@ -943,17 +944,19 @@ function targetVars(t) {
             : '月经状态：不适用（当前为孕期）';
     } else {
         vars.pregnancy = '怀孕状态：未孕';
-        const cyc = [clean2(p.phase), clean2(p.sub)].filter(Boolean).join(' · ');
-        if (periodOn && t.period && (t.period.day || t.period.flow)) {
-            vars.menstruation = noBleed
-                ? `周期状态：${p.phase || ''}${p.sub ? ' · ' + p.sub : ''}`
-                : `月经状态：月经期 · ${t.period.day || ''}`
+        // ★★ 2026-11-01（有玩家反馈：正文里一直在提「卵泡期 / 黄体期」这种，很出戏）——
+        //   那些是给面板和判定看的术语，写正文的人不需要 ⇒ **主 API 这边不再发阶段名和周期进度**，
+        //   它就没词可抄了 ✓（跟"敏感带去掉数字"同一个病根：源头不给，正文里就不会出现）
+        //   ⚠️ 经期那几天照旧发「月经期 + 流量 / 痛经」：那是剧情里真的会发生的事，模型要知道 ✓
+        //   ⚠️ 无月经 / 非月经档整行不发（她们没有"经期"这回事，发了只会让模型去编）
+        if (noBleed) {
+            vars.menstruation = '';
+        } else if (periodOn && t.period && (t.period.day || t.period.flow)) {
+            vars.menstruation = `月经状态：月经期 · ${t.period.day || ''}`
                 + (t.period.flow ? ` · 流量${t.period.flow}` : '')
                 + (t.period.pain ? ` · 痛经${t.period.pain}` : '');
         } else {
-            vars.menstruation = noBleed
-                ? `周期状态：${cyc || p.phase || ''}`
-                : `月经状态：非经期${cyc ? '（' + cyc + '）' : ''}`;
+            vars.menstruation = '月经状态：非经期';
         }
     }
 

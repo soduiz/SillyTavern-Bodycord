@@ -1301,10 +1301,45 @@ export function stripTagNames() {
     return out;
 }
 
+/**
+ * ★★ 2026-11-01（她：变量这一块和插件对不上，要一个能兼容剥离的开关）——
+ *   角色卡 / 预设常把"变量更新"整段写在正文里（给酒馆的变量系统吃），
+ *   推演（插件 API）看到只会把它当成正文 ⇒ 开关打开时整段剥掉。
+ *
+ * 识别分两层（各家写法不统一，所以不写死某一种）：
+ *   ① **标签名**带变量味儿的（variable / jsonpatch / setvar / state_update 这类）⇒ 整段剥
+ *   ② 名字不认识，但**块里的内容**是一段变量补丁（写着 JSON 指针路径）⇒ 也剥
+ *   ⚠️ 只剥"成对标签"包起来的整段；只有开头没有结尾的剥不了（跟上面同一道限制 ✓）
+ *   ⚠️ 开关默认关（`settings().stripVarBlocks`）：有些卡把叙述也写在里面，剥不剥玩家定 ✓
+ *   ⚠️ 这里**不写任何实例**：别人的角色卡内容不进代码、不进注释 ✓
+ */
+const VAR_BLOCK_NAME_RE = /variable|json[_ ]?patch|setvar|update_?state|state_?update/i;
+const VAR_BLOCK_BODY_RE = /"path"\s*:\s*["']\//;
+
+/** 开关是不是开着（读不到设置就当关 ✓） */
+function stripVarBlocksOn() {
+    try { return settings().stripVarBlocks === true; } catch { return false; }
+}
+
+/** 把变量更新块整段剥掉（开关关着 = 一个字都不动 ✓） */
+export function stripVariableBlocks(text) {
+    const t = String(text ?? '');
+    if (!t || !stripVarBlocksOn()) return t;
+    return t.replace(/<([^\s<>/]+)(?:\s[^>]*)?>([\s\S]*?)<\/\1\s*>/g,
+        (whole, name, body) => {
+            if (VAR_BLOCK_NAME_RE.test(name)) return '';
+            if (VAR_BLOCK_BODY_RE.test(body)) return '';
+            return whole;
+        });
+}
+
 /** 把这些标签整段剥掉（只剥标签，别的文字一个字不动 ✓） */
 export function stripDraftTags(text) {
     let t = String(text ?? '');
     if (!t) return '';
+    // ★★ 变量更新块先剥（开关开着才动）—— 它可能把别的标签包在里面，
+    //   先剥外层，里面那层就一起走了，不用再按标签名一条条对 ✓
+    t = stripVariableBlocks(t);
     // ★★ **所有 HTML 注释**整段剥掉（2026-10-14 补）——
     //   以前只剥 `<!-- bio_cot -->` 那一种（那是本项目旧面板的残留写法）✗，
     //   可**很多预设的思考/元信息就是用注释写的**（`<!-- thinking … -->` 之类），

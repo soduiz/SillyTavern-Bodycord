@@ -811,9 +811,6 @@ function moduleCard(mod, targetKey, handlers) {
         clear(fullHost);
         fullHost.appendChild(h('div', { class: 'bc-row' },
             fullBtn,
-            lockText
-                ? h('span', { class: 'bc-hint', text: '想改这段文字，把上面的「补丁编辑范围」切到「全文可改」' })
-                : h('span', { class: 'bc-hint', text: '想改结构、加减规则、换措辞，都从这里进' }),
             // ⚠️ 不能叫「看一下原文（只读）」：它给的是**替换过占位符的成文**
             //   ⇒ 叫「全文」才对得上（"原文"专指全文编辑器里那份带 @@ 的 ✓）
             lockText ? button('看一下全文（只读）', () => { clear(fullHost); openReadOnly(); }) : null,
@@ -828,6 +825,13 @@ function moduleCard(mod, targetKey, handlers) {
                 handlers.onDraftClear?.(mod.id);
                 handlers.rebuild?.();
             }) : null,
+            // ★★ 2026-11-02（她截图：手机上这段说明被挤成一字一行）——
+            //   说明必须排在这一行**最后**：窄屏那条规则让说明独占一行、落在按钮下面
+            //   （见 style.css 的 `@media (max-width: 560px)` 那段）。
+            //   它原来夹在按钮中间 ⇒ 手机上按钮把宽度吃光，说明只剩一个字的宽 ✗
+            lockText
+                ? h('span', { class: 'bc-hint', text: '想改这段文字，把上面的「补丁编辑范围」切到「全文可改」' })
+                : h('span', { class: 'bc-hint', text: '想改结构、加减规则、换措辞，都从这里进' }),
         ));
     };
     showFullBtn();

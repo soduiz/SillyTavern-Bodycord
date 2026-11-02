@@ -3798,6 +3798,25 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
        ⚠️ 只拆**表单字段**（`.bc-field` / `.bc-param-field`），按钮组照旧并排（`.bc-row-wrap`）✓ */
     .bc-row:has(> .bc-field + .bc-field) { flex-wrap: wrap; }
     .bc-row:has(> .bc-field + .bc-field) > .bc-field { flex: 1 1 100%; }
+    /* ★★ 2026-11-02（她截图：手机「全文可改」那张卡里，说明被挤成一字一行）——
+       两个毛病其实是同一条：这一行是 `flex-wrap: nowrap`，而按钮又不许缩
+       （`white-space: nowrap`）⇒ 一行放不下时，
+         · 有说明 ⇒ 被压扁的是**说明**（她这张卡一行挤了「展开全文编辑」＋说明＋
+           「看一下全文（只读）」＋「恢复内置默认」四个东西）✗
+         · 没说明 ⇒ 按钮直接被**挤出卡片右边**（预设条目那排五颗按钮就是）✗
+       ⇒ ① 窄屏下按钮行**一律允许折行**（放得下时排版跟原来一模一样）；
+          ② 行里的说明**独占一行**（控件之间照旧并排）。
+             这一条不认 DOM 先后 —— 说明排在按钮后面时（如「展开全文编辑」那一行）
+             就是"按钮一行、说明一行"，排在前面时（如"正在编辑"）就是"说明一行、按钮一行"，
+             两头都不会再把它压成一条竖线 ✓
+       ⚠️ 只改窄屏 —— 桌面上这些行并排、宽度有富余，没必要长高 ✓ */
+    .bc-row { flex-wrap: wrap; }
+    .bc-ff-bar { flex-wrap: wrap; }
+    .bc-row:has(> .bc-hint) > .bc-hint,
+    .bc-ff-bar > .bc-hint { flex: 1 1 100%; }
+    /* ⚠️ 撑开用的小块在折行之后只会白占一行（它本身没内容，却会独占一条空行）⇒
+       带说明的那一行里把它藏掉；不带说明的行照旧留着（按钮要贴右边 ✓） */
+    .bc-row:has(> .bc-hint) > .bc-spacer { display: none; }
     .bc-param-grid,
     .bc-field-grid { grid-template-columns: 1fr; }
     /* 中文标签不许在词中间断开（兜底：万一还有漏网的单行窄格子 ✓） */

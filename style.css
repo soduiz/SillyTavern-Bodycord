@@ -391,16 +391,23 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     text-shadow: none !important;
     -webkit-text-stroke-width: 0 !important;
     -webkit-text-stroke-color: transparent !important;
+    filter: none !important;
 }
 /* ★★ 2026-10-31：她截图指出「上面（外壳）被包边、下面（面板里）正常」——
    宿主的字效果是加在**子元素**上的（不是只加在根上），之前只清了 .bc-root 自己，
-   里面那几行字照样继承到 ⇒ 这里把外壳里的**每个元素**都清一遍 ✓ */
+   里面那几行字照样继承到 ⇒ 这里把外壳里的**每个元素**都清一遍 ✓
+   ★★ 2026-11-03（她又报：手机版设置页的字还是描边）——
+   宿主的"包边"不只走 text-shadow / -webkit-text-stroke：有的主题用
+   `filter: drop-shadow()` 做同一件事（11-01 那条注释里就写过），而外壳里这一样一直没清 ✗
+   ⇒ filter 也一起复位（!important 同样必须有）。清掉的只是**宿主**那层滤镜；
+     我们自己那几处"按下去变暗"的反馈在下面用 !important 重新声明回来了 ✓ */
 .bc-root *,
 .bc-root *::before,
 .bc-root *::after {
     text-shadow: none !important;
     -webkit-text-stroke-width: 0 !important;
     -webkit-text-stroke-color: transparent !important;
+    filter: none !important;
 }
 /* ★★ 2026-11-01（她：手机版**聊天里那条挂件**外面还有包边）——
    宿主的字效果是加在**每个元素**上的（上面那条已经踩过同一个坑），而这条挂件挂在
@@ -420,7 +427,53 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-timer-ball, .bc-timer-ball *,
 .bc-ach-toasts, .bc-ach-toasts *,
 .bc-ach-toast, .bc-ach-toast *,
-.bc-stage-zoom, .bc-stage-zoom * {
+.bc-stage-zoom, .bc-stage-zoom *,
+/* ★★ 2026-11-03 补齐：这几个也是挂到 body / 聊天里的、外壳之外的层 ——
+   · .bc-dd-menu      下拉弹层（设置页里点开任何下拉都会冒出来）
+   · .bc-timer-bubble 番茄钟那颗气泡
+   · .bc-inline-host  停靠在聊天页里的那台"小手机"（里面装着面板 iframe）
+   · .bc-embed        被搬进聊天面板侧栏的那一块（骰子表单）
+   之前只清了 text-shadow / 描边，没清 filter ⇒ 主题用 drop-shadow 做包边时它们照样带圈 ✗ */
+.bc-dd-menu, .bc-dd-menu *,
+.bc-dd-menu *::before, .bc-dd-menu *::after,
+.bc-timer-bubble, .bc-timer-bubble *,
+.bc-timer-bubble *::before, .bc-timer-bubble *::after,
+.bc-inline-host, .bc-inline-host *,
+.bc-embed, .bc-embed *,
+.bc-embed *::before, .bc-embed *::after {
+    text-shadow: none !important;
+    -webkit-text-stroke-width: 0 !important;
+    -webkit-text-stroke-color: transparent !important;
+    filter: none !important;
+}
+/* ★ 上面那几张表把 filter 清空了 ⇒ 把我们**自己要的**几处明暗反馈重新声明回来
+   （都是我们自己的元素，宿主不会去动；用 !important + 更高特异性压过复位）✓ */
+#bc-fab.bc-fab.off {
+    filter: grayscale(1) !important;
+}
+.bc-dd-item:active {
+    filter: brightness(.90) !important;
+}
+.bc-tm-row:active,
+.bc-dump-head:active,
+.bc-sec-toggle:active {
+    filter: brightness(.965) !important;
+}
+/* ★ 2026-11-03 再补一层：宿主有些主题是拿 `*::before / *::after` 给**伪元素**加字效果的
+   （正文没事、只有带伪元素的那几行带圈）⇒ 外壳之外那几层的伪元素也一起清掉 ✓
+   ⚠️ 这里面没有我们要保留的 filter（旋钮、胶卷孔那些都用 transform / 背景色）✓ */
+#bc-fab *::before, #bc-fab *::after,
+.bc-fab-menu *::before, .bc-fab-menu *::after,
+.bc-modal-overlay *::before, .bc-modal-overlay *::after,
+.bc-bubble *::before, .bc-bubble *::after,
+.bc-lyrics *::before, .bc-lyrics *::after,
+.bc-inline-host *::before, .bc-inline-host *::after,
+.bc-timer-ball *::before, .bc-timer-ball *::after,
+.bc-ach-toasts *::before, .bc-ach-toasts *::after,
+.bc-ach-toast *::before, .bc-ach-toast *::after,
+.bc-stage-zoom *::before, .bc-stage-zoom *::after,
+.bc-floor *::before, .bc-floor *::after,
+.bc-embed::before, .bc-embed::after {
     text-shadow: none !important;
     -webkit-text-stroke-width: 0 !important;
     -webkit-text-stroke-color: transparent !important;

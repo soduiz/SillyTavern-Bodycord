@@ -91,7 +91,7 @@ import {
 import { parseFetus } from './fetus.js';
 import { acquirePool, poolPrompt, recordUsage, getLastUsage, fillUsageValues, currentPool } from './dice.js';
 import { isSuperseded } from './judge-queue.js';
-import { buildStatusProfile, emptyProfile } from './serialize.js';
+import { buildStatusProfile, buildUntrackedProfile, emptyProfile } from './serialize.js';
 import { moduleActive, isPregnant, canBePregnantPerson, canImpregnatePerson, canBearXenoPerson, isXeno, conceptionRate, heritageDue } from './prompt.js';
 import { prepareWorldInfoForJudge } from './wi.js';
 import { isFieldOn, periodDaysOf } from './settings.js';
@@ -1825,6 +1825,10 @@ export function refreshRaw(opts = {}) {
     //   一块只有「尚未推演 / 等待第一次状态推演」的空块 ✗
     //   ⇒ 源头就不给它拼（升格成正式档之后自然回到这条路上 ✓）
     const list = targetList().filter((t) => t.light !== true);
+    // ★ 这一轮名单（判"这个对象还要不要算 / 要不要显示"用同一个来源 ✓）
+    const rosterKeys = new Set((() => {
+        try { return trackingRoster().map((x) => String(x.key)); } catch { return []; }
+    })());
     let only;
     if (force) {
         only = list;
@@ -1838,6 +1842,17 @@ export function refreshRaw(opts = {}) {
         only = list.filter((t) => t.key === activeKey || !t.raw);
     }
     for (const t of only) {
+        // ★★ 2026-11-03（她报：关了「追踪本人」之后面板还显示排卵期）——
+        //   面板显示的是"当前查看的那个对象"的档案，跟它在不在推演名单里无关
+        //   ⇒ 正在看的这个人要是不在名单里，就**别再摆那份旧数据**，明说"不在追踪名单" ✓
+        //   ⚠️ **只换正在看的这个**（别的对象的 raw 留着 —— 它们不在屏幕上，
+        //      而且换过去的那一刻会再走一遍这里 ✓）
+        //   ⚠️ 只换面板文字（`t.raw`）；档案里的阶段 / 周期日一个字不动 ——
+        //      加回名单后照旧按真实数据重算 ✓
+        if (!rosterKeys.has(String(t.key)) && String(t.key) === String(state().active)) {
+            t.raw = buildUntrackedProfile(displayName(t) || t.key, isPregnant(t));
+            continue;
+        }
         if (!t.profile) t.profile = emptyProfile(false);
         applyModuleGates(t);
         seedZones(t);

@@ -22,7 +22,7 @@ import { parseFictionDate, formatFictionDate, calendarSummary, diffDays, addDays
 import {
     targetList, displayName, state, setActive, commit, createTarget, inRealChat, MAX_SNAPSHOTS,
     measureSnapshots,
-    bodyLockOf, isUserKey, USER_KEY, userSelfLabel, userLabel,
+    bodyLockOf, canBePregnantTarget, cycleWhileInfertileOf, isUserKey, USER_KEY, userSelfLabel, userLabel,
     identOf, trackingRoster, candidateInfo, filterTargets, targetPatchCount,
     periodModeOf, setPeriodModeOf, achievementCount,
     childrenOf, addChildren, updateChild, removeChild, childAgeText, storyDateNow, childCount,
@@ -1552,7 +1552,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-11-02-2';
+export const BUILD_STAMP = '2026-11-03-2';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -5084,6 +5084,14 @@ function cycleDayBox(t) {
     try {
         if (periodModeOf(t.key) === 'amenorrhea') {
             return h('div', { class: 'bc-hint', text: '这个人选的是「无月经」，没有周期、没有阶段，这一格不用填' });
+        }
+    } catch { /* 读不到就照旧 ✓ */ }
+    // ★ 2026-11-03：锁了「不能怀孕」的人**不算周期**（阶段 / 进度 / 基础率一律不适用）
+    //   ⇒ 这一格也不给填，跟无月经那一档同一个说法 ✓（周期日的数据不动，改回「能」就回来）
+    //   ⚠️ 开了「照常记录月经」的人不受影响（那一档照样能填第几天 ✓）
+    try {
+        if (!canBePregnantTarget(t.key) && !cycleWhileInfertileOf(t.key)) {
+            return h('div', { class: 'bc-hint', text: '这个人填的是「不能怀孕」，插件不算周期、也不显示阶段，这一格不用填（想照常记录月经，去角色基础信息里打开「照常记录月经」）' });
         }
     } catch { /* 读不到就照旧 ✓ */ }
     const hint = h('div', { class: 'bc-hint' });

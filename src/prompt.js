@@ -17,7 +17,7 @@
 import { MODULES, XENO_CLASSES_EAST, XENO_CLASS_HUMAN, XENO_EAST_HINTS, XENO_WEST_HINTS, parseXenoSideAnswer } from './modules.js';
 import { settings, isModuleOn, isGateEnabled, moduleText, moduleRole, moduleScope, isFieldOn, zonesFeatureOn, isCycleDependent, patchSendGroups, patchGroupSuffix, patchBlockTitle, childrenToMain, isNeutralMode, bodyCycleParamsOf, zoneLevelDescOf } from './settings.js';
 import { setPrompt, substitute, isMyExtensionDisabled, PROMPT_ROLE } from './st.js';
-import { targetList, displayName, state, bodyLockOf, xenoClassOf, periodModeOf, childrenOf, childAgeText, fetusPlanOf, fetusBriefText, hasRealHeritage, storyDateNow, storyDateTimeNow, cycleDayNow, getOvuJudgment, BODY_FLAG_VARS, reportedBool, reportedBodyFlagOf, tracesForPrompt, traceOnOf, awarenessReferenceForPrompt, stripDateText, dueMarksOf, mergeDueByDate, nextPeriodFactOf, pregnantNowTarget } from './store.js';
+import { targetList, displayName, state, bodyLockOf, xenoClassOf, periodModeOf, cycleWhileInfertileOf, childrenOf, childAgeText, fetusPlanOf, fetusBriefText, hasRealHeritage, storyDateNow, storyDateTimeNow, cycleDayNow, getOvuJudgment, BODY_FLAG_VARS, reportedBool, reportedBodyFlagOf, tracesForPrompt, traceOnOf, awarenessReferenceForPrompt, stripDateText, dueMarksOf, mergeDueByDate, nextPeriodFactOf, pregnantNowTarget } from './store.js';
 // ★ 被排除的角色卡：这一段**一个字都不发**（判断只写这一处，所有调用点自动失效 ✓）
 import { isCardExcluded } from './cardexclude.js';
 
@@ -94,6 +94,8 @@ export function canBePregnantPerson(t) {
     // ★★ 2026-10-16（无月经就是不会来月经 ⇒ 不能怀；能怀的是：非月经那档）——
     //   周期模式是「无月经」的对象，**没手填也没报过**时按"不能怀孕"算 ✓
     //   ⚠️ 只是**默认值**：玩家手填过、或推演报过 ⇒ 上面那两处早就返回了，以他们为准 ✓
+    //   ⚠️ 这一条**只属于这里**（孕期 / 门控那套）；"要不要算周期"问的是
+    //      store 的 `canBePregnantTarget`，那个不含这条默认 ✓
     try { if (periodModeOf(t.key) === 'amenorrhea') return false; } catch { /* 忽略 */ }
     return true;
 }
@@ -921,6 +923,11 @@ function targetVars(t) {
     //   这里以前自己重算一遍、不看锁 ⇒ 同一个 prompt 里主 API 收到「已孕」、
     //   而 pregnancy / conception / not_pregnant 那几道门控却按「未孕」走（自相矛盾 ✗）
     const pregnant = isPregnant(t);
+    // ★★ 2026-11-03：锁了「不能怀孕」⇒ 这个人**没有可发的周期状态**（阶段 / 进度 / 下次月经都不给）——
+    //   不然主 API 收到「月经状态：非经期」，就还有词去写经期 / 排卵（她报的那个男 user 就是这样 ✗）
+    const canConceive = canBePregnantPerson(t);
+    // ★ 例外：锁了不能怀孕、但开了「照常记录月经」⇒ 经期那行照发（不然正文写不出经期 ✓）
+    const showCycle = canConceive || cycleWhileInfertileOf(t.key);
 
     const vars = {};
     vars.name = displayName(t) || t.key;
@@ -949,7 +956,9 @@ function targetVars(t) {
         //   它就没词可抄了 ✓（跟"敏感带去掉数字"同一个病根：源头不给，正文里就不会出现）
         //   ⚠️ 经期那几天照旧发「月经期 + 流量 / 痛经」：那是剧情里真的会发生的事，模型要知道 ✓
         //   ⚠️ 无月经 / 非月经档整行不发（她们没有"经期"这回事，发了只会让模型去编）
-        if (noBleed) {
+        if (!showCycle) {
+            vars.menstruation = '';
+        } else if (noBleed) {
             vars.menstruation = '';
         } else if (periodOn && t.period && (t.period.day || t.period.flow)) {
             vars.menstruation = `月经状态：月经期 · ${t.period.day || ''}`
@@ -966,7 +975,7 @@ function targetVars(t) {
     //   ⚠️ 为什么写在同一行里、不另起一条规则段：这件事只跟这一行有关，
     //     单独铺一段就是让一件小事占掉一整块提示词（她 2026-10-28 点过我"把简单的事做复杂" ✗）
     vars.nextPeriod = (() => {
-        if (!periodOn || pregnant) return '';
+        if (!periodOn || pregnant || !showCycle) return '';
         try {
             const np = nextPeriodFactOf(t.key);
             return np

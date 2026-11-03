@@ -41,6 +41,7 @@ import {
     lightTargetList, setTargetLight,
     resetAll, commit, userLabel, filterTargets,
     bodyLockOf, setBodyLockField, USER_KEY, xenoClassOf, setXenoClassOf, reportedBodyFlagOf, raceJudgeOf, setRaceManualOf,
+    cycleWhileInfertileOf, setCycleWhileInfertileOf,
     awarenessTierIdOf, setAwarenessTierIdOf,
     identOf, setIdentField, mergeTargets, setPeriodModeOf, periodModeOf, parseAliases,
     childrenOf, trackingRoster,
@@ -4243,6 +4244,22 @@ export function bodyLockRows(host, key, opts = {}) {
     };
 
     row('能不能怀孕', 'canBePregnant', opts3);
+    // ★★ 2026-11-03（她定的形态）：**选了「不能」之后才出现**的子选项 ——
+    //   「照常记录月经」：人怀不上，但周期还是想看（绝育 / 不孕的设定）。
+    //   默认关 ⇒ 阶段 / 进度 / 基础率一律「不适用」（男角色不会冒出排卵期 ✓）
+    //   开 ⇒ 阶段与插图照月经档走，但基础率 / 受孕率仍写不适用（怀不上就是怀不上 ✓）
+    if (bodyLockOf(key).canBePregnant === false) {
+        host.appendChild(h('div', { class: 'bc-switch-row' },
+            h('div', {},
+                h('div', { class: 'bc-label', text: '照常记录月经' }),
+                h('div', { class: 'bc-hint', text: '开：阶段与插图照月经档走，基础率与受孕率仍写「不适用」' }),
+            ),
+            toggle(cycleWhileInfertileOf(key), (v) => {
+                setCycleWhileInfertileOf(key, v);
+                onChange(true);          // 整页重建 ⇒ 面板文字跟着重算 ✓
+            }),
+        ));
+    }
     row('能不能让别人怀孕', 'canImpregnate', opts3);
     // 第四项：能不能跟非人类生 ✓
     row('能不能怀上异种', 'canBearXeno', opts3);
@@ -4580,7 +4597,7 @@ function userBodyInfoSection(container, onChange) {
     const box = section('⚧ 用户角色基础信息', {
         help: [
             '这四项是「插件自己不可能知道、只能由你告诉它」的事。留空就一直按推演每轮报的走',
-            '能不能怀孕：填「不能」⇒ 插件不再给该角色算受精 / 周期那几套',
+            '能不能怀孕：填「不能」⇒ 插件不再给该角色算受精 / 周期那几套；想照常记录月经，在它下面打开「照常记录月经」',
             '能不能让别人怀孕：填「不能」⇒ 你不会被算进「致孕方候选」',
             '能不能怀上异种：填「不能」就不会怀上异种',
             '是不是异种：填「是」就从第一轮起按异种那套规则判，不用等推演报回来',

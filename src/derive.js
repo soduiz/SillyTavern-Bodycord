@@ -42,9 +42,11 @@ function num(v, fallback) {
  * @param {number|null} pregDays **孕期已经过了几天**（可选）—— 只给「植入卵」那种用：
  *   **这个和怀孕不太一样，因为是植入的，所以应该从植入那天算**✓
  *   不给（普通怀孕）⇒ 照旧用周期日当孕周基准（LMP 那套，一个字不变 ✓）
+ * @param {{noConception?:boolean}} [opts] `noConception`＝这个对象锁了「能不能怀孕：不能」⇒
+ *   **没有阶段可算**（见下面那段注释）；不传＝照旧按周期日算 ✓
  * @returns {{phase:string, sub:string, d1:string}|null} 拿不到天数时返回 null（不接管）
  */
-export function deriveCycleFields(vars = {}, mode = null, periodDays = 5, cycleDay = null, pregDays = null) {
+export function deriveCycleFields(vars = {}, mode = null, periodDays = 5, cycleDay = null, pregDays = null, opts = {}) {
     const isPregnant = String(vars?.Is_Pregnant ?? '').trim().toLowerCase() === 'true';
     // 周期日在函数开头就归一化：**孕周和未孕的日号用的是同一个数** ✓
     const _d0 = Number(cycleDay);
@@ -73,6 +75,19 @@ export function deriveCycleFields(vars = {}, mode = null, periodDays = 5, cycleD
         const phase = { pregEarly: '孕早期', pregMid: '孕中期', pregLate: '孕晚期' }[phaseId];
         // 孕期的 d1 固定「不适用」
         return { phaseId, phase, sub: `孕${w}周+${d}天`, d1: '不适用' };
+    }
+
+    // ---- 锁了「不能怀孕」：**没有阶段、没有进度、没有基础率** ----
+    // ★★ 2026-11-03（她报：user 是男的、已经锁了「能不能怀孕＝不能」，
+    //   面板还显示「排卵期 · Day14 / 28」和阶段插图）——
+    //   根因：那把锁以前只掐受精 / 受孕率 / 孕期模块，**周期这条链从来没读过它** ✗
+    //   ⇒ 男角色身上照样按"默认月经档"种周期、走到第 14 天就自己算出排卵日。
+    //   这里接上：调用方把锁的结果传进来，这一档一律「不适用」（跟无月经那一档同一个说法）。
+    //   ⚠️ 周期日（`cycleDay`）**照旧保留、不删不改** —— 玩家哪天把锁改成「能」，
+    //      回来重算就还是对的那一天（不吞数据 ✓）
+    //   ⚠️ 排在孕期后面：万一旧存档里"已孕 + 不能怀孕"同时在，孕期那只优先级更高 ✓
+    if (opts && opts.noConception === true) {
+        return { phaseId: null, phase: '不适用', sub: '—', d1: '不适用' };
     }
 
     // ★ 无月经那一档：**没有周期、没有阶段**（无月经就是没有阶段，不需要阶段 ——

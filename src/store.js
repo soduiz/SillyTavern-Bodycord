@@ -448,6 +448,34 @@ export function reportedBodyFlagOf(key, field) {
 }
 
 /**
+ * ★★ 这个对象能不能怀孕 —— **唯一口径**（2026-11-03 抽出）。
+ *
+ * 优先顺序：**玩家锁的三态 > 推演这一轮报的 > 兜底按「能」**。
+ * ⚠️ 这里**不含**"无月经默认不能怀孕"那条 —— 那条只用于孕期 / 门控那套
+ *   （见 prompt.js 的 `canBePregnantPerson`）；无月经本身有没有阶段，
+ *   由 `derive.js` 的「无月经」那一支自己管（它还要给基础率读数 ✓）。
+ * ⇒ 也就是说这个函数回答的是"**有明确说不能吗**"，不是"能不能怀上"。
+ *
+ * 为什么要有这一个函数：以前这条判据被抄在好几处（受孕率那格、孕期判定、
+ *   面板说明……），而**周期那条链一处都没查它** ⇒ 男角色 / 锁了「不能」的人
+ *   身上照样算周期日、显示排卵期 ✗（她 2026-11-03 报的正是这个）
+ * ⇒ 现在所有"要不要给这个人算周期 / 受孕"的地方都问它，问一处改一处 ✓
+ */
+export function canBePregnantTarget(key) {
+    const k = String(key || '');
+    if (!k) return true;
+    try {
+        const lock = bodyLockOf(k);
+        if (lock && typeof lock.canBePregnant === 'boolean') return lock.canBePregnant;
+    } catch { /* 读不到锁就往下走 ✓ */ }
+    try {
+        const rep = reportedBodyFlagOf(k, 'canBePregnant');
+        if (rep !== null) return rep;
+    } catch { /* 忽略 */ }
+    return true;
+}
+
+/**
  * ★ 这一胎的另一个亲代算不算异种：
  * 只在**已经怀上**（`Is_Pregnant` 为真）、而且还没报过时问一次 ✓
  * 为什么问：异种规则表原来只按"追踪对象"（＝受孕方）发 ⇒ **人类妈妈 ＋ 异种爸爸那一胎，
@@ -1494,8 +1522,10 @@ export function upsertTargetResult(res, opts = {}) {
         {
             // ★ 经期天数也跟着「生理期参数」面板走（以前 derive 里写死 5 ✗）
             //   ★ 第 5 个参数＝植入孕的孕周基准（不是植入孕 ⇒ null ⇒ 照旧用周期日 ✓）
-            const dv = deriveCycleFields(t.vars || {}, periodModeOf(t.key), periodDaysOf(t.key), cycleDayNum(t.key), pregDaysOf(t.key));
+            const dv = deriveCycleFields(t.vars || {}, periodModeOf(t.key), periodDaysOf(t.key), cycleDayNum(t.key), pregDaysOf(t.key), { noConception: !cycleShownOf(t.key) });
             if (dv) {
+                // ★ 不能怀孕但选了「照常记录月经」⇒ 阶段照算，但基础率没有意义 ⇒ 不适用 ✓
+                if (!canBePregnantTarget(t.key)) dv.d1 = '不适用';
                 if (!t.profile) t.profile = {};
                 t.profile.phase = dv.phase;
                 t.profile.sub = dv.sub;
@@ -5162,8 +5192,11 @@ export function refreshCycleFieldsOf(key) {
     const t = state().targets?.[String(key || '')];
     if (!t) return false;
     try {
-        const dv = deriveCycleFields(t.vars || {}, periodModeOf(t.key), periodDaysOf(t.key), cycleDayNum(t.key), pregDaysOf(t.key));
+        // ★ 不能怀孕 ⇒ 阶段 / 进度 / 基础率一律「不适用」；但选了「照常记录月经」⇒ 阶段照算、
+        //   基础率仍不适用（周期日照旧保留 ✓ 见 derive.js 那段）
+        const dv = deriveCycleFields(t.vars || {}, periodModeOf(t.key), periodDaysOf(t.key), cycleDayNum(t.key), pregDaysOf(t.key), { noConception: !cycleShownOf(t.key) });
         if (!dv) return false;
+        if (!canBePregnantTarget(t.key)) dv.d1 = '不适用';
         if (!t.profile || typeof t.profile !== 'object') t.profile = {};
         t.profile.phase = dv.phase;
         t.profile.sub = dv.sub;
@@ -5506,6 +5539,47 @@ export function periodModeOf(key) {
     }
     const v = state().targets?.[key]?.cycleMode;
     return CYCLE_MODES.includes(v) ? v : fallback;
+}
+
+/**
+ * ★★ 2026-11-03（她定的）：锁了「不能怀孕」，这个人还要不要**照常记录月经**？
+ *
+ * 形态：只在「能不能怀孕」选成「不能」之后才出现的那一个开关（默认关）。
+ *   · 关（默认）⇒ 阶段 / 进度 / 基础率一律「不适用」（男角色不会冒出排卵期 ✓）
+ *   · 开 ⇒ 阶段照月经档算、插图照画；但**阶段基础率与累计受孕率仍写「不适用」**
+ *     （人确实怀不上，那两个数没有意义 —— 这是"记录月经"，不是"能怀"）
+ * ⚠️ 存法跟周期模式一样：本人 ⇒ 全局设置；NPC ⇒ 本聊天档案 ✓
+ */
+export function cycleWhileInfertileOf(key) {
+    if (!key) return false;
+    try {
+        if (isUserKey(key)) return settings().userCycleWhileInfertile === true;
+        return state().targets?.[key]?.cycleWhileInfertile === true;
+    } catch { return false; }
+}
+
+/** 设「不能怀孕也照常记录月经」（false ＝ 清掉 ✓） */
+export function setCycleWhileInfertileOf(key, on) {
+    if (!key) return false;
+    const v = on === true;
+    if (isUserKey(key)) {
+        settings().userCycleWhileInfertile = v;
+        save();
+        return true;
+    }
+    const t = state().targets?.[key];
+    if (!t) return false;
+    if (v) t.cycleWhileInfertile = true; else delete t.cycleWhileInfertile;
+    commit();
+    return true;
+}
+
+/**
+ * 这个人现在要不要**算 / 显示周期那套**（阶段、进度、插图）。
+ * ＝ 能怀孕（或者没锁） **或** 锁了不能但要求照常记录月经 ✓
+ */
+export function cycleShownOf(key) {
+    return canBePregnantTarget(key) || cycleWhileInfertileOf(key);
 }
 
 /** 设某个对象的档位（'' = 清掉、回到跟随默认 ✓） */
@@ -8385,10 +8459,7 @@ export function fertilityRateTextOf(key) {
     } catch { /* 读不到就按 0 */ }
     const pct = `${Math.round(sum * 10) / 10}%`;
     // 能不能怀孕：锁定的三态 > AI 报的那一格 > 兜底"能"（跟 prompt.js 的 canBePregnantPerson 同一口径 ✓）
-    let lock = null;
-    try { lock = bodyLockOf(key); } catch { /* 忽略 */ }
-    const repCan = String(t?.vars?.can_be_pregnant ?? '').trim().toLowerCase();
-    if ((lock && lock.canBePregnant === false) || repCan === 'false') return '不适用';
+    if (!canBePregnantTarget(key)) return '不适用';
     const pregnant = String(t?.vars?.Is_Pregnant ?? '').trim().toLowerCase() === 'true';
     if (pregnant) return `${pct}（已着床，数值锁定）`;
     const j = (() => { try { return getOvuJudgment(key); } catch { return null; } })();

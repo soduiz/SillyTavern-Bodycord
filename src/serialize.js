@@ -197,6 +197,29 @@ export function buildStatusProfile(name, profile = {}, period = null, opts = {})
     return L.join('\n');
 }
 
+/**
+ * ★★ 2026-11-03：这个对象**不在追踪名单**时，面板上该写什么。
+ *
+ * 为什么要有它：面板显示的是"当前查看的那个对象"最后一份档案，
+ *   跟它在不在推演名单里无关 ⇒ 玩家关掉「追踪本人」之后，画面还冻着关掉之前那次
+ *   算出来的排卵期 / 受孕率（她 2026-11-03 报的正是这个 ✗）。
+ * ⇒ 直接换成一句明话，不摆旧数据；顺带告诉她去哪儿把它加回来 ✓
+ * ⚠️ 只换**面板文字**（`t.raw`），档案里的值一个字不动 —— 加回名单之后照旧显示 ✓
+ */
+export function buildUntrackedProfile(name, isPregnant = false) {
+    const who = safeName(name);
+    const L = [`<status_profile name="${who}">`];
+    if (isFieldOn('title')) L.push(`状态标题：${normalizeTitle('', !!isPregnant)}`);
+    if (isFieldOn('phase') || isFieldOn('sub')) {
+        L.push('进度描述：不在追踪名单 | 这个对象现在不参与推演');
+    }
+    if (isFieldOn('calc')) {
+        L.push('计算说明：要追踪它，去设置页「推演与追踪」里的「追踪」把它加回来');
+    }
+    L.push('</status_profile>');
+    return L.join('\n');
+}
+
 export function buildPeriodProfile(name, period = {}) {
     const who = safeName(name);
     return [

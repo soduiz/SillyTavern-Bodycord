@@ -3973,9 +3973,12 @@ export async function runJudge({ silent = false, signal = null, force = false, r
                                 decayTracesForTarget(k, dd);
                             } catch { /* 单个失败不影响别人 */ }
                         }
+                        // ★ 2026-11-04（方案甲）：锚点**只许往前推** ——
+                        //   日期退回过去时（dd < 0）锚点必须留在原来那天，
+                        //   否则以后走回来会把同一段又消一遍 ✗（跟手动那两颗按钮同一条规矩 ✓）
+                        state().tracesDecayedOn = nowD;
+                        commit();
                     }
-                    state().tracesDecayedOn = nowD;
-                    commit();
                 }
             }
         } catch (e) { console.warn('[Bodycord] 按日期推进痕迹失败', e); }

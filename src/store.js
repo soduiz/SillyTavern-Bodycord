@@ -1856,7 +1856,9 @@ const _DATE_KEYS = ['cycleDayAt', 'lastSettleDate', 'birthDate', 'date'];
 // ★ 「经历了」那一档的"全套往回"要**留住**的那几格（2026-10-16）：
 //   · `cycleDayAt`（周期锚点）留住 ⇒ 周期第几天 / 孕周跟着日期一起退回来 ✓
 //   · `lastSettleDate`（上次结算日）留住 ⇒ 往回退**不生出新账** ✓
-const _KEEP_ANCHOR_KEYS = new Set(['cycleDayAt', 'lastSettleDate']);
+//   · `implantDate`（植入孕的起点）留住 ⇒ 植入孕的孕周也跟着日期一起退回来 ✓
+//     （2026-11-04 补：它一直没进过搬家清单，导致各条改时间的路上孕周凭空 ±N ✗）
+const _KEEP_ANCHOR_KEYS = new Set(['cycleDayAt', 'lastSettleDate', 'implantDate']);
 
 function _migrateChatDates(s, from, to) {
     let n = 0;
@@ -1871,6 +1873,8 @@ function _migrateChatDates(s, from, to) {
     for (const t of Object.values(s.targets || {})) {
         for (const k of _DATE_KEYS) fix(t, k);
     }
+    // ★ 植入孕的起点（单独一张 map）也要跟着换历法，不然孕周会歪 ✗
+    for (const k of Object.keys(s.implantDates || {})) fix(s.implantDates, k);
     for (const c of (Array.isArray(s.children) ? s.children : [])) fix(c, 'birthDate');
     for (const a of (Array.isArray(s.achievements) ? s.achievements : [])) fix(a, 'date');
     // ★ 日历上那几条日程也要跟着搬（不然换完历法红圈全跑了 ✗）
@@ -2561,8 +2565,8 @@ export function rebaseImportedDatesOf(keys, fromDate, toDate) {
         const nv = addDays(v, dd);
         if (nv) { s.implantDates[k] = nv; n += 1; }
     }
-    // ③ 其余日期记录（跳过已经处理过的周期锚点）
-    n += _shiftChatDatesByDays(s, dd, set, new Set(['cycleDayAt']));
+    // ③ 其余日期记录（跳过已经处理过的周期锚点 ＋ 植入日 —— 上面 ② 已经按整体位移搬过一次，别搬两遍 ✗）
+    n += _shiftChatDatesByDays(s, dd, set, new Set(['cycleDayAt', 'implantDate']));
     if (n) commit();
     return n;
 }
@@ -2961,12 +2965,14 @@ export function shiftDateForward(days, opts = {}) {
             ? shiftRecordedDatesBy(step, { only: skippers })
             : shiftRecordedDatesBy(step);
         commit();
+        try { refreshDerivedAfterTimeMove(); } catch { /* 忽略 */ }
         return { ok: true, days: step, from, to: to0, moved, experienced: false, clamped: false };
     }
 
     const to = advanceDate(step, mode);
     if (!to) return { ok: false, error: '推不动：日期读不出来' };
     commit();
+    try { refreshDerivedAfterTimeMove(); } catch { /* 忽略 */ }
     return { ok: true, days: step, from, to, experienced: true, clamped: step !== want };
 }
 
@@ -2998,6 +3004,46 @@ export function decayTracesForTarget(key, nights) {
     if (!Number.isFinite(n) || n <= 0) return;
     const con = String(traceConstitutionOf(key) || '').trim();
     decayTraces(n * (TRACE_RECOVER_FACTOR[con] ?? 1), key);
+}
+
+/**
+ * ★★ 2026-11-04（方案甲，玩家拍的）：手动时间改动之后，「痕迹那本钟」该走几夜、锚点停哪天。
+ *
+ * 规矩：**锚点只许往前推，绝不往后退** ——
+ *   · 往未来补 ⇒ 消掉的夜数不能超过"锚点到现在"这段（跳过头了也只消到今天的量）✓
+ *   · 往过去退 ⇒ 一段都不消，锚点留在原来那天（退回后再走回同一天，那一段**不会再消一次** ✓）
+ *   · 身体没经历 ⇒ 传 `experiencedNights = 0`，一样只允许锚点往前推 ✓
+ *
+ * 为什么要这么细：痕迹是按**已经过掉的剧情时间**消的（跟周期 / 孕周那种"身体里算的量"不是一回事）。
+ *   退时间如果连锚点一起退回去，等于说"只消到那天"，再往前走会把同一段又消一遍 ✗
+ *
+ * @param {string} anchorDate 锚点（`state().tracesDecayedOn`，空串＝还没记过）
+ * @param {string} todayDate 现在的剧情日期
+ * @param {number} experiencedNights 这一段该角色身体经历了几夜（没经历就传 0）
+ * @returns {{nights:number, anchor:string}} 这次能消几夜 / 锚点该写成哪天
+ */
+export function traceClockAfterForwardMove(anchorDate, todayDate, experiencedNights) {
+    const a = String(anchorDate || '');
+    const t = String(todayDate || '');
+    const want = Math.round(Number(experiencedNights));
+    let nights = 0;
+    if (Number.isFinite(want) && want > 0) {
+        if (!a) {
+            nights = want;                       // 还没有锚点 ⇒ 老行为
+        } else {
+            const dd = diffDays(a, t);           // 锚点 → 今天，这段还没消过
+            if (Number.isFinite(dd) && dd > 0) nights = Math.min(want, dd);
+        }
+    }
+    let anchor = a;
+    if (t) {
+        if (!a) anchor = t;
+        else {
+            const dd = diffDays(a, t);
+            if (Number.isFinite(dd) && dd > 0) anchor = t;   // 只往前推 ✓
+        }
+    }
+    return { nights, anchor };
 }
 
 /**
@@ -3038,6 +3084,17 @@ function _forEachChatDate(s, fn, only = null, skipKeys = null) {
             //   那样周期第几天 / 孕周才会跟着日期一起退回来 ✓）
             if (skipKeys && skipKeys.has(k)) continue;
             hit(t, k);
+        }
+    }
+    // ★★ 2026-11-04：**植入孕的起点**也要一起搬 ——
+    //   它单独存在 `s.implantDates` 这张 map 里（不是 target 上的字段），
+    //   原来这张表根本没扫它 ⇒ 补 / 退 / 跳完，植入孕的孕周凭空 ±N ✗
+    //   （「经历了·往回退」要像周期锚点那样留住 ⇒ 用同一套 skipKeys 点名 ✓）
+    if (!(skipKeys && skipKeys.has('implantDate'))) {
+        if (!s.implantDates || typeof s.implantDates !== 'object') s.implantDates = {};
+        for (const k of Object.keys(s.implantDates)) {
+            if (!mine(k)) continue;
+            hit(s.implantDates, k);
         }
     }
     for (const c of (Array.isArray(s.children) ? s.children : [])) if (mine(c?.key)) hit(c, 'birthDate');
@@ -3152,6 +3209,7 @@ export function shiftDateBackward(days) {
     const moved = _shiftChatDatesByDays(s, -step);   // 已经记下的日期一起搬 ✓
     setCurrentDate(to, dateMode() === 'story' ? 'story' : 'fiction');   // 绝对赋值，不会重复搬 ✓
     commit();
+    try { refreshDerivedAfterTimeMove(); } catch { /* 忽略 */ }
     return { ok: true, days: step, from, to, moved, clamped: step !== want };
 }
 
@@ -3193,6 +3251,7 @@ export function shiftDateBackwardFull(days) {
     const moved = _shiftChatDatesByDays(s, -want, null, _KEEP_ANCHOR_KEYS);
     setCurrentDate(to, dateMode() === 'story' ? 'story' : 'fiction');
     commit();
+    try { refreshDerivedAfterTimeMove(); } catch { /* 忽略 */ }
     return { ok: true, days: want, from, to, moved };
 }
 
@@ -5205,6 +5264,29 @@ export function refreshCycleFieldsOf(key) {
         commit();
         return true;
     } catch { return false; }
+}
+
+/**
+ * ★★ 2026-11-04：时间轴动过之后，把**存下来的**阶段名 / 进度 / 预产期按新日期重算一遍。
+ *
+ * 为什么必须补这一步：阶段名、进度、基础率是**存进 `target.profile`** 的
+ *   （面板、卵子插图、发给主 API 的那份摘要都读它）——
+ *   只挪了日期不重算，就会"周期第几天变了、阶段还是旧的"，要等下一轮推演才自愈 ✗
+ *   （推演那条路本来就有这一步，见 judge.js 里日期动过之后那次 `refreshCycleFieldsOf` ✓）
+ *
+ * 幂等、便宜（比对一个字符串 + 重算几个数）⇒ 三条手动改时间的路都可以调 ✓
+ * @returns {number} 重算了几个对象
+ */
+export function refreshDerivedAfterTimeMove() {
+    let n = 0;
+    try {
+        for (const k of Object.keys(state().targets || {})) {
+            try { if (refreshCycleFieldsOf(k)) n += 1; } catch { /* 单个失败不影响别人 */ }
+        }
+    } catch { /* 忽略 */ }
+    // ★ 预产期也按新日期重算（它存的是"算出来的绝对日期"，时间一动就该对齐 ✓）
+    try { refreshDueDates(); } catch { /* 忽略 */ }
+    return n;
 }
 
 /**

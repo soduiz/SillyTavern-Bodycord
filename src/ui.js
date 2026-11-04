@@ -46,6 +46,7 @@ import {
     awarenessTierIdOf, setAwarenessTierIdOf,
     implantDateOf, setImplantDateOf, pregDaysOf, shiftDueDatesOf, listAlerts, syncDueAlerts,
     setCurrentDate, setCurrentTime, currentTime, dateMode, shiftRecordedDatesBy, storyDateTimeNow,
+    canShiftRecordedDatesBy, refreshDerivedAfterTimeMove,
 } from './store.js';
 // 2026-11-01：上面那排是改数值里的「剧情日期」要用的（直接写时间轴那套现成接口，别另造 ✓）。
 //   ⚠️ 这类说明只能写在 import 的**外面**：括号里出现注释会被 imports 那套自测当成"导入了一个叫 // 的东西" ✗
@@ -1552,7 +1553,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-11-04-1';
+export const BUILD_STAMP = '2026-11-04-3';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -5283,21 +5284,39 @@ function openFieldEditor(focusKey) {
                     if (why) { window.toastr?.warning?.(why); return; }
                     const raw = String(dateIn.value || '').trim();
                     if (!raw) { window.toastr?.warning?.('先把日期填上'); return; }
+                    // ★★ 2026-11-04：**先解析、先校验，最后才写** ——
+                    //   这条入口原来没有"会把已记日期挤到历法第一天之前"的预检（两颗方向按钮有），
+                    //   把日期改早会把孩子生日 / 成就 / 周期锚点**静默压成历法第一天** ✗
+                    //   ⇒ 跟那两颗按钮同一道闸：只要有一条会被夹，就整个拒绝、并说清怎么办 ✓
+                    const pick = (() => {
+                        try { const p = parseFictionDate(raw); return p ? formatFictionDate(p) : ''; } catch { return ''; }
+                    })();
+                    if (!pick) {
+                        window.toastr?.warning?.('这个日期读不出来：照现在这套写法填，例如「' + fmtEg + '」');
+                        return;
+                    }
                     const oldD = (() => { try { return currentDate() || ''; } catch { return ''; } })();
-                    // ★ 认不出来的日期 setCurrentDate 会拒（返回 false）—— 绝不硬写 ✗
-                    if (!setCurrentDate(raw, 'story')) {
+                    let dd = 0;
+                    if (moveRecorded && oldD) {
+                        try { dd = Number(diffDays(oldD, pick)) || 0; } catch { dd = 0; }
+                    }
+                    if (dd) {
+                        let can = true;
+                        try { can = canShiftRecordedDatesBy(dd); } catch { can = false; }
+                        if (!can) {
+                            window.toastr?.warning?.('改不了：已经记下的日期里有更早的记录，一起改会掉到历法第一天之前。把日期改成更晚的，或者选「只改今天」');
+                            return;
+                        }
+                    }
+                    if (!setCurrentDate(pick, 'story')) {
                         window.toastr?.warning?.('这个日期读不出来：照现在这套写法填，例如「' + fmtEg + '」');
                         return;
                     }
                     const nextD = (() => { try { return currentDate() || ''; } catch { return ''; } })();
                     // ★ 「记下的日期一起改」：所有记下的日期一起改到新日期 ⇒ 之间的天数不变（孕周 / 周期第几天都不受影响 ✓）
                     let moved = 0;
-                    if (moveRecorded && oldD && nextD) {
-                        let dd = 0;
-                        try { dd = diffDays(oldD, nextD); } catch { dd = 0; }
-                        if (Number.isFinite(dd) && dd) {
-                            try { moved = shiftRecordedDatesBy(dd); } catch (e) { console.warn('[Bodycord] 搬已记日期失败', e); }
-                        }
+                    if (dd) {
+                        try { moved = shiftRecordedDatesBy(dd); } catch (e) { console.warn('[Bodycord] 一起改已记日期失败', e); }
                     }
                     // 钟点（历法开了「记钟点」才出现那一格）
                     let timeNote = '';
@@ -5315,15 +5334,32 @@ function openFieldEditor(focusKey) {
                         if (mins === null) window.toastr?.warning?.('钟点读不出来：写成 14:30 这样（只记小时就写 14）');
                         else { try { setCurrentTime(mins); timeNote = '，钟点一起改了'; } catch { /* 忽略 */ } }
                     }
+                    // ★ 时间轴动过 ⇒ 阶段 / 进度 / 预产期按新日期重算（不然要等下一轮推演才自愈 ✓）
+                    try { refreshDerivedAfterTimeMove(); } catch { /* 忽略 */ }
                     try { commit(); } catch { /* 忽略 */ }
                     try { refreshRaw({ force: true }); } catch { /* 忽略 */ }
                     try { refreshAll({ force: true }); } catch { /* 忽略 */ }
+                    // ★ 选「只改今天」时，有人的植入日可能比新日期还晚 ⇒ 孕周会显示 0。
+                    //   坏值只提示、不动玩家数据 ✓（项目红线）
+                    let lateNote = '';
+                    if (!moveRecorded) {
+                        let late = 0;
+                        try {
+                            for (const k of Object.keys(state().targets || {})) {
+                                const d = String(implantDateOf(k) || '');
+                                if (!d) continue;
+                                const n2 = Number(diffDays(nextD, d));     // 正数 = 植入日比这个日期还晚
+                                if (Number.isFinite(n2) && n2 > 0) late += 1;
+                            }
+                        } catch { /* 忽略 */ }
+                        if (late) lateNote = '；注意：有 ' + late + ' 个对象的植入日比这个日期还晚，孕周会显示 0';
+                    }
                     dateIn.value = '';
                     timeIn.value = '';
                     paint();
                     window.toastr?.success?.('已把剧情日期设为 ' + nextD
                         + (moved ? ('，记下的日期一起改了 ' + moved + ' 处') : '')
-                        + timeNote);
+                        + timeNote + lateNote);
                 }
 
                 db.appendChild(nowLine);

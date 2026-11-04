@@ -49,6 +49,7 @@ import {
     storyDateTimeNow, dateMode, shiftDateForward, shiftDateBackward, shiftDateBackwardFull, exportOnlyStateDates, applyRelDates, setPendingRelDates, FICTION_DATE_START,
     inRealChat, inChatPage, currentDate,
     decayTracesForElapsedDays,
+    traceClockAfterForwardMove,
     timeJumpSkipsBody, setTimeJumpSkipsBody, timeJumpSkipsBodyManual, setTimeJumpSkipsBodyAuto,
     timeJumpExceptKeys, setTimeJumpExceptKeys, findTargetByReportedName,
     SPERM_TIERS, SPERM_TIER_LABEL,
@@ -3690,6 +3691,7 @@ export function shiftDaySection(container, onChange, opts = {}) {
             '往未来补 N 天：补上漏掉的天数。补完当场把该算的账算掉（该来月经的来月经、该着床的着床、跨过受孕窗口的当场判定）',
             '往过去退 N 天：把日期退回去。退哪些东西看上面那两档：选「经历了」＝日期和已经记下的日期一起往过去退（周期锚点留着 ⇒ 周期第几天 / 孕周也跟着退回来）；选「没经历」＝只改日期，已经记下的日期一起改、周期第几天不变',
             '⚠️ 已经算过的账不会跟着退：来月经、着床、分娩这些落过账的收不回来。填之前先确认剧情到底过了多久',
+            '痕迹：往未来补会按这几夜消；往过去退既不消也不还原（已经消掉的不会回来），退回之后再走回同一天也不会再消一次',
             '「这次手填的改动」那两档是穿越用的：选「经历了」＝这 N 天真的过了（周期、孕周、痕迹都跟着走，该结算的当场结算）',
             '选「没经历」＝只改日期，该角色的身体一个都没动（孕周 / 周期 / 痕迹不变，也不结算）⇒ 肉身穿越、只有灵魂过去、被丢到很多年以后，都走这一档',
             '⚠️ 这两档都是"整个世界一起"的（一个聊天只有一根时间轴）：选「没经历」时，所有角色已经记下的日期会一起改 ⇒ 它说的是"这一次时间改动，对这个聊天里的所有人算不算数"，不是按人分开的',
@@ -3838,16 +3840,30 @@ export function shiftDaySection(container, onChange, opts = {}) {
             : shiftDateForward(input.value, { bodyExperienced });
         if (!r.ok) { window.toastr?.warning?.(r.error); paint(); return; }
         const bits = [];
-        // ★ 痕迹锚点跟着日历走：往过去退 / 身体没经历这两条都不衰减痕迹，
-        //   但锚点必须挪到新日期，否则下一轮推演会把这段差额补算一遍（痕迹凭空消掉 ✗）
-        try { state().tracesDecayedOn = currentDate() || ''; commit(); } catch { /* 忽略 */ }
+        // ★★ 2026-11-04（方案甲，她拍的）：痕迹那本钟**只许往前推** ——
+        //   往过去退 ⇒ 一段都不消、锚点留在原来那天（退回后再走回同一天，那一段不会再消一次 ✓）
+        //   往未来补 ⇒ 只消"锚点到现在"这么多夜（跳过头也不会把没经过的日子算进去 ✓）
+        //   原来这里不分方向一律把锚点改成今天 ⇒ 来回拨几次，同一段痕迹被消了两次 ✗
+        const clock = (experiencedNights) => {
+            let a = '', t = '';
+            try { a = String(state().tracesDecayedOn || ''); } catch { a = ''; }
+            try { t = currentDate() || ''; } catch { t = ''; }
+            let res = { nights: 0, anchor: a };
+            try { res = traceClockAfterForwardMove(a, t, experiencedNights); } catch { res = { nights: 0, anchor: a }; }
+            if (res.anchor && res.anchor !== a) {
+                try { state().tracesDecayedOn = res.anchor; commit(); } catch { /* 忽略 */ }
+            }
+            return res.nights;
+        };
         if (dir === 'back') {
+            // ★ 退回**不碰锚点**（也不消痕迹）：锚点本来就在退回后的未来那天 ⇒ 再走回来不会再消 ✓
             bits.push('已往过去退 ' + r.days + ' 天：' + r.from + ' → ' + r.to);
             if (r.moved) bits.push('一起改了 ' + r.moved + ' 处记下的日期');
             else bits.push('只退了日期：周期第几天 / 孕周跟着变回来了（已经结算过的账收不回来）');
             try { syncAfterTimeBack(); } catch (e) { console.warn('[Bodycord] 退时间后对齐失败', e); }
         } else if (!bodyExperienced) {
             // ★ 「身体没经历」⇒ 只把日历（和所有已记日期）一起挪过去，**不算账** ✓
+            clock(0);          // 不消痕迹，但锚点可以往前推（不然下一轮推演会把这段补算一遍 ✗）
             bits.push('已往未来跳 ' + r.days + ' 天：' + r.from + ' → ' + r.to);
             if (r.moved) bits.push('一起改了 ' + r.moved + ' 处记下的日期');
             bits.push('该角色的身体没经历这段：孕周 / 周期 / 痕迹都没动');
@@ -3855,11 +3871,11 @@ export function shiftDaySection(container, onChange, opts = {}) {
             bits.push('已往未来补 ' + r.days + ' 天：' + r.from + ' → ' + r.to);
             // ★ 痕迹按 N 夜衰减 —— 补上"补了一千年、吻痕还在"那个缺口 ✓
             //   （口径跟推演那条路一样：夜数 × 恢复体质档倍率 ✓）
+            //   ⚠️ 只消"锚点到现在"这么多夜：之前退过时间的话，退掉的那段不再算一遍 ✓
+            const nights = clock(r.days);
             let hitTr = 0;
-            try { hitTr = decayTracesForElapsedDays(r.days); } catch (e) { console.warn('[Bodycord] 补时间后衰减痕迹失败', e); }
-            // ★ 锚点跟着挪：不然下一轮推演会按"上次消到哪天"再补一遍（补两次 ✗）
-            try { state().tracesDecayedOn = currentDate() || ''; commit(); } catch { /* 忽略 */ }
-            if (hitTr) bits.push('痕迹按 ' + r.days + ' 夜衰减（' + hitTr + ' 个对象）');
+            try { hitTr = nights > 0 ? decayTracesForElapsedDays(nights) : 0; } catch (e) { console.warn('[Bodycord] 补时间后衰减痕迹失败', e); }
+            if (hitTr) bits.push('痕迹按 ' + nights + ' 夜衰减（' + hitTr + ' 个对象）');
             let res = null;
             try { res = settleAfterTimeShift(); } catch (e) { console.warn('[Bodycord] 补时间后结算失败', e); }
             if (res?.settled?.length) bits.push('结算：' + res.settled.map(x => x.name).join('、'));

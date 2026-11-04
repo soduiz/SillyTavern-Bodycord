@@ -1552,7 +1552,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-11-03-3';
+export const BUILD_STAMP = '2026-11-04-1';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -5224,8 +5224,8 @@ function openFieldEditor(focusKey) {
                         '这一格改的是「这个聊天的时间轴」，不是当前这个对象一个人的：改完所有人都会按新日期走',
                         '什么时候用：AI 把剧情时间认错了（比如明明是哪一年几月，结果被认成历法开头那种），在这儿直接改成对的',
                         '写法照现在这套，例如「' + fmtEg + '」；也认 1-1-1 / 1/1/1 这种纯数字写法',
-                        '「已记的日期也一起搬」开着（默认）：所有已经记下的日期跟着平移同样的天数 ⇒ 孕周 / 周期第几天 / 痕迹这些相对的天数都不变，只是绝对日期换到对的年份上',
-                        '关掉「已记的日期也一起搬」：只改今天这一天，已记的日期原地不动 ⇒ 天数差会跟着变（周期第几天、孕周都可能一下跳很多）',
+                        '默认是「记下的日期一起改」：所有已经记下的日期一起改到新日期，之间的天数不变 ⇒ 孕周、周期第几天、痕迹都不受影响，变的只是日期本身',
+                        '选「只改今天」：只改今天这一天，已经记下的日期原地不动 ⇒ 之间的天数会变（周期第几天、孕周可能一下变很多）',
                         '钟点那一格只有历法开了「记钟点」才出现；不开就不显示',
                     ],
                 });
@@ -5236,12 +5236,12 @@ function openFieldEditor(focusKey) {
                 const unit = (() => { try { return timeUnitNow(); } catch { return 'none'; } })();
                 let moveRecorded = true;
                 const mYes = h('div', {
-                    class: 'bc-chip bc-chip-pick', text: '已记的日期也一起搬',
-                    title: '平移同样的天数：天数差不变，孕周 / 周期第几天都不跳',
+                    class: 'bc-chip bc-chip-pick', text: '记下的日期一起改',
+                    title: '已经记下的日期一起改到新日期：之间的天数不变，孕周、周期第几天都不受影响',
                 });
                 const mNo = h('div', {
                     class: 'bc-chip bc-chip-pick', text: '只改今天',
-                    title: '只改这一天，已记的日期留在原地 ⇒ 天数差会变',
+                    title: '只改这一天，已经记下的日期不动 ⇒ 之间的天数会变',
                 });
                 const modeRow = h('div', { class: 'bc-chip-list' }, mYes, mNo);
                 const modeNote = h('div', { class: 'bc-hint' });
@@ -5270,8 +5270,8 @@ function openFieldEditor(focusKey) {
                     mNo.classList.toggle('bc-chip-on', !moveRecorded);
                     const why = whyNow();
                     modeNote.textContent = why || (moveRecorded
-                        ? '已记的日期跟着平移同样的天数：孕周 / 周期第几天 / 痕迹都不跳'
-                        : '只改今天：已记的日期不动，天数差会跟着变（周期第几天、孕周可能一下跳很多）');
+                        ? '已经记下的日期一起改：之间的天数不变，孕周、周期第几天、痕迹都不受影响'
+                        : '只改今天：已经记下的日期不动，之间的天数会变（周期第几天、孕周可能一下变很多）');
                     dateIn.disabled = !!why;
                     timeIn.disabled = !!why;
                     btn.disabled = !!why;
@@ -5290,7 +5290,7 @@ function openFieldEditor(focusKey) {
                         return;
                     }
                     const nextD = (() => { try { return currentDate() || ''; } catch { return ''; } })();
-                    // ★ 「已记的日期也一起搬」：平移同样的天数 ⇒ 天数差守恒（孕周 / 周期第几天都不跳 ✓）
+                    // ★ 「记下的日期一起改」：所有记下的日期一起改到新日期 ⇒ 之间的天数不变（孕周 / 周期第几天都不受影响 ✓）
                     let moved = 0;
                     if (moveRecorded && oldD && nextD) {
                         let dd = 0;
@@ -5322,7 +5322,7 @@ function openFieldEditor(focusKey) {
                     timeIn.value = '';
                     paint();
                     window.toastr?.success?.('已把剧情日期设为 ' + nextD
-                        + (moved ? ('，已记的日期一起搬了 ' + moved + ' 处') : '')
+                        + (moved ? ('，记下的日期一起改了 ' + moved + ' 处') : '')
                         + timeNote);
                 }
 

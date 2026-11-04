@@ -3668,8 +3668,13 @@ function bubbleSection(container, onChange, actions = {}) {
  * ★★ **判不出来的时候只许拒，绝不许悄悄朝反方向走** ✓
  *     （两行各自有闸，见下面 `blockedReason()`；退到历法第一天之前也是拒 ✓）
  *
- * ⚠️ 都**不可逆**（现场结算过的那笔账收不回来）⇒ 按项目规矩：明面留一句最短的后果，
- *   详细解释进「？」；按钮上直接写清"几天"，点完如实报结果（不许含糊 ✗）。
+ * ⚠️ 日期**可以再改回来**（这里两颗按钮、上面那个日期格，都能来回拨）——
+ *   真正收不回来的是**当场结算过的那笔账**（来月经 / 着床 / 分娩）⇒ 这句写进「？」；
+ *   按钮上直接写清"几天"，点完如实报结果（不许含糊 ✗）。
+ *
+ * ★ 2026-11-04（玩家反馈：日期明明能再改，别挂"退不回来"的警告）——
+ *   原来明面挂着一句「⚠️ 时间轴改了就退不回来」，**说错了**：日期本身随时能再改 ✓
+ *   ⇒ 那句删掉，只把"已经算过的账退不回来"留在「？」里（那才是真的 ✓）。
  *
  * ★ 2026-11-01：**整块搬去「改数值」弹窗**（她定的：时间跳跃与修正放在时间与日历那页不合适）——
  *   时间与日历那页只留历法设定；翻天数并当场结算属于运行时修正，跟"直接改日期"住一处 ✓
@@ -3683,11 +3688,11 @@ export function shiftDaySection(container, onChange, opts = {}) {
             '什么时候用：剧情里明明过了一段时间（过夜、三天后、隔了一个月），但推演那边没报出来，日历停着不动',
             '或者反过来：写正文那个把时间写多了（写「三个月后」其实只过了一天）⇒ 时间轴走歪了，要退回来',
             '往未来补 N 天：补上漏掉的天数。补完当场把该算的账算掉（该来月经的来月经、该着床的着床、跨过受孕窗口的当场判定）',
-            '往过去退 N 天：把日期退回去。退哪些东西看上面那两档：选「经历了」＝日期和已经记下的日期一起往过去退（周期锚点留着 ⇒ 周期第几天 / 孕周也跟着退回来）；选「没经历」＝只挪日历，已经记下的日期一起搬、周期第几天不变',
-            '⚠️ 两个方向都不撤销已经算过的账：来月经、着床、分娩这些落过账的收不回来。填之前先确认剧情到底过了多久',
-            '「这次手填的改动」那两档是穿越用的：选「经历了」＝这 N 天真的过了（周期、孕周、痕迹都跟着走，该结算的结算）',
-            '选「没经历」＝只有日历挪过去，该角色的身体一个都没动（孕周 / 周期 / 痕迹不变，也不结算）⇒ 肉身穿越、只有灵魂过去、被丢到很多年以后，都走这一档',
-            '⚠️ 这两档都是"整个世界一起"的（一个聊天只有一根时间轴）：选「没经历」时，所有角色已记的日期会一起搬 ⇒ 它说的是"这一次时间改动，对这个聊天里的所有人算不算数"，不是按人分开的',
+            '往过去退 N 天：把日期退回去。退哪些东西看上面那两档：选「经历了」＝日期和已经记下的日期一起往过去退（周期锚点留着 ⇒ 周期第几天 / 孕周也跟着退回来）；选「没经历」＝只改日期，已经记下的日期一起改、周期第几天不变',
+            '⚠️ 已经算过的账不会跟着退：来月经、着床、分娩这些落过账的收不回来。填之前先确认剧情到底过了多久',
+            '「这次手填的改动」那两档是穿越用的：选「经历了」＝这 N 天真的过了（周期、孕周、痕迹都跟着走，该结算的当场结算）',
+            '选「没经历」＝只改日期，该角色的身体一个都没动（孕周 / 周期 / 痕迹不变，也不结算）⇒ 肉身穿越、只有灵魂过去、被丢到很多年以后，都走这一档',
+            '⚠️ 这两档都是"整个世界一起"的（一个聊天只有一根时间轴）：选「没经历」时，所有角色已经记下的日期会一起改 ⇒ 它说的是"这一次时间改动，对这个聊天里的所有人算不算数"，不是按人分开的',
             '下面「推演每轮自己报的跳跃」管的是另一条路：推演每轮自己报的这次时间跳跃（往哪边跳、跳多少、身体有没有经历都由它说）。三颗默认是「让推演判断」，时间来回跳也不用你管；想固定住"身体那半"（整篇都是这一类设定）就点「算身体时间」或「不算」，之后以你点的为准，插件也不再每轮问它 ✓',
             '「例外」是给部分人用的：选进来的人跟上面那格相反（上面选「算身体时间」，选进来的就是"身体没经历"）⇒ 剧情里"一拨人真的过了十年、另一拨身体没跟着走"那种就靠它 ✓',
             '例外可以多选，也可以直接手输名字；输进去的名字不在追踪名单里的话，插件会明说、不会静默失效 ✓',
@@ -3731,14 +3736,13 @@ export function shiftDaySection(container, onChange, opts = {}) {
         return '';
     };
 
-    // ⚠️ 警告**不许藏**（不可逆）⇒ 明面留这一句，详细理由进上面那个「？」
-    const warn = h('div', { class: 'bc-warn', text: '⚠️ 时间轴改了就退不回来' });
+    // ★ 2026-11-04：原来这里明面挂着一句「时间轴改了就退不回来」⇒ 已删（日期能再改 ✓）
 
     // ★★ 「这段时间该角色的身体」两档（两档两颗，默认那档排最左 ✓）——
     //   它决定**这两颗方向按钮各自算什么**（见「？」里那三条 ✓）
     let bodyExperienced = true;
     const mExperience = h('div', { class: 'bc-chip bc-chip-pick', text: '经历了', title: '这 N 天真的过了：周期、孕周、痕迹都跟着走' });
-    const mSkip = h('div', { class: 'bc-chip bc-chip-pick', text: '没经历', title: '只有日历挪过去，该角色的身体一个都没动' });
+    const mSkip = h('div', { class: 'bc-chip bc-chip-pick', text: '没经历', title: '只改日期，该角色的身体一个都没动' });
     const modeNote = h('div', { class: 'bc-hint' });
     const modeRow = h('div', { class: 'bc-chip-list' }, mExperience, mSkip);
     mExperience.onclick = () => { bodyExperienced = true; paint(); };
@@ -3787,7 +3791,7 @@ export function shiftDaySection(container, onChange, opts = {}) {
         } catch { /* 忽略 */ }
         readout.textContent = '现在：' + (now || '（还没有日期）') + '　来源：' + src
             + (fwd ? ('　往未来 ' + step + ' 天：' + fwd) : '')
-            + (back ? ('　往过去 ' + step + ' 天：' + back + (bodyExperienced ? '（全套往回）' : '（只挪日历）')) : '');
+            + (back ? ('　往过去 ' + step + ' 天：' + back + (bodyExperienced ? '（身体跟着往回退）' : '（只改日期）')) : '');
 
         // ★ 「没经历」那档不是"补"，是"跳"（这 N 天没算在该角色身上）⇒ 按钮上跟着换词 ✓
         btnFwd.textContent = okN ? (bodyExperienced ? ('往未来补 ' + step + ' 天') : ('往未来跳 ' + step + ' 天'))
@@ -3798,12 +3802,12 @@ export function shiftDaySection(container, onChange, opts = {}) {
         //   选了「没经历」⇒ 只挪日历（已记日期一起搬 ⇒ 周期第几天不变 ✓）
         btnBack.title = bodyExperienced
             ? '日期和已经记下的日期都往回退，周期第几天 / 孕周跟着回去（已经结算过的账收不回来）'
-            : '只挪日历：已经记下的日期一起搬，周期第几天不变';
+            : '只改日期：已经记下的日期一起改，周期第几天不变';
         mExperience.classList.toggle('bc-chip-on', bodyExperienced);
         mSkip.classList.toggle('bc-chip-on', !bodyExperienced);
         modeNote.textContent = bodyExperienced
-            ? '这段算在该角色身上：周期、孕周跟着走，痕迹按天数消，该结算的结算'
-            : '这段不算在该角色身上：只有日历挪过去，孕周 / 周期 / 痕迹一个都不变';
+            ? '这段算在该角色身上：周期、孕周跟着走，痕迹按天数消，到日子的账当场结算'
+            : '这段不算在该角色身上：只改日期，孕周 / 周期 / 痕迹一个都不变';
         const blockFwd = blockedReason('fwd');
         const blockBack = blockedReason('back');
         const offFwd = !!blockFwd || !okN;
@@ -3839,13 +3843,13 @@ export function shiftDaySection(container, onChange, opts = {}) {
         try { state().tracesDecayedOn = currentDate() || ''; commit(); } catch { /* 忽略 */ }
         if (dir === 'back') {
             bits.push('已往过去退 ' + r.days + ' 天：' + r.from + ' → ' + r.to);
-            if (r.moved) bits.push('一起退了 ' + r.moved + ' 处已记日期');
+            if (r.moved) bits.push('一起改了 ' + r.moved + ' 处记下的日期');
             else bits.push('只退了日期：周期第几天 / 孕周跟着变回来了（已经结算过的账收不回来）');
             try { syncAfterTimeBack(); } catch (e) { console.warn('[Bodycord] 退时间后对齐失败', e); }
         } else if (!bodyExperienced) {
             // ★ 「身体没经历」⇒ 只把日历（和所有已记日期）一起挪过去，**不算账** ✓
             bits.push('已往未来跳 ' + r.days + ' 天：' + r.from + ' → ' + r.to);
-            if (r.moved) bits.push('一起搬了 ' + r.moved + ' 处已记日期');
+            if (r.moved) bits.push('一起改了 ' + r.moved + ' 处记下的日期');
             bits.push('该角色的身体没经历这段：孕周 / 周期 / 痕迹都没动');
         } else {
             bits.push('已往未来补 ' + r.days + ' 天：' + r.from + ' → ' + r.to);
@@ -3867,7 +3871,6 @@ export function shiftDaySection(container, onChange, opts = {}) {
     }
 
     b.appendChild(readout);
-    b.appendChild(warn);
     b.appendChild(h('div', { class: 'bc-row bc-row-wrap' }, chips));
     // ★ 「这段时间该角色的身体」两档放在方向按钮**上面**（先选这一段算不算该角色的，再点方向 ✓）
     b.appendChild(h('div', { class: 'bc-hint', text: '这次手填的改动：算在该角色身上吗' }));

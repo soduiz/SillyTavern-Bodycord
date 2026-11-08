@@ -1031,6 +1031,12 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-badge {
     font-size: calc(10px * var(--bc-fs-scale, 1)); padding: 1px 7px; border-radius: 20px;
     background: rgba(128, 128, 128, .16); color: var(--bc-tx-2); font-weight: 500;
+    /* ⚠️ 徽章是"一个词"，不是一段说明 ⇒ 永远不许被挤着换行。
+       2026-11-05 她手机截图：那个表示"正在用"的徽章被压成「使用」/「中」两行 ——
+       根因是它是 flex 子项、默认 flex-shrink:1，整行放不下时被当成"能缩的软柿子"✗
+       ⇒ 不缩 + 不换行；宽度不够就让同一行里**能折行的那块**（名字 / 模型）去让 ✓ */
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 .bc-badge-lock { background: rgba(229, 164, 31, .2); color: var(--bc-yellow); }
 .bc-badge-edit { background: rgba(34, 165, 89, .18); color: #1a7d43; }
@@ -3839,6 +3845,13 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     .bc-toolbar .bc-select,
     .bc-dd-wide,
     .bc-zone-arch-dd { min-width: 0; width: 100%; }
+    /* 接口渠道那一行：窄屏拆两行 —— 第一行「名称 + 模型」，第二行「使用中 + 编辑 + 删除」。
+       ⚠️ 原来是一行硬挤五样东西：320 宽时整行差几像素放不下，
+          flex 就把唯一能缩的**徽章**压成「使用 / 中」两行（2026-11-05 她手机截图）✗
+       ⇒ 和上面那条同一条规矩：放不下就拆开，宁可页面长一点，别把字挤碎 ✓ */
+    .bc-api-row { flex-wrap: wrap; row-gap: 6px; }
+    .bc-api-row-main { flex: 1 1 100%; }
+    .bc-api-row > .bc-spacer { display: none; }
     /* 字段开关那张三列表（字段名 / 是什么 / 改了会怎样）：第一列就 190px ⇒ 手机上竖着叠开 ✓
        （表头那行不藏 —— 叠开时它就是一段图例，藏了反而不知道每行在说什么 ✓） */
     .bc-ff-row { grid-template-columns: 1fr; gap: 3px; }

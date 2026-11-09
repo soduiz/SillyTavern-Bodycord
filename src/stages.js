@@ -19,8 +19,9 @@
 
 import { settings } from './settings.js';
 import { stageImages, stagesOn, stageTextOverride, termNameOf, isNeutralMode, stageTextOnly, borrowOnFor, borrowFromFor, stageFetusOn, stageCuts } from './settings.js';
-import { state, getOvuJudgment, viableFertility, periodModeOf, cycleDayNum, SPERM_TIERS, vaginaLoadTierOf, wombLoadTierOf, pregnancyStateForPrompt, pregDaysOf, listAlerts, currentDate, fetusPlanOf, pregnantNowOf } from './store.js';
+import { state, getOvuJudgment, viableFertility, periodModeOf, cycleDayNum, SPERM_TIERS, vaginaLoadTierOf, wombLoadTierOf, pregnancyStateForPrompt, pregDaysOf, listAlerts, currentDate, fetusPlanOf, pregnantNowOf, activeClutchesOf, incubatingPhaseOf, diapauseWaitOf, pregTotalDaysOf } from './store.js';
 import { diffDays } from './fiction-date.js';
+import { pregPhaseOf } from './derive.js';
 import { isPregnant, hasSperm } from './prompt.js';
 
 /**
@@ -47,10 +48,10 @@ function pregnancyArtReady(k, t) {
 
 
 /**
- * 设置页里那六个槽位的排列顺序：按事情推进的顺序排，「普通的一天」放最后 ✓
+ * 设置页里那几个槽位的排列顺序：按事情推进的顺序排，「普通的一天」放最后 ✓
  * （别直接把 STAGE_KEYS 当显示顺序用 —— 那个是按"优先级从低到高"写的 ✗）
  */
-export const STAGE_ORDER = ['egg', 'sperm_only', 'sperm_egg', 'fertilized', 'implanted', 'daily'];
+export const STAGE_ORDER = ['egg', 'sperm_only', 'sperm_egg', 'fertilized', 'implanted', 'incubating', 'daily'];
 
 /**
  * 「卵子在场」的阶段 = 排卵窗口（排卵日 + 前后各一天）。
@@ -83,6 +84,8 @@ export const STAGE_TEXT = {
     //   ⇒ 同一件事两个词（"同一处必须一直用同一个词"）✗ ⇒ 标题改成**受精** ✓
     fertilized: { title: '受精', line: '精子已经钻进去了，正在等着床' },
     implanted:  { title: '着床',             line: '胚泡已经进入子宫，正在着床' },
+    // ★ 2026-11-06（第五批）：待孵**不算怀孕** —— 它有自己的那一档，不套孕期那五张 ✓
+    incubating: { title: '待孵',             line: '一窝蛋在体外孵化，等着破壳' },
 };
 
 /**
@@ -100,6 +103,7 @@ const STAGE_TEXT_NO_CYCLE = {
     sperm_egg:  { title: '精子游向深处',   line: '精子正在往更深处游' },
     fertilized: { title: '受精',           line: '精子已经钻进去了，正在等着床' },
     implanted:  { title: '着床',           line: '胚泡已经进入子宫，正在着床' },
+    incubating: { title: '待孵',           line: '一窝蛋在体外孵化，等着破壳' },
 };
 
 /**
@@ -145,7 +149,7 @@ function expand(s, mode) {
  * ⚠️ 也可以在设置页「阶段插图」里逐张上传（那条路完全不改代码 ✓）
  */
 export const BUILTIN_STAGE_FILES = {
-    daily: '', egg: '', sperm_only: '', sperm_egg: '', fertilized: '', implanted: '',
+    daily: '', egg: '', sperm_only: '', sperm_egg: '', fertilized: '', implanted: '', incubating: '',
 };
 
 // ---------------------------------------------------------------------------
@@ -170,6 +174,8 @@ export const STAGE_LAYERS = ['sperm', 'egg', 'sperm_egg', 'fertilized', 'implant
 export const STAGE_LAYER_LABEL = {
     sperm: '精子', egg: '卵子', sperm_egg: '精子游向卵子',
     fertilized: '受精', implanted: '着床',
+    // ★ 2026-11-06（第五批）：待孵那一层（跟上面五层不是同一组，单独一个槽位 ✓）
+    incubating: '待孵',
 };
 
 /**
@@ -256,6 +262,9 @@ export const BUILTIN_LAYER_FILES = {
     sperm_egg: 'sperm_egg.webp',          // 精子游向卵子（复合图：两者都在时优先用它 ✓）
     fertilized: 'fertilized.webp',
     implanted: 'implanted.webp',
+    // ★ 2026-11-06（第五批）：待孵那一档。**先用「卵子」那张顶着** ——
+    //   她画好专门的图之后，放进 assets/stages/incubating.webp（或在设置页里传）就自动换 ✓
+    incubating: 'egg.webp',
 };
 
 /** 三类图在玩家存档里的键名（跟叠加层分开，免得撞名 ✓） */
@@ -378,6 +387,8 @@ export function pickStageLayers(f = {}) {
     // ★ 怀孕之后**不再贴任何层**：朋友那五张孕期图本身就是整张图（含子宫和胎儿 ✓）
     //   （原来贴「胎儿」那套做法作废：多胎只显示一个 ✓）
     if (f.pregnant) { /* 什么都不贴 ✓ */ }
+    // ★ 2026-11-06（第五批）：待孵贴「蛋」那一层（底图 ＋ 子宫照旧在下面 ✓）
+    else if (f.incubating) overlays.push('incubating');
     else if (f.implanted) overlays.push('implanted');
     else if (f.fertilized) overlays.push('fertilized');
     else {
@@ -395,7 +406,7 @@ export function pickStageLayers(f = {}) {
     const vaginaTier = eff.vagina;
     const wombTier = eff.womb;
     // ⚠️⚠️ `pregnant` 必须**一起带出去**（漏了 ⇒ 孕期那一支永远不跑 ✗ 2026-10-13 漏过一次）
-    return { vaginaTier, vaginaStored, wombTier, wombStored, overlays, pregnant: !!f.pregnant };
+    return { vaginaTier, vaginaStored, wombTier, wombStored, overlays, pregnant: !!f.pregnant, incubating: !!f.incubating };
 }
 
 /** 孕期天数（孕 X 周+Y 天 ⇒ X*7+Y；拿不到 ⇒ null ⇒ 孕期档走默认中间那档 ✓） */
@@ -430,6 +441,7 @@ export function stageLayersFor(key) {
         wombSealed,
         implanted: flow === 'implanted',
         fertilized: flow === 'fertilized',
+        incubating: (() => { try { return activeClutchesOf(k).length > 0; } catch { return false; } })(),
         egg: eggPresent(t),
         sperm: spermAliveOf(t),
     });
@@ -491,6 +503,17 @@ export function composeStageLayers(mode, picked, fetus = {}) {
     const wUse = nearestIn('womb', mode, picked.wombTier);
     const wombSrc = wUse ? stageImageFor('womb', mode, wUse) : '';
     if (wombSrc) layers.push({ src: wombSrc, dx: 0, dy: 0, s: 1 });
+    // ★ 2026-11-06（第五批）：待孵 —— 底图 ＋ 子宫照常铺，上面盖「蛋」那一层
+    //   （没有专门的待孵图时，`BUILTIN_LAYER_FILES.incubating` 先用卵子那张顶 ✓）
+    if (picked.incubating) {
+        const inc = resolveStageImage(mode, 'incubating', BUILTIN_LAYER_FILES.incubating);
+        if (inc) layers.push({ src: inc, dx: 0, dy: 0, s: 1 });
+        return {
+            vaginaTier: picked.vaginaTier, vaginaStored: picked.vaginaStored, wombTier: picked.wombTier,
+            usedTier: vUse, wombUsedTier: wUse, pregnantUsed: '',
+            overlays: inc ? ['incubating'] : [], uterus: base, layers, pregnant: false, incubating: true,
+        };
+    }
     // ★ 「精子游向卵子」那张**复合图**（两者都在时优先用它 ✓ 没有就退回两张单图）
     const bothSE = picked.overlays.includes('sperm') && picked.overlays.includes('egg');
     const seUrl = bothSE ? resolveStageImage(mode, 'sperm_egg', BUILTIN_LAYER_FILES.sperm_egg) : '';
@@ -595,7 +618,10 @@ export function conceptionStageOf(t) {
 
 /** 纯决策：几个事实进去，该画哪张出来（好单测 ✓，也不依赖任何全局状态） */
 export function pickStage(f = {}) {
+    // ★ 2026-11-06（第五批）：待孵（孕期已经结束）**压过**受精那条残留标记，
+    //   但怀上了就是孕期那几张优先 ✓
     if (f.implanted) return 'implanted';
+    if (f.incubating) return 'incubating';
     if (f.fertilized) return 'fertilized';
     if (f.egg && f.sperm) return 'sperm_egg';
     if (f.egg) return 'egg';
@@ -606,9 +632,13 @@ export function pickStage(f = {}) {
 /** 从几个事实 + 一个对象，得出这一刻该画哪张 */
 export function stageOf(t) {
     const flow = conceptionStageOf(t);
+    const incubating = (() => {
+        try { return activeClutchesOf(t?.key).length > 0; } catch { return false; }
+    })();
     return pickStage({
         implanted: flow === 'implanted',
         fertilized: flow === 'fertilized',
+        incubating,
         egg: eggPresent(t),
         sperm: spermAliveOf(t),
     });
@@ -657,6 +687,14 @@ export function stagesForPanel(key) {
     //   ⚠️ 孕周必须跟**图**用同一个来源（`pregnancyWeekDaysOf` 读的是插件算好的
     //     「孕 X 周+Y 天」那行）—— 以前这里用 `pregDaysOf`，那只在**植入孕**上才有值，
     //     普通怀孕永远是 null ⇒ 图已经换成孕期那张、标题却还写着「着床」✗
+    // ★ 2026-11-07：**滞育等待**（受精成功、但着床还隔着几个月，比如熊）——
+    //   标题写「滞育」，不写「受精 / 着床」：那会让面板连着几个月说"正在着床" ✗
+    const dpHead = (() => {
+        try {
+            if (!diapauseWaitOf(k)) return null;
+            return { title: '滞育', line: '受精卵在体内悬浮着，还没开始发育' };
+        } catch { return null; }
+    })();
     const pregHead = (() => {
         try {
             if (!pregnancyArtReady(k, t)) return null;
@@ -664,13 +702,25 @@ export function stagesForPanel(key) {
             if (!Number.isFinite(wd) || wd <= 0) return null;
             const w = Math.floor(wd / 7), d = wd % 7;
             return {
-                title: w <= 13 ? '孕早期' : (w <= 27 ? '孕中期' : '孕晚期'),
+                // ★ 2026-11-07：孕早/中/晚按**这一族的总孕期**切（熊实际只发育八九周，
+                //   写死 12/27 周的话整个孕期都显示「孕早期」✗）
+                title: pregPhaseOf(wd, pregTotalDaysOf(k)).phase,
                 line: `孕 ${w} 周${d ? ` + ${d} 天` : ''}`,
             };
         } catch { return null; }
     })();
-    const headTitle = pregHead ? pregHead.title : text.title;
-    const headLine = pregHead ? pregHead.line : text.line;
+    // ★ 2026-11-06（第五批）：待孵那一档的标题 / 一句话 = 一窝几只 ＋ 离破壳还有几天
+    //   （跟孕期那五张同一个道理：标题跟着**图**走 ✓）
+    const incHead = (() => {
+        try {
+            if (stage !== 'incubating') return null;
+            const p = incubatingPhaseOf(k);
+            if (!p) return null;
+            return { title: p.phase, line: p.sub };
+        } catch { return null; }
+    })();
+    const headTitle = dpHead ? dpHead.title : (pregHead ? pregHead.title : (incHead ? incHead.title : text.title));
+    const headLine = dpHead ? dpHead.line : (pregHead ? pregHead.line : (incHead ? incHead.line : text.line));
     // ★★ 2026-10-16：切到「只显示文字」时**干脆不发图** ——
     //   `image` 留空、层给空 ⇒ 面板按它原来的规矩走文字版 ✓（不用动面板本体 ✓）
     //   ⚠️ 键要**给齐**（面板那几个键都读）⇒ 不留 undefined ✗

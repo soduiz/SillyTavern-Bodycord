@@ -47,8 +47,9 @@ import { deviceDateKey } from './calendar-events.js';
 import {
     currentDate, calendarEventsForPanel, calendarEventsOn,
     calendarAlertsForPanel, timeUnitNow, dueMarksForPanel, mergeDueByDate,
+    estrusMarksInMonth, targetList, trackModeOf,
 } from './store.js';
-import { holidayList, holidaysOn, lunarDatesOn, realEventsForPanel, realEventsOn, realAlertsToday } from './settings.js';
+import { holidayList, holidaysOn, lunarDatesOn, realEventsForPanel, realEventsOn, realAlertsToday, settings } from './settings.js';
 // ★ 农历（做通了 ✓）：节日表里 `lunar` 那条靠它算 ——
 //   `lunarOf()` 公历→农历、`lunarSpecMatches()` 比那格写法（含"闰月不算" / `MM-LAST` ✓）
 //   ⚠️ 它是**叶子**（不 import 任何东西 ✓）⇒ 不会造环 ✓
@@ -147,7 +148,9 @@ function dueLineText(g) {
     if (g.late > 0) when = '已过 ' + g.late + ' 天';
     else if (g.late === 0) when = '就是今天';
     else when = '还有 ' + Math.abs(g.late) + ' 天';
-    return who + (nth ? ' ' + nth : '') + '预产期：' + g.date + '（' + when + '）';
+    // ★ 2026-11-06（第五批）：卵生那一窝这天叫「破壳日」
+    const label = g.egg ? '破壳日' : '预产期';
+    return who + (nth ? ' ' + nth : '') + label + '：' + g.date + '（' + when + '）';
 }
 
 /** 下半部分那一整块（哪一天 + 那天的几条 + 「加一条」✓） */
@@ -293,6 +296,25 @@ export function calendarViewHtml(opts = {}) {
         (dueByDay[p.d] = dueByDay[p.d] || []).push(m0);
     }
 
+    // ---- 发情日（★ 2026-11-08 发情期第 0 批）----
+    //   只标正在追踪的对象里、这一族有发情期的那些；总开关关着时一个都不标 ✓
+    //   读的是同一天的现算结果（跟面板 / 状态摘要同一套口径 ✓）
+    const estrusByDay = {};
+    try {
+        if (inChat && settings().estrusOn === true) {
+            for (const t of targetList()) {
+                if (t && t.present === false) continue;
+                // ★ 2026-11-09（扫出来的）：退回「轻档」之后日历上还在标这个人的发情日 ——
+                //   轻档的定义是"只登记名字、什么都不追"；它的 `estrusAnchor` 为了以后升格不丢
+                //   所以留着了，但日历不该再把它当"正在追踪"的人标出来 ✗
+                if (trackModeOf(t) === 'light') continue;
+                for (const mk of estrusMarksInMonth(t.key, y, m)) {
+                    estrusByDay[mk.day] = true;
+                }
+            }
+        }
+    } catch { /* 读不到就不标，不影响日历本身 ✓ */ }
+
     // ---- 下半部分正在编辑的是哪一天 ✓ ----
     //   优先外壳记住的那天（点过的那天）；它不在正在看的这一个月时，
     //   落回"今天"（今天就在这个月的话）、否则落回 1 号 ✓
@@ -398,24 +420,28 @@ export function calendarViewHtml(opts = {}) {
         // ★ 预产期这一格（多胎同一天 ⇒ 数一下几条，别只显示一条蒙人 ✓）
         const dueList = dueByDay[d] || [];
         const due = dueList.length ? dueList[0] : null;
+        const heat = !!estrusByDay[d];
         const tips = [];
         if (card) tips.push(String(card.title || ''));
         if (due) {
             // ★ 同一天那几胎并成一条（第 1、2、3 胎），别在提示里念三遍 ✓
             tips.push(dueLineText(mergeDueByDate(dueList)[0]));
         }
+        if (heat) tips.push('发情日');
         if (!tips.length) tips.push('点一下在下面写日程');
         const cls = 'bc-cal-cell'
             + (isToday ? ' bc-cal-on' : '')
             + (card ? ' bc-cal-mark' : '')
             + (due ? ' bc-cal-hasdue' : '')
+            + (heat ? ' bc-cal-hasheat' : '')
             + (isSel ? ' bc-cal-sel' : '');
         cells += '<div class="' + cls + '" data-cal-day="' + d + '" title="'
             + esc(tips.join('　·　')) + '">'
             + '<div class="bc-cal-d">' + d + '</div>'
             + (lun ? '<div class="bc-cal-u">' + esc(lun) + '</div>' : '')
             + (hol ? '<div class="bc-cal-h">' + esc(hol) + '</div>' : '')
-            + (due ? '<div class="bc-cal-due">预产期' + (dueList.length > 1 ? (' ' + dueList.length + ' 胎') : '') + '</div>' : '')
+            + (due ? '<div class="bc-cal-due">' + (due.egg ? '破壳' : '预产期') + (dueList.length > 1 ? (' ' + dueList.length + ' 胎') : '') + '</div>' : '')
+            + (heat ? '<div class="bc-cal-heat">发情</div>' : '')
             + (card ? '<div class="bc-cal-n">' + esc(String(card.label || '').slice(0, 6)) + '</div>' : '')
             + '</div>';
     }
@@ -478,7 +504,7 @@ export function calendarViewHtml(opts = {}) {
         // ★ 边界：这个开关**只管出厂那张节日表**
         //   （机制见 bodycord.js 的 holidayList）；玩家自己标的日子不受影响 ✓
         + (holOn ? '节日：开着（点一下关掉）' : '节日：关着（点一下打开）')
-        + '。只管出厂那张节日表，你自己标的日子不受影响' + '">节日</div>'
+        + '。只管默认那张节日表，你自己标的日子不受影响' + '">节日</div>'
         + '</div>';
 
     // ⚠️ 文案说「设备」不说「电脑」—— 之前问过：

@@ -27,7 +27,10 @@ import {
 // ★ 「属于哪个大类」那一格（和「角色基础信息」共用一份实现 ✓）
 //   ＋ ★ 为什么规则补丁里面的身体补丁（生理设定）不能选择种族列表？✓
 //     ⇒ 种族名那一格右边挂一颗「选…」，打开同一个常见种族名列表（自由输入照旧 ✓）
-import { xenoClassField, openRaceNamePicker } from './ui-settings.js';
+// ★ 2026-11-06：「属于哪个大类」那格退休（判定只看种族）⇒ 这里不再引它 ✓
+import { codexPickControl } from './ui-codex.js';
+import { codexIdOf, setCodexIdOf } from './codex-bind.js';
+import { codexEntry } from './codex.js';
 
 export function specOf(moduleId) {
     return PARAM_SPECS.find(s => s.moduleId === moduleId) || null;
@@ -45,7 +48,8 @@ function paramHelpLines(spec) {
     // ★ 受孕体质档：说明写进「？」里（页面只留读数 ✓）
     if (spec.moduleId === 'body_base') {
         lines.push('「日常体质系数」这个角色第一次推演时，推演会按它的角色设定判一个档填进来');
-        lines.push('档位只有五档：很弱 0.8 / 偏弱 0.9 / 标准 1.0 / 偏强 1.15 / 很强 1.3');
+        // ★ 2026-11-08（她：那五档的说明没用，直接删）—— 那格本来就是填什么算什么，
+        //   把推演的档位词表列出来只会让人以为这格只认那五个数 ✗ ⇒ 不再写 ✓
         // ⚠️ 「你自己」那一份**没有**这个按钮、推演也不判档
         //   （见 fertilityNote 首行的 isUserKey 早退）⇒ 别写成"点那一格下面的…"让人去找 ✗
         lines.push('你自己改过就以你的为准，推演不会再覆盖；对象那一份想交回给推演，点那一格下面的「恢复按设定判」');
@@ -220,10 +224,29 @@ function numberFields(spec, targetKey, handlers, status) {
 
     const draft = { ...values };
     let timer = null;
+    // ★ 2026-11-08：周期长度 / 排卵日这两格**空着 = 跟这个角色的种族**（图鉴里的平均值）——
+    //   它们是可空的（清空就是"交回种族"）；其余数值格仍然不许空 ✓
+    const OPTIONAL_EMPTY = new Set((spec.moduleId === 'body_base') ? ['cycle', 'ovu'] : []);
     const commit = () => {
-        const bad = spec.fields.filter(f => f.type === 'number' && !String(draft[f.key] ?? '').trim());
+        const bad = spec.fields.filter(f => f.type === 'number'
+            && !OPTIONAL_EMPTY.has(f.key) && !String(draft[f.key] ?? '').trim());
         if (bad.length) { flash(status, '数值不能为空', false); return; }
-        const ok = writeParams(spec, targetKey, draft);
+        // ★ 只写**动过**的那几格 —— 面板一提交就把整份 draft 写回去的话，
+        //   周期长度 / 排卵日会被顺手烤成字面数字（本来是"跟种族"的，一次保存就变个人值 ✗）
+        //   ⚠️ 但**设置型**的卡（fromSettings，比如怀孕那几张概率表）要整份交过去：
+        //     它的 write 是一次校验所有格子再一起写，只给一格的话会被判"不合法"✗
+        const changed = {};
+        if (spec.fromSettings) {
+            for (const f of spec.fields) changed[f.key] = draft[f.key];
+        } else {
+            for (const f of spec.fields) {
+                if (String(draft[f.key] ?? '').trim() !== String(values[f.key] ?? '').trim()) {
+                    changed[f.key] = draft[f.key];
+                }
+            }
+            if (!Object.keys(changed).length) { flash(status, '内容没有变化'); return; }
+        }
+        const ok = writeParams(spec, targetKey, changed);
         // ★ 手改锁：玩家**自己动了「日常体质系数」** ⇒ 打个标记，
         //   此后推演按设定判出来的档只记不写（你自己填的说了算 ✓）
         if (ok && spec.moduleId === 'body_base' && targetKey && !isUserKey(targetKey)
@@ -256,30 +279,33 @@ function numberFields(spec, targetKey, handlers, status) {
     //   ⇒ 每格留一个"按当前草稿重算灰不灰"的小函数，改值 / 提交之后都调一遍 ✓
     const resets = [];
     for (const f of spec.fields) {
+        // ★ 2026-11-06：人物视图里种族那格已经在上面的「角色基础信息」卡里了，
+        //   参数面板里不再重复画一遍 ✓
+        if (f.key === 'raceName' && handlers.hideBodyMeta) continue;
         let syncReset = null;      // 这一格的重算函数（下面 resetOne 建好之后才赋值 ✓）
         let input;
         if (f.type === 'select') {
             // ★ 下拉/两档类：选项在 spec 的 options 里 ✓
             //   （月经表现就是用它做"两个模式切换" ✓）
-            // ★ 用已有的 .bc-select —— 它专门用 !important 压制酒馆主题的输入框美化 ✓
-            const sel = h('select', { class: 'bc-select' });
-            for (const [val, label] of (f.options || [])) {
-                const opt = h('option', { value: val, text: label });
-                if (String(draft[f.key] ?? '') === val) opt.selected = true;
-                sel.appendChild(opt);
-            }
-            sel.onchange = () => {
-                draft[f.key] = sel.value;
+            // ★★ 2026-11-08：换成**插件自己的下拉**（`dom.js` 的 `dropdown`）——
+            //   原来这里是个原生 `<select class="bc-select">`：收起时被样式压住了，
+            //   可**展开的列表**是浏览器 / 酒馆自己画的，跟插件别处的下拉长得不一样 ✗
+            //   （她 2026-11-08 当场指出来「怎么用的不是我们插件的下拉」）
+            input = dropdown(String(draft[f.key] ?? ''), (f.options || []), (v) => {
+                draft[f.key] = v;
                 syncReset?.();
                 clearTimeout(timer); timer = setTimeout(commit, 300);
-            };
-            input = sel;
+            });
         } else if (f.type === 'number') {
             input = numberInput(draft[f.key], (v) => {
                 draft[f.key] = v === '' ? '' : String(v);
                 syncReset?.();
                 clearTimeout(timer); timer = setTimeout(commit, 500);
             });
+        } else if (spec.moduleId === 'body_base' && f.key === 'raceName') {
+            // ★ 2026-11-08：种族那格改成「显示当前值的按钮」，手打收进图鉴选择器里
+            //   （整行大输入框会让人以为只能手打）⇒ 下面单独建控件，这里不建 input ✓
+            input = null;
         } else {
             input = textInput(draft[f.key], (v) => {
                 draft[f.key] = v;
@@ -289,13 +315,31 @@ function numberFields(spec, targetKey, handlers, status) {
         }
         // ★ 为什么规则补丁里面的身体补丁（生理设定）不能选择种族列表？✓
         //   ⇒ 种族名那一格：**自由输入照旧**（自定义不受限），右边挂一颗「选…」打开常见种族名列表 ✓
-        const racePick = (spec.moduleId === 'body_base' && f.key === 'raceName')
-            ? button('选…', () => openRaceNamePicker(String(draft[f.key] ?? ''), (v) => {
-                draft[f.key] = v;
-                input.value = v;
-                clearTimeout(timer); timer = setTimeout(commit, 300);
-            }), { title: '从常见种族名里挑一个（也可以直接打字）' })
-            : null;
+        // ★ 2026-11-08：种族那格 —— 按钮显示当前名字，点开图鉴选择器（分类 / 种类 / 手打都在里面）
+        let raceCtl = null;
+        if (spec.moduleId === 'body_base' && f.key === 'raceName') {
+            const setRace = (nm, entry) => {
+                draft[f.key] = nm;
+                try {
+                    if (entry) setCodexIdOf(targetKey, entry.id);
+                    else {
+                        const be = codexEntry(codexIdOf(targetKey));
+                        if (!be || be.name !== nm) setCodexIdOf(targetKey, '');
+                    }
+                } catch { /* 忽略 */ }
+                syncReset?.();
+                clearTimeout(timer);
+                timer = setTimeout(commit, 300);
+                raceCtl?.paint();
+            };
+            raceCtl = codexPickControl(() => draft[f.key], (e, nm) => setRace(e ? e.name : (nm || ''), e), {
+                curId: () => { try { return codexIdOf(targetKey); } catch { return ''; } },
+                title: '点这里选这个角色的种族（图鉴里没有的可以直接打名字）',
+            });
+            input = raceCtl.el;
+        }
+        // ★ 第二批：这里也能选图鉴条目（选了就绑定编号），手打照旧 = 不绑定 ✓
+        const racePick = null;
         // ★「日常体质系数」这一格下面多一行读数（这个值是谁定的 ＋ 交回按钮 ✓）
         //   ⚠️ 交回按钮改的是**补丁正文**，而面板手上还攥着一份 `draft` —— 两者不同步的话，
         //     下一次 commit 会把整份 draft 写回去、把刚恢复的值又盖成旧值 ✗
@@ -325,7 +369,8 @@ function numberFields(spec, targetKey, handlers, status) {
                 draft[f.key] = dflt;
                 clearTimeout(timer);
                 commit();
-                if (input) input.value = dflt;
+                if (raceCtl) raceCtl.paint();
+                else if (input) input.value = dflt;
             }, { title: dflt === '' ? '这一格出场就是空的：把它清空' : ('把这一格恢复成默认值（' + dflt + '）') });
             btn.classList.add('bc-param-reset');
             // 置灰的判据是"当前值 == 默认值"（数字类比数值、文本类比字符串 ✓）
@@ -665,12 +710,7 @@ export function renderParamFields(moduleId, targetKey, handlers = {}) {
     if (hint) box.appendChild(hint.panel);
     paintFields();
     box.appendChild(fieldsHost);
-    // ★ 选人外的时候填种族，然后选属于哪个大类 ——
-    //   大类**不是正文里的数字/文本** ⇒ 不进 spec 的 read/write，单独补一格 ✓
-    //   （和「角色基础信息」里那格**共用一份实现** ✓ —— 一份数据、两处都能改 ✓）
-    if (spec.moduleId === 'body_base') {
-        box.appendChild(xenoClassField(targetKey, () => { try { handlers?.refresh?.(); } catch { /* 忽略 */ } }));
-    }
+    // ★ 2026-11-06：「属于哪个大类」退休（判定只看种族，分类由图鉴那边承担）✓
     // ★ A3：察觉档位那一档的读数（＋"重新按剧情判"按钮 ✓）
     if (spec.moduleId === 'awareness') {
         const n = awarenessNote(targetKey, () => { try { handlers?.refresh?.(); } catch { /* 忽略 */ } });

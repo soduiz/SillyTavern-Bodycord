@@ -14,12 +14,18 @@
  * 它所在的那一行会整行消失，所以模板可以写得整齐点。
  */
 
-import { MODULES, XENO_CLASSES_EAST, XENO_CLASS_HUMAN, XENO_EAST_HINTS, XENO_WEST_HINTS, parseXenoSideAnswer } from './modules.js';
-import { settings, isModuleOn, isGateEnabled, moduleText, moduleRole, moduleScope, isFieldOn, zonesFeatureOn, isCycleDependent, patchSendGroups, patchGroupSuffix, patchBlockTitle, childrenToMain, isNeutralMode, bodyCycleParamsOf, zoneLevelDescOf } from './settings.js';
-import { setPrompt, substitute, isMyExtensionDisabled, PROMPT_ROLE } from './st.js';
-import { targetList, displayName, state, bodyLockOf, xenoClassOf, periodModeOf, cycleWhileInfertileOf, childrenOf, childAgeText, fetusPlanOf, fetusBriefText, hasRealHeritage, storyDateNow, storyDateTimeNow, cycleDayNow, getOvuJudgment, BODY_FLAG_VARS, reportedBool, reportedBodyFlagOf, tracesForPrompt, traceOnOf, awarenessReferenceForPrompt, stripDateText, dueMarksOf, mergeDueByDate, nextPeriodFactOf, pregnantNowTarget } from './store.js';
+import { MODULES, parseImpregnatorXeno } from './modules.js';
+import { settings, isModuleOn, isGateEnabled, moduleText, moduleRole, moduleScope, isFieldOn, zonesFeatureOn, isCycleDependent, patchSendGroups, patchGroupSuffix, patchBlockTitle, childrenToMain, isNeutralMode, zoneLevelDescOf } from './settings.js';
+import { setPrompt, substitute, isMyExtensionDisabled, PROMPT_ROLE, getChat } from './st.js';
+import { targetList, displayName, state, bodyLockOf, periodModeOf, cycleWhileInfertileOf, childrenOf, childAgeText, fetusPlanOf, fetusBriefText, hasRealHeritage, storyDateNow, storyDateTimeNow, BODY_FLAG_VARS, reportedBool, reportedBodyFlagOf, tracesForPrompt, traceOnOf, awarenessReferenceForPrompt, stripDateText, dueMarksOf, mergeDueByDate, nextPeriodFactOf, pregnantNowTarget, activeClutchesOf, eggStateForPrompt, eggDatesForPrompt, isTargetLoose, isTargetLight, estrusTargets, estrusInfoOf, ensureEstrusAnchor, trackModeOf } from './store.js';
 // ★ 被排除的角色卡：这一段**一个字都不发**（判断只写这一处，所有调用点自动失效 ✓）
 import { isCardExcluded } from './cardexclude.js';
+// ★ 第六批：这一轮在场种族的条目正文（只发在场 ＋ 按阶段筛，见 codex-send.js）
+import { buildCodexPlan } from './codex-send.js';
+// ★ 2026-11-09：图鉴数据是用到才读进来的 —— 没读进来那一轮**整段不发**（见 rebuildInjection）
+import { builtinReady } from './codex.js';
+// ★ 2026-11-08：这一族喂不喂奶（图鉴「泌乳」那一格），决定要不要发泌乳那一行 ✓
+import { readMilkOf } from './codex-values.js';
 
 const KEY_STATE = 'bodycord_state';
 const KEY_PATCH = 'bodycord_patch';
@@ -27,6 +33,8 @@ const KEY_PATCH = 'bodycord_patch';
 //   2026-11-01 从状态摘要抬头里拆出来的：那句"不要在正文里输出面板/字段名/数值"原来跟着
 //   每轮都变的那块走，落在整段提示词的最后一句 ⇒ 等于把预设塞在 d0 的条目顶掉（报障：破不开）✗
 const KEY_RULE = 'bodycord_rule';
+// ★ 第六批「种族设定」：只放这一轮在场的那几族 ⇒ 在场种族不变、阶段不变时，这段字一个字都不动 ✓
+const KEY_CODEX = 'bodycord_codex';
 // ★「孩子」那一段：默认**不发**；设置里开了才发 ✓
 const KEY_CHILDREN = 'bodycord_children';
 
@@ -212,6 +220,26 @@ export function inConceptionFlow(t) {
 }
 
 /**
+ * ★ 第六批：这个对象这一轮要不要带「生育」那一段（图鉴条目的繁殖受孕正文）。
+ *
+ * 口径（计划里定的"日常发介绍和生理，受孕、怀孕、分娩那几轮才带繁殖段"）：
+ *   · 已孕 ⇒ 要（含分娩那一轮；分娩完 isPregnant 变 false，自然就不再带）
+ *   · 受孕账还在累加（d2 > 0）⇒ 要（受孕窗口 / 受精成功待着床都在这一段）
+ *   · 名下有在孵的窝（待孵）⇒ 要（待孵不算怀孕，但破壳前的描写用得上）
+ *   · 其余日常 ⇒ 不带，省 token ✓
+ * 判据只写这一处：主 API 的发送（sendCodex 那边传进来）与界面的「这一轮会发什么」共用 ✓
+ */
+export function codexNeedRepro(t) {
+    try {
+        if (!t) return false;
+        if (isPregnant(t)) return true;
+        if (conceptionRate(t) > 0) return true;
+        if ((activeClutchesOf(t.key) || []).length) return true;
+        return false;
+    } catch { return false; }
+}
+
+/**
  * 某个门控现在开着没有。
  *
  * 想法很简单：**不在这个阶段的东西，一个字都不发**。
@@ -219,28 +247,19 @@ export function inConceptionFlow(t) {
  * 反过来没受精的时候，「怀孕判定模块」也用不上。
  */
 /**
- * 这一胎的「另一个亲代」属于哪一边（**可能不止一边**）。
+ * 这一胎的「另一个亲代」算不算异种。
  *
- * ★ 异种规则表原来只按"追踪对象"（受孕方）发 ⇒ 人类妈妈 ＋ 异种爸爸
- *   那一胎，混血的孕期 / 遗传规则根本没发出去、全按人类算 ✗ ⇒ 它也算一路判据 ✓
- * ★★ 那一格从「算不算异种」升级成「属于哪一边」 ——
- *   只有"是异种"的话，异种妈妈（西方）＋ 异种爸爸（东方）时插件挑不出东方那张表 ✗
- *   ⇒ 现在读契约的 `impregnator_side`，解析口径**只有一份**（modules.js 的
- *     parseXenoSideAnswer，store.js 那边判"这份答案用不用得上"用的也是它 ✓）
+ * ★ 异种补充规则原来只按"追踪对象"（受孕方）发 ⇒ 人类妈妈 ＋ 异种爸爸
+ *   那一胎，混血的孕期 / 遗传说明根本没发出去、全按人类算 ✗ ⇒ 它也算一路判据 ✓
+ * ★ 2026-11-08（三张异种规则退场）：这一格不再问"属于哪一边" ——
+ *   东西两边那两张表已经删了、胎数与发育改由图鉴条目判，所以只剩"是不是异种"一个事实。
+ *   契约的 `impregnator_xeno` 填「人类 / 异种」，留空 = 剧情还没交代。
+ *   解析口径只有一份（modules.js 的 parseImpregnatorXeno，store.js 判"这份答案用不用得上"也用它 ✓）。
  *
- * 返回：`['west']` / `['east']` / `['east','west']`（东西混血）/ `[]`（人类、留空、认不出 ✓）
- *   ⚠️ 留空 / 认不出 ⇒ **不参与**（跟老行为一致：不收紧，交给 sidesIn 兜 ✓）
- */
-function fatherSides(t) {
-    try { return parseXenoSideAnswer(t?.vars?.impregnator_side).sides; } catch { return []; }
-}
-
-/**
- * 这一胎的「另一个亲代」算不算异种（认得出属于西 / 东任何一边 ⇒ 算 ✓）。
- * 门控 `xeno` 用它：妈妈的规则要发、**爸爸那一胎的异种规则也要发** ✓
+ * 返回 true / false：false 表示明确是人类、或根本还没报（不参与门控 ✓）
  */
 function fatherIsXeno(t) {
-    return fatherSides(t).length > 0;
+    try { return parseImpregnatorXeno(t?.vars?.impregnator_xeno ?? t?.vars?.impregnator_side) === true; } catch { return false; }
 }
 
 export function gateOpen(kind, targets) {
@@ -323,108 +342,12 @@ function gateSatisfied(kind, list) {
         //   ⚠️ 顺手扫过 gateSatisfied 里所有 kind：只有这一条原来是"全员"语义，其余都是 list.some ✓
         case 'not_pregnant':   // 只要名单里还有"没怀孕的对象"就发（周期推进、受孕率计算）
             return list.some((t) => !isPregnant(t));
-        // ★ 多致孕方与异卵异父：按「受孕窗口」发，而不是「怀孕时」。
-        //   为什么：它要教的候选名单规则，必须用在受精判定那一轮（窗口结束后的下一轮），
-        //   那时候还没着床、Is_Pregnant 还是 false ⇒ 挂「怀孕时」等于判定那一轮它不在场，
-        //   规则从来没被用上过 ✗
-        //   判据：① 还没判定过、且周期日已经到排卵日的前一天（默认第 13 天）⇒ 该发了；
-        //         ② 已经判定过、但这次受精成功且还没着床完成 ⇒ 继续发（多胎归属还要用）
-        case 'multi_father_window':
-            return list.some((t) => {
-                let j = null;
-                try { j = getOvuJudgment(t.key); } catch { j = null; }
-                if (j) {
-                    if (j.passed !== true) return false;
-                    if (!isPregnant(t)) return true;
-                    // ★ **已孕那一轮还得留一轮**。
-                    //   模块里有一段【大批量卵】（5 胎以上的归属怎么填），它自己写着
-                    //   "胎数在着床完成那一轮才知道，届时再套用本段" —— 而原来这个判据
-                    //   一怀上就 return false ⇒ 那一段**永远发不出去**（单人名单时必然）✗
-                    //   ⇒ 改成：已孕时再看一眼 d6，胎数还没落库就继续发（就是判定那一轮），
-                    //     胎数写进去了就收工 ✓（模型没写 d6 时它会一直开着，正好能自愈）
-                    const d6 = String(t?.profile?.d6 ?? '').trim();
-                    return !d6 || d6 === '无';
-                }
-                try {
-                    const day = Number(cycleDayNow(t.key));
-                    const ovu = Number(bodyCycleParamsOf(t.key)?.ovu) || 14;
-                    return Number.isFinite(day) && day >= ovu - 1;
-                } catch { return false; }
-            });
+        // ★ 2026-11-08（规则剥离第五步）：多致孕方与异卵异父那条模块整条删了 ——
+        //   候选名单、逐胎锁定、整批归属全在插件里算，契约里那两格本来就一直发，
+        //   所以这里不再有 multi_father_window 门控（模块和它的开关一起退场 ✓）。
         default:
             return true;
     }
-}
-
-/**
- * 这个对象属于哪一边的异种：西方与通用 / 东方 / 判不出来。
- *
- * ★ 西异种和东方异种是两套键：两张表都开时，两边的规则会全塞进提示词（每轮 5183 字符）✗
- *   ⇒ 两张表各挂 `gateSide`，这里负责"这个对象算哪一边"。
- *
- * 判据优先级：
- *   ① 玩家手填的「属于哪个大类」（角色基础信息 / 补丁页那个人物视图里那格）—— 最准，优先 ✓
- *   ② AI 在 vars.race 里报的种族名（只问一次 ✓）—— 只在**两张表的互斥关键词**里命中**一边**时才算数 ✓
- *   ③ 都判不出来 ⇒ `'unknown'`（调用方**不收紧**，退回"都发"）✓
- *
- * ⚠️ 分寸：宁可多背一张表，也不能让 AI 少一份规则 ⇒ 含糊一律 unknown ✓
- */
-export function xenoSide(t) {
-    let cls = '';
-    try { cls = String(xenoClassOf(t?.key) || '').trim(); } catch { cls = ''; }
-    if (cls === XENO_CLASS_HUMAN) return 'human';         // 明确是人类 ⇒ 哪一边都不是
-    if (cls) return XENO_CLASSES_EAST.includes(cls) ? 'east' : 'west';
-
-    const race = String(t?.vars?.race ?? '').trim();
-    if (!race) return 'unknown';
-    // ⚠️ 参数名别用 h（项目里 h 是画 DOM 的助手名，导入检查会当成漏 import ✗）
-    const e = XENO_EAST_HINTS.some(kw => race.includes(kw));
-    const w = XENO_WEST_HINTS.some(kw => race.includes(kw));
-    if (e && !w) return 'east';
-    if (w && !e) return 'west';
-    return 'unknown';                                     // 两边都命中 / 都没命中 ⇒ 不收紧
-}
-
-/**
- * 名单里判得出来的那几边（空集合 = 全都判不出来）。
- *
- * ★★ 修的就是"混血胎算漏表"那个洞：
- *   ① **另一个亲代那一边也算** —— 异种妈妈（西方）＋ 异种爸爸（东方）⇒ 两张表都得在场，
- *      混血要取双方种族的中间值（模块正文早就这么写了 ✓ 是插件没把表凑齐 ✗）
- *   ② **判不出哪一边、但它确实是异种的**（原创种族这类）⇒ 当"两边都可能"，
- *      两张表都别裁。以前是靠"集合为空 ⇒ 不收紧"侥幸成立的，一旦爸爸那边贡献了一边，
- *      这个兜底就会失效 ⇒ 现在把它写实 ✓（口径：宁可多背一张表，不能少一份规则 ✓）
- */
-function sidesIn(list) {
-    const out = new Set();
-    for (const t of list) {
-        const s = xenoSide(t);
-        if (s === 'east' || s === 'west') { out.add(s); continue; }
-        if (s !== 'unknown') continue;                    // 明确是人类 ⇒ 哪一边都不是 ✓
-        let x = false;
-        try { x = isXeno(t); } catch { x = false; }
-        if (x) { out.add('east'); out.add('west'); }      // 是异种但判不出边 ⇒ 两边都别裁 ✓
-    }
-    // ★ 爸爸那一边（可以多个；留空 / 人类 ⇒ 什么都不加 ✓）
-    for (const t of list) for (const f of fatherSides(t)) out.add(f);
-    return out;
-}
-
-/**
- * `gateSide` 那一层的判定 —— 只在"名单里判得出是哪一边"时才收紧。
- *   ① 一边都判不出来 ⇒ 发（含糊不收紧 ✓）
- *   ② 我这边的族在名单里 ⇒ 发
- *   ③ 我这边没匹配上：如果**其它开着的表也一边都没匹配** ⇒ 还是发
- *      （不然会出现"一张表都不发"⇒ AI 手里没有任何种族规则 ✗）
- */
-function sideGateOk(mySide, list, selfId) {
-    const matched = sidesIn(list);
-    if (!matched.size) return true;
-    if (matched.has(mySide)) return true;
-    const others = MODULES
-        .filter(m => m.gateSide && m.id !== selfId && isModuleOn(m.id))
-        .map(m => m.gateSide);
-    return !others.some(s => matched.has(s));
 }
 
 /** 这个模块此刻该不该发（开关 + 门控） */
@@ -457,10 +380,6 @@ export function moduleActive(id, targets) {
         if (!gateOpen(mod.gate, list)) return false;
     }
 
-    // ★★ `gateSide`（两张异种表各挂一边之后加的）：
-    //   两张表（西方与通用 / 东方）各挂一边，名单里判得出是哪一边时只发那一边 ✓
-    //   判不出来就退回"都发"（见 sideGateOk 里的三条）✓
-    if (mod.gateSide && !sideGateOk(mod.gateSide, list, mod.id)) return false;
 
     return true;
 }
@@ -576,6 +495,7 @@ export function clearInjection() {
     setPrompt(KEY_STATE, '');
     setPrompt(KEY_RULE, '');
     setPrompt(KEY_PATCH, '');
+    setPrompt(KEY_CODEX, '');
     setPrompt(KEY_CHILDREN, '');
 }
 
@@ -950,7 +870,18 @@ function targetVars(t) {
             ? '周期状态：不适用（当前为孕期）'
             : '月经状态：不适用（当前为孕期）';
     } else {
-        vars.pregnancy = '怀孕状态：未孕';
+        // ★ 2026-11-06（第五批）：**待孵不算怀孕**，但它也不是"未孕"那么简单 ——
+        //   名下还挂着一窝蛋 ⇒ 摘要里要有明确标签（阶段、插图、状态条都不按孕期走 ✓）
+        const incubating = (() => {
+            try { return activeClutchesOf(t.key); } catch { return []; }
+        })();
+        if (incubating.length) {
+            const detail = (() => { try { return eggStateForPrompt(t.key); } catch { return ''; } })();
+            const multi = incubating.length > 1 ? ('（共 ' + incubating.length + ' 窝）') : '';
+            vars.pregnancy = '怀孕状态：未孕 · 待孵' + multi + (detail ? '（' + detail + '）' : '');
+        } else {
+            vars.pregnancy = '怀孕状态：未孕';
+        }
         // ★★ 2026-11-01（有玩家反馈：正文里一直在提「卵泡期 / 黄体期」这种，很出戏）——
         //   那些是给面板和判定看的术语，写正文的人不需要 ⇒ **主 API 这边不再发阶段名和周期进度**，
         //   它就没词可抄了 ✓（跟"敏感带去掉数字"同一个病根：源头不给，正文里就不会出现）
@@ -975,13 +906,19 @@ function targetVars(t) {
     //   ⚠️ 为什么写在同一行里、不另起一条规则段：这件事只跟这一行有关，
     //     单独铺一段就是让一件小事占掉一整块提示词（她 2026-10-28 点过我"把简单的事做复杂" ✗）
     vars.nextPeriod = (() => {
-        if (!periodOn || pregnant || !showCycle) return '';
+        if (pregnant || !showCycle) return '';
         try {
             const np = nextPeriodFactOf(t.key);
-            return np
-                ? `预计下次月经：${np.date}（距今 ${np.days} 天；这一轮要是把时间跳到第二天或更晚、`
-                    + `跳过的天数不小于这个数，说明这一跳里来过，正文照常写，别写「第几天」这类数）`
-                : '';
+            if (!np) return '';
+            // ★ 2026-11-08 产后恢复：这一段没有月经、没有窗口 ⇒ 给的是**恢复日**，
+            //   顺带把"这一段不能按周期写"说清楚，免得它自己编一次月经 ✓
+            if (np.kind === 'recovery') {
+                return `预计恢复周期：${np.date}（距今 ${np.days} 天；产后第 ${np.dayNo} 天，`
+                    + `这一段没有月经、也没有排卵窗口，别写「第几天」这类周期数）`;
+            }
+            if (!periodOn) return '';
+            return `预计下次月经：${np.date}（距今 ${np.days} 天；这一轮要是把时间跳到第二天或更晚、`
+                + `跳过的天数不小于这个数，说明这一跳里来过，正文照常写，别写「第几天」这类数）`;
         } catch { return ''; }
     })();
 
@@ -1002,8 +939,17 @@ function targetVars(t) {
     //     —— 判断一律留给模型按她写的设定做 ✓
     //   多胎各写各的（`子1 … · 子2 …`）；一个预产期都没有 ⇒ 整行为空（模板那行自己消失 ✓）
     //   ⚠️ 这个日期是插件按"今天 ＋ 剩余孕期"现算的，不是模型能改的格 ✓
-    vars.due = (pregnant && isFieldOn('d6')) ? (() => {
+    vars.due = isFieldOn('d6') ? (() => {
         try {
+            // ★ 2026-11-06（第五批）：卵生给**两个日子**（产卵日 / 破壳日）；
+            //   体内孵化那种只有"出生日"（＝产卵日），说法跟着族走 ✓
+            if (pregnant) {
+                const eggTxt = (() => { try { return eggDatesForPrompt(t.key); } catch { return ''; } })();
+                if (eggTxt) return '卵生日程：' + eggTxt;
+            }
+            // 待孵（不在孕期）：**这一行不再重复** —— 上面「怀孕状态」那行已经把
+            // 一窝几只、破壳日、还剩几天说全了（同一件事只写一处 ✓）
+            if (!pregnant) return '';
             const marks = dueMarksOf(t.key);
             if (!marks.length) return '';
             // ★ 同一天的那几胎并成一条（`子1、2、3`）—— 三行说的是同一件事，念一遍就够 ✓
@@ -1019,7 +965,11 @@ function targetVars(t) {
         } catch { return ''; }
     })() : '';
 
-    vars.milk = (milkOn && isFieldOn('d7') && isLoaded(p.d7)) ? `泌乳状态：${bare(p.d7)}` : '';
+    vars.milk = (milkOn && isFieldOn('d7') && isLoaded(p.d7)) ? (() => {
+        // ★ 2026-11-08：这一族不喂奶（图鉴「泌乳」填「无」）⇒ 不发泌乳这一行
+        try { if (readMilkOf(t.key).kind === 'none') return ''; } catch { /* 读不到就照旧发 */ }
+        return `泌乳状态：${bare(p.d7)}`;
+    })() : '';
     vars.zones = (zonesOn && isFieldOn('d9') && isLoaded(p.d9)) ? `敏感带：${zonesWords(p.d9)}` : '';
     vars.birth = (isFieldOn('d8') && isLoaded(p.d8)) ? `生产次数：${bare(p.d8)}` : '';
     vars.impregnator = (isFieldOn('d4') && isLoaded(p.d4)) ? `致孕方：${bare(p.d4)}` : '';
@@ -1114,7 +1064,64 @@ function buildStateText(targets) {
                 + '正文没说跳到第二天，孕周照旧。';
         }
     } catch { skipLine = ''; }
-    return [head, timeLine, blocks.join('\n\n'), skipLine, foot].filter(Boolean).join('\n\n').replace(/[ \t]+$/gm, '') + '\n';
+    return [head, timeLine, blocks.join('\n\n'), estrusSectionText(targets), skipLine, foot].filter(Boolean).join('\n\n').replace(/[ \t]+$/gm, '') + '\n';
+}
+
+/**
+ * ★ 2026-11-08（发情期第 0 批）：状态摘要里那一小段「发情」。
+ *
+ * 只写事实：谁现在在发情、第几天、共几天，加一句身体与行为倾向；
+ *   不在发情的也写一句「不在发情期」，免得模型自己编一段发情出来 ✓（她做这一块的目的就是这个）
+ * ⚠️ 不参与受孕判定 —— 末尾那句必须写，不然模型会拿发情去推"容易怀" ✓
+ * ⚠️ 发情记录档也吃这一段（它不在状态摘要的名单里 ⇒ 这里单独补进来 ✓）
+ */
+function estrusSectionText(targets) {
+    try {
+        if (settings().estrusOn !== true) return '';
+        const seen = new Set();
+        const list = [];
+        // ★ 2026-11-09：发情记录档同样不进推演 ⇒ `present` 不会更新；用名字在不在最近正文里判在场，
+        //   不然攒下来的发情记录档每轮都发一行（随人数线性涨）✗
+        const sceneTxt = recentSceneText();
+        for (const t of [...(Array.isArray(targets) ? targets : []), ...estrusTargets()]) {
+            if (!t || !t.key || seen.has(t.key)) continue;
+            if (t.present === false) continue;
+            if (!t.isUser && isTargetLoose(t.key) && sceneTxt.trim() && !sceneMentions(t, sceneTxt)) continue;
+            seen.add(t.key);
+            list.push(t);
+        }
+        if (!list.length) return '';
+        const lines = [];
+        for (const t of list) {
+            try { ensureEstrusAnchor(t.key); } catch { /* 忽略 */ }
+            const e = estrusInfoOf(t.key);
+            if (!e) continue;
+            // ★ 发情记录档：只有正在发情才发这一行（不在发情的不占 token；
+            //   正式档照旧写「不在发情期」，免得模型自己编一段出来 ✓）
+            if (!e.inHeat && trackModeOf(t.key) === 'estrus') continue;
+            const nm = displayName(t) || t.key;
+            if (!e.inHeat) { lines.push(nm + ' 不在发情期'); continue; }
+            lines.push(nm + ' 发情第 ' + e.dayNo + ' 天（共 ' + e.days + ' 天）'
+                + (e.end ? ('，到 ' + e.end) : '') + '；' + estrusBodyLine(t.key));
+        }
+        if (!lines.length) return '';
+        return '【发情】' + lines.join(' / ')
+            + '。发情期不等于受孕期：怀不怀按受孕窗口与系统判定，不要按发情推断。';
+    } catch { return ''; }
+}
+
+/** 发情时的身体反应与行为倾向（按能不能被受孕分雄性 / 雌性；判断不了就写中性那句 ✓） */
+function estrusBodyLine(key) {
+    let lk = null;
+    try { lk = bodyLockOf(key) || {}; } catch { lk = {}; }
+    const canBear = lk?.canBePregnant;
+    if (canBear === true) {
+        return '身体反应：体温偏高、外阴肿胀湿润、气味变浓；行为倾向：更主动靠近、接受性增强';
+    }
+    if (canBear === false) {
+        return '身体反应：体温偏高、气味变浓、生殖器官充血；行为倾向：躁动、更主动、对同类气味更敏感';
+    }
+    return '身体反应：体温偏高、气味变浓；行为倾向：更主动、对同类气味更敏感';
 }
 
 // ---------------------------------------------------------------------------
@@ -1205,14 +1212,45 @@ function buildPatchText(targets) {
 // 入口
 // ---------------------------------------------------------------------------
 
-/** 本轮该注入哪些对象 */
-export function injectTargets() {
+/**
+ * 按设置的注入范围挑人。
+ * includeLight=false ⇒ 跳过轻追踪角色（状态摘要那边的老规矩 ✓）；
+ * includeLight=true  ⇒ 轻档也算（**只给种族设定那一段用**，她 2026-11-08 定的：
+ *   有些人只要轻档、但这一族的性特征要发 ✓）。
+ */
+/**
+ * ★ 2026-11-09：最近两楼的正文（判「轻档 / 发情记录档在不在场」用）。
+ *
+ * 为什么需要：这两档**不进推演**，所以推演报回来的 `present` 永远轮不到它们更新 ⇒
+ *   建过档之后 `present` 一直停在创建时的 `true`。结果只要自动追踪多建过几个轻档，
+ *   他们哪怕早就不在正文里了，种族设定**每轮照样发**（随人数线性涨，纯白花 token ✗）。
+ * ⇒ 改成跟推演名单同一个口径：名字出现在最近两楼正文里才算在场 ✓
+ */
+function recentSceneText() {
+    try {
+        const chat = getChat() || [];
+        return chat.slice(-2).map((m) => String(m?.mes || '')).join('\n');
+    } catch { return ''; }
+}
+
+/** 这个对象的名字（含档案名）有没有出现在给定正文里 */
+function sceneMentions(t, text) {
+    try {
+        const names = [displayName(t), t?.name].filter(Boolean);
+        return names.some((n) => {
+            const s = String(n || '').trim();
+            return s.length >= 2 && String(text).includes(s);
+        });
+    } catch { return true; }
+}
+
+function scopedTargets(includeLight) {
     const s = settings();
-    // ★★ 2026-10-22：**轻档一律不注入** —— 轻档只有名字和种族、没有任何身体账，
+    // ★★ 2026-10-22：**轻档不进食状态摘要** —— 轻档只有名字和种族、没有任何身体账，
     //   注进去就会给主 API 一段「怀孕状态：未孕 / 生理状态：等待第一次状态推演」的空壳（她截图报的）。
     //   判据跟推演名单、「轻档不进快照」同一套：`t.light === true` ⇒ 跳过；
     //   有了身体事实会自己升格成正式档，到那时才回来 ✓
-    const all = targetList().filter((t) => t.light !== true);
+    const all = targetList().filter((t) => includeLight || !isTargetLoose(t.key));
     if (!all.length) return [];
     if (s.injectScope === 'all') return all;
     if (s.injectScope === 'active') {
@@ -1221,8 +1259,25 @@ export function injectTargets() {
         return a ? [a] : all.slice(0, 1);
     }
     // present：本轮推演判定为出场的对象（默认）
-    const present = all.filter(t => t.present !== false);
-    return present.length ? present : all;
+    // ★ 2026-11-08（她定的）：**角色不在场就不发** —— 原来没人出场时会退化成"发全部"，
+    //   等于角色不在场也把种族设定（含性特征）塞进去 ✗ ⇒ 一个人都没出场就这一段都不发 ✓
+    const hit = all.filter(t => t.present !== false);
+    // ★★ 2026-11-09：轻档 / 发情记录档的 `present` 不会更新（它们不进推演）⇒
+    //   用「名字在最近两楼正文里」重新判一次在场，别让建过档的路人永远占着种族设定那段 ✗
+    if (!includeLight) return hit;
+    const txt = recentSceneText();
+    if (!txt.trim()) return hit;      // 读不到正文 ⇒ 保守照发，不误伤 ✓
+    return hit.filter(t => t.isUser || !isTargetLoose(t.key) || sceneMentions(t, txt));
+}
+
+/** 本轮该注入哪些对象（状态摘要 / 模块正文用；轻档不进 ✓） */
+export function injectTargets() {
+    return scopedTargets(false);
+}
+
+/** ★ 2026-11-08：种族设定那一段用的人（**轻档也算** ✓） */
+export function codexTargets() {
+    return scopedTargets(true);
 }
 
 export function rebuildInjection() {
@@ -1244,19 +1299,38 @@ export function rebuildInjection() {
     if (!s.enabled || !s.injectToMain) return;
 
     const targets = injectTargets();
-    if (!targets.length) return;
+    // ★ 2026-11-08：轻档不进状态摘要，但**种族设定照发**（她要的：轻档也要性特征）
+    //   ⇒ 两拨人分开看，只有两拨都空才整段不发 ✓
+    const cxTargets = codexTargets();
+    if (!targets.length && !cxTargets.length) return;
 
     // ★ 状态摘要：**每轮都在变** ⇒ 走尾巴注入（不然它后面的全部内容都不吃缓存 ✗ 见 putTail 的说明）
     //   ⚠️ 深度是 STATE_DEPTH（2），不是 0 —— d0 让给预设的破限条目 ✓
-    const stateText = buildStateText(targets);
+    const stateText = targets.length ? buildStateText(targets) : '';
     if (stateText) putTail(KEY_STATE, substitute(stateText));
 
     // ★ 状态摘要的用法说明：基本不变 ⇒ 系统段（每轮都发，但它不动，不伤缓存 ✓）
     const ruleText = String(templates().stateRule || '').trim();
     if (ruleText) put(KEY_RULE, substitute(ruleText));
 
-    const patchText = buildPatchText(targets);
+    const patchText = targets.length ? buildPatchText(targets) : '';
     if (patchText) put(KEY_PATCH, substitute(patchText));
+
+    // ★ 第六批：这一轮在场种族的图鉴正文（只发在场的 ＋ 按阶段筛段）
+    //   放在沉浸设定后面：先讲怎么写，再给这一族的设定事实 ✓
+    //   在场种族 / 阶段没变 ⇒ 这段字一个字都不动（不伤缓存 ✓）
+    //   ⚠️ 这一段算坏了不许拖垮整套注入（状态摘要 / 沉浸设定照发 ✓）
+    // ★★ 2026-11-09：图鉴数据（757KB）现在是**用到才读进来**的。
+    //   没读进来的时候 `codexEntries()` 是空的 ⇒ 硬拼会拼出"图鉴里一个族都没对上"的
+    //   种族目录，等于拿假话喂模型 ✗ ⇒ **整段先不发**。
+    //   读完之后 `index.js` 会 `rebuildInjection()` 一次，那一段立刻补齐 ✓
+    //   （正常操作走不到这里：读取在页面画完就开始了，读一次约几十毫秒 ✓）
+    if (builtinReady()) {
+        try {
+            const codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, introOn: settings().codexIntroOn === true });
+            if (codexPlan.text) put(KEY_CODEX, substitute(codexPlan.text));
+        } catch (e) { console.warn('[Bodycord] 种族设定那段没发出去（不影响别的注入）', e); }
+    }
 
     // ★ 孩子（默认关）：开了才发，而且**只给主 API** ✓
     const kidsText = buildChildrenText(targets);
@@ -1290,7 +1364,29 @@ function buildChildrenText(targets) {
             const kids = childrenOf(t.key);
             if (!kids.length) continue;
             const now = storyDateNow();
+            // ★ 2026-11-07：一窝里的孩子能并行的就并成一行 ——
+            //   同一次出生、同一个另一个亲代、性别 / 种族 / 遗传 / 天赋都一样 ⇒
+            //   名字串成一行，后面只带一份数据（卵生一窝几百个时省下来的是整段重复 ✓）
+            //   只要有一项不同就单列，不硬并（数据对不上会读成同一个孩子 ✗）
+            const groups = [];
+            const at = new Map();
             for (const c of kids) {
+                // ★ 2026-11-07：单个孩子在面板上关掉「发送」⇒ 这一段就不写他（账本照留 ✓）
+                if (c.mute === true) continue;
+                const gk = [c.other, c.birthDate, c.sex, c.race, c.talent, c.heritage, c.strength]
+                    .map((v) => String(v || '').trim()).join('\u0001');
+                let g = at.get(gk);
+                if (!g) {
+                    g = { head: c, names: [], count: 0 };
+                    at.set(gk, g);
+                    groups.push(g);
+                }
+                g.count += 1;
+                const name = String(c.name || '').trim();
+                if (name) g.names.push(name);
+            }
+            for (const g of groups) {
+                const c = g.head;
                 const bits = [];
                 // ★ 只发这几样：**父母（另一个亲代）+ 出生日 + 年龄** 就够 ✓
                 //   （性别 / 种族 / 遗传能力这些"额外的"不再发 —— 写正文用不到，省 token ✓）
@@ -1298,7 +1394,11 @@ function buildChildrenText(targets) {
                 if (age) bits.push(age);
                 if (c.birthDate) bits.push('生于 ' + c.birthDate);
                 if (c.other) bits.push('另一个亲代 ' + c.other);
-                lines.push(`- ${nm}的孩子：${String(c.name || '').trim() || '还没起名字'}（${bits.join('，')}）`);
+                let who = '';
+                if (g.names.length === g.count) who = g.names.join('、');
+                else if (g.names.length) who = g.names.join('、') + ' 等 ' + g.count + ' 个';
+                else who = (g.count > 1 ? (g.count + ' 个') : '') + '还没起名字';
+                lines.push(`- ${nm}的孩子：${who}（${bits.join('，')}）`);
             }
         }
         if (!lines.length) return '';
@@ -1309,6 +1409,12 @@ function buildChildrenText(targets) {
 /** 给设置界面预览用：把当前会发出去的东西原样渲染出来 */
 export function previewInjection() {
     const targets = injectTargets();
+    // ★ 2026-11-08：种族设定那一拨包含轻档 ⇒ 预览也按它判"有没有对象" ✓
+    const cxTargets = codexTargets();
+    let codexPlan = null;
+    try {
+        codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, introOn: settings().codexIntroOn === true });
+    } catch { codexPlan = null; }
     return {
         state: targets.length ? buildStateText(targets) : '（没有追踪对象）',
         // ★ 用法说明跟着沉浸设定一起走系统段 ⇒ 预览里并成一段展示（她靠预览验收 ✓）
@@ -1316,6 +1422,11 @@ export function previewInjection() {
             ? [String(templates().stateRule || '').trim(), buildPatchText(targets)].filter(Boolean).join('\n\n')
                 || '（空）'
             : '（没有追踪对象）',
+        // ★ 第六批：这一轮发出去的种族设定（她靠这里看"到底发了哪几段" ✓）
+        codex: cxTargets.length
+            ? ((codexPlan && codexPlan.text) || '（这一轮没有要发的种族设定）')
+            : '（没有追踪对象）',
+        codexPlan,
         children: targets.length ? (buildChildrenText(targets) || '（没开，或者这个对象还没有孩子）')
             : '（没有追踪对象）',
     };

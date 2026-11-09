@@ -47,6 +47,8 @@ import {
     implantDateOf, setImplantDateOf, pregDaysOf, shiftDueDatesOf, listAlerts, syncDueAlerts,
     setCurrentDate, setCurrentTime, currentTime, dateMode, shiftRecordedDatesBy, storyDateTimeNow,
     canShiftRecordedDatesBy, refreshDerivedAfterTimeMove,
+    postpartumOf, clearPostpartumFor,
+    trackModeOf, isTargetLoose, setTrackMode, estrusTargets, estrusInfoOf,
 } from './store.js';
 // 2026-11-01：上面那排是改数值里的「剧情日期」要用的（直接写时间轴那套现成接口，别另造 ✓）。
 //   ⚠️ 这类说明只能写在 import 的**外面**：括号里出现注释会被 imports 那套自测当成"导入了一个叫 // 的东西" ✗
@@ -62,6 +64,9 @@ import { renderSettingsTab, renderJudgeTab, renderTrackingTab, renderAvatarTab, 
 import { renderModulesTab } from './ui-modules.js';
 import { renderArchiveTab } from './ui-archive.js';
 import { renderAchTab } from './ui-ach.js';
+import { renderCodexTab } from './ui-codex.js';
+// ★ 2026-11-09：内置图鉴用到才读 —— 诊断页要报"读进来了没"
+import { builtinReady } from './codex.js';
 import { previewInjection, gateOpen, moduleActive, canBePregnantPerson, rebuildInjection } from './prompt.js';
 import { describePresetInjection } from './judge.js';
 import { openTimeMachine } from './ui-time.js';
@@ -202,7 +207,22 @@ export class StatusView {
     }
 
     render() {
-        clear(this.root);
+        // ★★ 2026-11-09（她报：进出聊天时本地点播直接断掉）——
+        //   原来这里第一句是 `clear(this.root)`，它会把装着 iframe 的 `.bc-frame-host`
+        //   一起从文档里摘掉。**iframe 一旦离开文档，浏览器就把它的文档扔掉**，
+        //   再 append 回去等于重新加载（`srcdoc` 重跑）⇒ 里面正在放的音乐立刻断 ✗
+        //   （旧注释写的"同一个元素重新 append 不会重新加载"是错的，这次就是它）
+        //   ⇒ 现在把 host **原样留在原位**，只换掉它前面那些"跟着聊天变"的东西；
+        //     其余的节点（名字栏 / 状态条）重建后插回 host 前面 ✓
+        const keepHost = (this.host && this.host.parentNode === this.root) ? this.host : null;
+        for (const el of [...this.root.children]) {
+            if (el !== keepHost) el.remove();
+        }
+        const put = (el) => {
+            if (keepHost) this.root.insertBefore(el, keepHost);
+            else this.root.appendChild(el);
+            return el;
+        };
 
         // ---- 预览控件**不在面板里了**----
         // ⚠️ 原来面板顶上挂着一条「🎨 预览」条，它踩过三次：
@@ -215,7 +235,7 @@ export class StatusView {
 
         // ---- 角色切换条（仅多角色模式）----
         this.charbar = this._buildCharbar();
-        if (this.charbar) this.root.appendChild(this.charbar);
+        if (this.charbar) put(this.charbar);
 
         // ---- 工具条 ----
         this.hint = h('span', { class: 'bc-status-hint', text: inRealChat() ? '' : '还没进入聊天，面板暂无数据' });
@@ -248,19 +268,22 @@ export class StatusView {
         // ★ 出生那一刻也要把「这一楼待推演」那颗胶囊判一次 ——
         //   `update()` 未必接得上（先 render、之后没有 refreshAll ⇒ 它一直藏着 ✗）
         this._paintPending();
-        this.root.appendChild(bar);
+        put(bar);          // ★ 状态条在面板**上面** ⇒ 要插在 keepHost 前面（见 render 开头那段）
 
         // ---- 面板本体 ----
-        const host = h('div', { class: 'bc-frame-host' });
-        this.root.appendChild(host);
-        this.host = host;
+        if (keepHost) {
+            // 面板还是原来那一份、host 也还在原位 ⇒ **一个字不动**（iframe 没离开文档，音乐照放 ✓）
+            this.host = keepHost;
+        } else {
+            const host = h('div', { class: 'bc-frame-host' });
+            this.root.appendChild(host);
+            this.host = host;
+        }
 
-        // ⚠️ 上面 clear(this.root) 会把 iframe 连同 host 一起从 DOM 里摘掉。
-        //   render() 里**不直接碰 this.panel**（第一遍 render 时它还是 null，
+        // ⚠️ render() 里**不直接碰 this.panel**（第一遍 render 时它还是 null，
         //   旧断言专门守着这条 —— 在 render() 里写 `this.panel?.iframe` 会被它拦下 ✓）。
-        //   所以「把 iframe 放回去」这件事统一交给 _mountPanel()：
-        //   面板还活着 ⇒ 它会重新 append（同一个元素重新 append 不会重新加载，音乐照放 ✓）；
-        //   面板本来就该新建 ⇒ 由它自己塞进去。
+        //   「把 iframe 放回该在的位置」统一交给 _mountPanel()：面板还活着 ⇒ remountInto
+        //   （同一份 host 时它什么都不用做），面板本来就该新建 ⇒ 由它自己塞进去 ✓
         this._mountPanel();
         // ★ 面板是刚建的（或刚被放回来）时，预览那一份字段要**重新推一遍** ——
         //   否则"预览开着但面板重建过"就退回真实数据（没进聊天时就是整块空的 ✗）
@@ -1545,15 +1568,17 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  * ★ 版本号 + 构建号（扩展面板 / 诊断报告 / 诊断面板里那个「版本」）。
  *
  * 格式定稿：**`1.0（年月日-当天第几版）`** —— 版本号在前，构建号用全角括号包起来。
- *   · 版本号 `PLUGIN_VERSION`：**除非她亲口说"改版本号"，否则一个字都不许动** ✓
- *     （修 BUG、改文案、抬构建，都只动构建号）
+ *   · 版本号 `PLUGIN_VERSION`：**做完一大块才升**，不许提前写（2026-11-06 她定的口径）——
+ *     「图鉴」做完升一个大版本（1.0 → 2.0），「世界书绑定」做完升一个小版本（2.0 → 2.1），
+ *     之后图鉴解耦 / 发情期 / 产后恢复这一串各自升一位，到 2026-11-09 是 2.3 ✓；
+ *     在那之前，哪怕已经在开发新版本的东西，版本号也还是上一版 ✓
  *   · 构建号 `BUILD_STAMP`：每次交付都抬；换一天 ⇒ 从 `-1` 重新数 ✓
  *   · **跟面板那个 `PANEL_BUILD`（`assets/bodycord.html` 里）永远写成同一个串** ✓ ——
  *     两边不一致会被测试当场抓出来（自测脚本）✓
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
-export const PLUGIN_VERSION = '1.0';
-export const BUILD_STAMP = '2026-11-04-3';
+export const PLUGIN_VERSION = '2.3';
+export const BUILD_STAMP = '2026-11-09-29';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -1861,7 +1886,7 @@ export function diagReportText() {
                 //   ⇒ 只看 `image` 会把"明明有图"报成"文字版" ✗
                 + ((sst?.image || (Array.isArray(sst?.layers) && sst.layers.length)) ? '（用图）' : '（文字版）'));
         } catch (e) { L.push('  阶段插图统计出错：' + (e?.message || e)); }
-        for (const kind of ['pregnancy', 'not_pregnant', 'conception', 'sperm', 'menstruation', 'xeno', 'multi_father_window']) {
+        for (const kind of ['pregnancy', 'not_pregnant', 'conception', 'sperm', 'menstruation', 'xeno']) {
             let open = null;
             try { open = gateOpen(kind, roster); } catch { /* 忽略 */ }
             L.push(`  门控 ${kind}：${open === null ? '?' : (open ? '开（会发）' : '关（不发）')}`);
@@ -2067,7 +2092,7 @@ export function diagExportJson() {
             try {
                 const roster = trackingRoster();
                 const gates = {};
-                for (const kind of ['pregnancy', 'not_pregnant', 'conception', 'sperm', 'menstruation', 'xeno', 'multi_father_window']) {
+                for (const kind of ['pregnancy', 'not_pregnant', 'conception', 'sperm', 'menstruation', 'xeno']) {
                     try { gates[kind] = gateOpen(kind, roster); } catch { gates[kind] = null; }
                 }
                 return {
@@ -2257,6 +2282,12 @@ function renderRuntimeTab(body) {
     // ---------------- 全局（跟聊天无关的） ----------------
     head('全局');
     info('版本', BUILD_LABEL);
+    // ★ 2026-11-09：内置图鉴是用到才读进来的 ⇒ 诊断里要能看出"读进来了没"
+    //   （读到之前那一轮会整段不发种族设定，见 prompt.js；读完会自动补一次）
+    info('图鉴数据', (() => {
+        try { return builtinReady() ? '已读入' : '还没读入（用到才读，读完之后会自动补发一次）'; }
+        catch { return '—'; }
+    })());
     info('当前所在', (() => { try { return diagScope(); } catch { return '未知'; } })());
     line('插件总开关', settings().enabled !== false, settings().enabled !== false ? '开着（会推演 + 注入）' : '关着（不推演、不注入，只留面板；楼层那排也收起来了）');
     line('扩展被宿主禁用', !isMyExtensionDisabled(), isMyExtensionDisabled() ? '已被禁用' : '正常');
@@ -2280,7 +2311,7 @@ function renderRuntimeTab(body) {
     info('门控', (() => {
         try {
             const roster = trackingRoster();
-            const kinds = ['pregnancy', 'not_pregnant', 'conception', 'sperm', 'menstruation', 'xeno', 'multi_father_window'];
+            const kinds = ['pregnancy', 'not_pregnant', 'conception', 'sperm', 'menstruation', 'xeno'];
             return kinds.map(k => {
                 let o = null;
                 try { o = gateOpen(k, roster); } catch { /* 忽略 */ }
@@ -2434,9 +2465,12 @@ function renderDataTab(body) {
         //   有了它分辨两件事：着床判定到底掷过没、提示词发出去时孕有没有切 ✓
         const extra = [];
         try {
-            if (t.light === true) {
+            if (isTargetLoose(t.key)) {
                 // 轻档＝只登记名字 ⇒ 周期与孕一律不追踪（2026-10-23 她问「为什么轻档有周期？」）
-                extra.push(kv('说明', '轻档：只登记名字，不追踪周期与孕期'));
+                // ★ 2026-11-08（发情期第 0 批）：发情记录档也只追发情这一本账 ✓
+                extra.push(kv('说明', trackModeOf(t) === 'estrus'
+                    ? '发情记录：只追发情期，不进推演、不追踪周期与孕期'
+                    : '轻档：只登记名字，不追踪周期与孕期'));
             } else {
             const j = getOvuJudgment(t.key) || null;
             const day = (() => { try { return cycleDayNum(t.key); } catch { return null; } })();
@@ -2475,7 +2509,7 @@ function renderDataTab(body) {
             //   下面这一行又原样印出来，等于白打 ✗）
             kv('key', diagUnmasked ? String(t.key || '') : maskText(t.key)),
             // ★ 模式：**轻档 / 正式档**（原来读的 `t.mode` 根本不存在 ⇒ 永远显示「—」✗）
-            kv('模式', t.light === true ? '轻档' : '正式档'),
+            kv('模式', trackModeOf(t) === 'light' ? '轻档' : (trackModeOf(t) === 'estrus' ? '发情记录' : '正式档')),
             ...extra,
             kv('profile', t.profile ? '有' : '无'),
             jsonBlock('面板文字（打码后仍能看结构）', maskPanelText(t.raw)),
@@ -2971,12 +3005,16 @@ export function demoConception() {
         //   否则那条"形状一模一样"的断言会红 ✓；预览里给 0，免得预览看着像"记录被清过" ✗
         insemCut: 0,
         insemCap: 1000,
+        // ★ 2026-11-06（第五批）：卵生那一块（三个日子 ＋ 每一窝）——
+        //   形状必须跟 `eggsForPanel()` 一模一样；这个单人样例是普通怀孕 ⇒ 空着 ✓
+        //   （想看卵生 / 待孵：切到「示例角色·丙」「示例角色·戊」那两份样例 ✓）
+        eggs: { pregnant: null, clutches: [], incubating: null },
         // ★★ 这些提醒放受孕记录里面，示例也得跟着更新 ✓ ——
         //   受孕记录这一页新增的「提醒」块（着床完成 / 每胎预产期）也要有样例，
         //   形状必须和 `conceptionForPanel()` 一致 ✓、多人预览时每个对象各不相同 ✓
         alerts: [
-            { kind: 'conceive', sub: '', name: '示例角色', date: '1年05月03日', seen: true, note: '示例角色 已着床完成（怀孕）' },
-            { kind: 'due', sub: '子1', name: '示例角色', date: '2年01月06日', seen: false, note: '示例角色 的预产期（第 1 胎）：2年01月06日' },
+            { kind: 'conceive', sub: '', name: '示例角色', date: '1年05月03日', seen: true, note: '示例角色 已着床完成（怀孕）', egg: false },
+            { kind: 'due', sub: '子1', name: '示例角色', date: '2年01月06日', seen: false, note: '示例角色 的预产期（第 1 胎）：2年01月06日', egg: false },
         ],
     };
 }
@@ -3036,22 +3074,53 @@ export function demoConceptionFor(i = 0) {
         },
         // ★ 提醒也要**每个样例各不相同**（验收判据：预览里数据必须分得出来 ✓）
         // ★ 没着床那一号只能有「没着床」那条提醒：还挂着"已着床完成 / 预产期"就跟结论打架 ✗
-        alerts: (i % 3 === 1) ? [{
+        // ★ 2026-11-06（第五批）：待孵那一号给「已产卵」那条 + 破壳日 ✓
+        alerts: (i === 2) ? [{
+            kind: 'lay', sub: '', name: '示例角色',
+            date: '1年03月05日', seen: false, egg: true,
+            note: '示例角色 产卵了（一窝 3 枚），离破壳还有 184 天',
+        }, {
+            kind: 'due', sub: '', name: '示例角色',
+            date: '1年09月05日', seen: false, egg: true,
+            note: '示例角色 的破壳日：1年09月05日',
+        }] : ((i % 3 === 1) ? [{
             kind: 'implant_fail', sub: '', name: '示例角色',
             date: '1年0' + (5 + (i % 4)) + '月' + String(3 + (i % 20)).padStart(2, '0') + '日',
-            seen: i % 2 === 0,
+            seen: i % 2 === 0, egg: false,
             note: '示例角色 受精成功但没着床',
         }] : [{
             kind: 'conceive', sub: '', name: '示例角色',
             date: '1年0' + (5 + (i % 4)) + '月' + String(3 + (i % 20)).padStart(2, '0') + '日',
-            seen: i % 2 === 0,
+            seen: i % 2 === 0, egg: false,
             note: '示例角色 已着床完成（怀孕）',
         }, {
             kind: 'due', sub: '子' + (1 + (i % 3)), name: '示例角色',
             date: '2年0' + (1 + (i % 8)) + '月' + String(10 + (i % 18)).padStart(2, '0') + '日',
-            seen: false,
+            seen: false, egg: false,
             note: '示例角色 的预产期',
-        }],
+        }]),
+        // ★ 2026-11-06（第五批）：卵生 —— 丙那份是**待孵**（已经产卵、蛋还没破壳），
+        //   戊那份是**卵生怀孕中**（产卵日和破壳日两个日子都提前摆出来）
+        //   ⚠️ 形状必须跟 `eggsForPanel()` 一致（真实数据那条路同一个形状 ✓）
+        eggs: (i === 2)
+            ? {
+                pregnant: null,
+                clutches: [{
+                    id: 'demo-clutch-1', mode: 'out',
+                    startDate: '1年02月01日', laidDate: '1年03月05日', hatchDate: '1年09月05日',
+                    count: 3, unit: '枚', hatched: false, hatchedDate: '', hatchLeft: 184,
+                }],
+                incubating: { count: 3, unit: '枚', hatchDate: '1年09月05日', hatchLeft: 184, clutches: 1 },
+            }
+            : ((i === 4)
+                ? {
+                    pregnant: {
+                        mode: 'out', startDate: '1年02月01日', layDate: '1年03月01日', hatchDate: '2年03月01日',
+                        inDays: 30, outDays: 365, unit: '枚', layLeft: -70, hatchLeft: 295,
+                    },
+                    clutches: [], incubating: null,
+                }
+                : { pregnant: null, clutches: [], incubating: null }),
         locks: [{ child: 1, impregnator: who, roll }],
         insems: base.insems.slice(0, 3 + (i % 3)).map((x, j) => ({
             ...x,
@@ -3127,7 +3196,10 @@ export function demoStages(activeKey = '') {
     const text = stageTextOf(stage, mode);
     const lay = stageLayersForSample(mode, facts);
     return {
-        on: true, stage, title: text.title, line: text.line,
+        on: true, stage,
+        title: text.title,
+        // ★ 2026-11-06（第五批）：待孵那一句话按这一份样例自己的事实说（跟真实那条同一个说法 ✓）
+        line: (stage === 'incubating' && facts.incubatingText) ? facts.incubatingText : text.line,
         image: stageImageOf(stage, mode),
         uterus: lay.uterus,
         layers: lay.layers,
@@ -3207,6 +3279,17 @@ export function demoBodyState(i = 0) {
         { part: zone, kind: ['吻痕', '抓痕', '刀痕'][at % 3], level: ['轻度', '中度', '重度'][at % 3], nightsLeft: 3 + at },
         { part: ['大腿内侧', '颈侧', '后背'][at % 3], kind: '掌印', level: ['深层', '轻度', '中度'][at % 3], nightsLeft: 1 + (at % 4) },
     ];
+    // ★ 2026-11-08（发情期第 0 批）：发情那一块也要样例，而且**每个对象不一样** ✓
+    //   三种样子各给一个：正在发情 / 不在发情（有下次）/ 正在发情（第几天不同）
+    const heat = (at % 3) !== 1;
+    const estrus = {
+        inHeat: heat,
+        dayNo: heat ? (2 + (at % 4)) : 0,
+        days: heat ? (5 + (at % 3)) : 0,
+        end: heat ? ('示例历 03 月 ' + (10 + at) + ' 日') : '',
+        next: heat ? '' : ('示例历 04 月 ' + (2 + at) + ' 日'),
+        nextIn: heat ? null : (7 + at),
+    };
     return {
         name: t ? t.name : '示例角色',
         row1: r1,
@@ -3214,6 +3297,7 @@ export function demoBodyState(i = 0) {
         row3: String((p && p.row3) || ''),
         traceStep: 3,
         traces,
+        estrus,
     };
 }
 
@@ -3277,6 +3361,48 @@ function demoOne(name, i) {
         //   （不然样例里出现别的号的人名，点 @名字 跳不过去 ✓）
         row3: '昨夜 23:10 · 示例致孕方·' + ['甲', '乙', '丙'][i % 3] + ' · 内射',
     };
+    // ★ 2026-11-06（第五批）：两份**卵生**样例（她拿预览验收这一批 ✓）
+    //   · 丙（i=2）：已经产卵、蛋还没破壳 ⇒ 状态是「待孵」，d6 是「无」、d5 未加载
+    //   · 戊（i=4）：卵生怀孕中 ⇒ 面板上要能提前看到产卵日 / 破壳日两个日子
+    if (i === 2) {
+        profile.phase = '待孵';
+        profile.sub = '一窝 3 枚 · 离破壳还有 184 天';
+        profile.d6 = '无';
+        profile.d4 = '无';
+        profile.d5 = '未加载';
+    }
+    if (i === 4) {
+        profile.phase = '孕中期';
+        profile.sub = '孕 12 周 + 0 天';
+        profile.d4 = '示例致孕方·丙';
+        profile.d6 = buildFetus('孕 12 周，卵正在体内成形', [{
+            race: '龙族', sex: '雄', impregnator: '示例致孕方·丙',
+            gest: '体内 1 个月 · 孵化 12-24 个月',
+            extra: '显性：鳞色偏青 ｜ 隐性携带：人类血统',
+        }]);
+        profile.d5 = '已确认怀孕 · 已知晓致孕方身份（示例致孕方·丙）';
+    }
+    // ★ 2026-11-08 产后恢复：两份样例（拿预览验收这一批用 ✓）
+    //   · 庚（i=7）：正在恢复期 ⇒ 阶段「产后恢复」、进度「产后第 N 天 · 还有 M 天恢复周期」、
+    //     没有月经也没有排卵窗口，基础率按「无月经」那一格算（10%），胎儿那格是「无」
+    //   · 辛（i=8）：已经恢复完 ⇒ 回到正常周期（第 3 天），跟其余几份一眼分得开
+    if (i === 7) {
+        profile.phase = '产后恢复';
+        profile.sub = '产后第 12 天 · 还有 30 天恢复周期';
+        profile.d1 = '10%';
+        profile.d2 = '0%（产后恢复期内，暂未发生内射）';
+        profile.d4 = '无';
+        profile.d5 = '未加载';
+        profile.d6 = '无';
+        profile.d7 = '未加载';
+    }
+    if (i === 8) {
+        profile.phase = '卵泡期';
+        profile.sub = 'Day3 / 28';
+        profile.d1 = '8%';
+        profile.d2 = '4%（暂未发生内射）';
+    }
+
     // ★★ `minor`（面板顶上那行「当前时间 ｜ 当前防护 ｜ 近期风险」）也必须**按人**各不一样：
     //   整份沿用了单人样例 ⇒ 9 个示例角色那一行**一模一样** ✗
     //   真实数据里这行是**按人**的（AI 每轮按那个人写：防护 / 近期风险；只有"当前时间"那半
@@ -3346,12 +3472,19 @@ function demoOne(name, i) {
  */
 function demoStageFacts(i) {
     const n = ((i % 9) + 9) % 9;
+    // ★ 2026-11-06（第五批）：卵生那两份样例
+    //   丙（i=2）＝待孵（名下挂着一窝蛋）；戊（i=4）＝卵生怀孕中（走孕期那张图 ✓）
+    if (n === 2) return { incubating: true, incubatingText: '一窝 3 枚 · 离破壳还有 184 天', vaginaTier: 'empty', wombTier: 'empty' };
+    if (n === 4) return { pregnant: true, implanted: true, vaginaTier: 'low', wombTier: 'empty', fetusWeekDays: 12 * 7 };
+    // ★ 2026-11-08 产后恢复：庚（i=7）＝恢复期 ⇒ 没有月经、没有排卵窗口
+    //   ⇒ 既没有卵子、也没有活精子，只剩残留（跟别的样例一眼分得开 ✓）
+    if (n === 7) return { vaginaTier: 'residue', wombTier: 'empty' };
     // ★★ 2026-10-18：两本账都要给（阴道 = 底图、子宫 = 那张透明层）——
     //   玩家拿预览当验收台用，**每个样例的六档要各不相同**，不然一眼就看出：像共享一份✗
     return [
         { sperm: true, vaginaTier: 'many', wombTier: 'residue' },      // 卵泡期：精子还在
         { egg: true, vaginaTier: 'residue', wombTier: 'empty' },       // 受孕窗口：只有卵子
-        { vaginaTier: 'empty', wombTier: 'empty' },                    // 稳定期：普通的一天
+        { incubating: true, vaginaTier: 'empty', wombTier: 'empty' },  // 稳定期那号被待孵样例占了（上面已 return）
         { sperm: true, vaginaTier: 'mid', wombTier: 'empty' },         // 卵泡期
         { egg: true, sperm: true, vaginaTier: 'low', wombTier: 'empty' }, // 两者都在 ⇒ 精子游向卵子
         { fertilized: true, vaginaTier: 'max', wombTier: 'low' },      // 射满过 ⇒ 子宫里也有
@@ -3602,7 +3735,27 @@ function showPane(tab) {
         ensureFloatStatusView();
         // 已经是建好的那份 ⇒ 切回来再让它按当前尺寸重排一次（兜底 ✓）
         if (floatView) nudgePanelLayout();
-    } else renderSettingsPane();
+    } else {
+        try { renderSettingsPane(); }
+        catch (e) {
+            // ★ 2026-11-08：设置页画不出来时别留一片空白（空白会被当成"点不进去 / 打不开"）
+            console.warn('[Bodycord] 设置页渲染失败', e);
+            paintPaneError(els.panes.settings, e);
+        }
+    }
+}
+
+/** 把"这一页画的时候出错了"写在页面上（空白面板没法排查，也看不出是插件坏了） */
+function paintPaneError(host, err) {
+    try {
+        if (!host) return;
+        clear(host);
+        host.appendChild(h('div', {
+            class: 'bc-warn',
+            style: { padding: '14px', margin: '0' },
+            text: '这一页画不出来：' + ((err && (err.message || err)) || '未知错误') + '。把这句话发给作者，就能定位。',
+        }));
+    } catch { /* 连错误都画不出来就算了 ✓ */ }
 }
 
 /**
@@ -3725,7 +3878,7 @@ function renderSettingsPane(force = false) {
         ['基础', [['general', '常规'], ['calendar', '时间与日历'], ['basicInfo', '用户角色基础信息'], ['avatar', '头像外观'], ['stages', '阶段插图']]],
         // 这一组装的是两样东西：**给 AI 的规则**（规则补丁）+ **推演结果的记录**（记录档案）
         //   ⇒ 名字「补丁与档案」（小项：规则补丁 / 记录档案 ✓）
-        ['补丁与档案', [['modules', '规则补丁'], ['archive', '记录档案'], ['ach', '成就记录']]],
+        ['补丁与档案', [['modules', '规则补丁'], ['codex', '种族图鉴'], ['archive', '记录档案'], ['ach', '成就记录']]],
         // ★ 设置里面的推演与追踪拆成两个：一个是推演、一个是追踪 ✓
         // ⚠️ 组名**不许也叫「推演」**：组名和项目名一模一样时，清单里会连着出现两个「推演」
         //   （2026-10-31 她手机截图里就长这样，看着像重复渲染 ✗）⇒ 组名写全「推演与追踪」✓
@@ -3751,6 +3904,7 @@ function renderSettingsPane(force = false) {
         const keep = keepScroll ? scrollTopOf(content) : 0;
         const rebuild = () => { refreshAll(); show(which, true); };
         const refresh = () => refreshAll();
+        try {
         if (which === 'modules') renderModulesTab(content, { refresh, rebuild });
         else if (which === 'judge') renderJudgeTab(content, refresh, rebuild, { openTab });
         else if (which === 'tracking') renderTrackingTab(content, refresh, rebuild);
@@ -3773,6 +3927,8 @@ function renderSettingsPane(force = false) {
         });
         else if (which === 'archive') renderArchiveTab(content, { refresh, rebuild });
         else if (which === 'ach') renderAchTab(content, { refresh, rebuild });
+        // ★ 种族图鉴 —— 第一批只有目录（还没接判定 / 提示词 ✓）
+        else if (which === 'codex') renderCodexTab(content, { refresh, rebuild });
         else renderSettingsTab(content, refresh, rebuild, {
             toggleTheme, resetPanelPosition, resetFabPosition,
             onFabChange: applyFabLook,
@@ -3798,6 +3954,11 @@ function renderSettingsPane(force = false) {
             snapPanelTop: () => snapPanel('top'),
             snapPanelBottom: () => snapPanel('bottom'),
         });
+        } catch (e) {
+            // ★ 2026-11-08：子页画一半抛错时把原因写在这一页上（别让人只看到一片空白 ✓）
+            console.warn('[Bodycord] 设置子页渲染失败：' + which, e);
+            paintPaneError(content, e);
+        }
 
         setScrollTopOf(content, keep);
     };
@@ -4198,6 +4359,9 @@ function buildKnownFactsBox(t) {
     const setPregnant = (mode) => {
         // 新的一胎 / 撤销：手动意识状态是上一胎的，一起交回自动 ✓
         try { clearAwarenessManualOf(key); } catch { /* 忽略 */ }
+        // ★ 2026-11-07：这里换的是「这一胎」⇒ 旧的孕周起点（植入 / 滞育的着床日）
+        //   必须一起清掉，不然新的一胎会接着上一个起点算孕周 ✗
+        try { setImplantDateOf(key, ''); } catch { /* 忽略 */ }
         const day = daysOf();
         if (day !== null && day > 0) { try { setCycleDayOf(key, day, today()); } catch { /* 忽略 */ } }
         if (!t.vars || typeof t.vars !== 'object') t.vars = {};
@@ -4223,6 +4387,7 @@ function buildKnownFactsBox(t) {
                 delete t.heritageTry;
                 delete t.heritageGiveUp;
                 delete t.heritageRolls;
+                if (t.vars && t.vars.impregnator_xeno != null) delete t.vars.impregnator_xeno;
                 if (t.vars && t.vars.impregnator_side != null) delete t.vars.impregnator_side;
             } catch { /* 忽略 */ }
             // ★ 2026-10-23（她报：设为未孕后气泡还挂着"已着床完成"）——
@@ -5096,6 +5261,10 @@ function cycleDayBox(t) {
         }
     } catch { /* 读不到就照旧 ✓ */ }
     const hint = h('div', { class: 'bc-hint' });
+    // ★ 2026-11-08 产后恢复：这一格照样能改 —— 改了就等于「以玩家为准」，
+    //   当场结束恢复期（跟剧情明说月经来了是同一条规矩 ✓）
+    let ppNow = null;
+    try { ppNow = postpartumOf(t.key); } catch { ppNow = null; }
     const paint = (v) => {
         const d = Math.round(Number(v));
         if (!Number.isFinite(d) || d <= 0) { hint.textContent = '填一个大于 0 的整数'; return; }
@@ -5116,6 +5285,11 @@ function cycleDayBox(t) {
         paint(v);
         const d = Math.round(Number(v));
         if (Number.isFinite(d) && d > 0) {
+            // 产后恢复期里手改 ⇒ 以玩家为准：先结束恢复期，再落这个天数 ✓
+            if (ppNow && ppNow.active) {
+                try { clearPostpartumFor(t.key); } catch { /* 清不掉不影响写入 */ }
+                ppNow = null;
+            }
             setCycleDayOf(t.key, d);
             try { refreshRaw({ force: true }); } catch { /* 忽略 */ }
         }
@@ -5123,6 +5297,12 @@ function cycleDayBox(t) {
 
     if (now === null) hint.textContent = '还没有周期状态，下一次推演会按「周期起始」那档种上';
     else paint(now);
+    // 恢复期的两句提示（放在 paint 之后，不然会被它覆盖 ✓）
+    if (ppNow && ppNow.active) {
+        hint.textContent = `现在在产后恢复：产后第 ${ppNow.dayNo} 天，`
+            + `还有 ${ppNow.left} 天恢复周期（恢复日 ${ppNow.endDate}）。`
+            + '这一段没有月经、没有排卵窗口。改这一格等于直接结束恢复期';
+    }
     return h('div', {}, field('现在处于周期第几天', input, hint));
 }
 

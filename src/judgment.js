@@ -25,6 +25,8 @@
 import { rollOne, currentPool, getLastUsage, recordUsage, poolSlotTakenBy } from './dice.js';
 // 精子存活期的范围可配（settings.js 只依赖 modules/st，不会循环 ✓）
 import { settings, implantRangeOf } from './settings.js';
+// ★ 2026-11-06（第三批）：着床天数从图鉴条目读（读不出才用设置页那两格）✓
+import { readImplantDaysOf } from './codex-values.js';
 
 /** 现成预设的 id（那边的 DICE_PRESETS 改了名字，这里要跟着改） */
 const ID_FERTILIZE = 'D100_1';   // 受精判定 · 1d100
@@ -54,16 +56,20 @@ export function rollImplantJudge() {
 
 /**
  * 掷一次着床天数随机数（1-5），并折算成 6-10 天
+ * ★ 2026-11-06（第三批）：区间先看**图鉴条目**（按这个对象那一族），空着才用设置页那两格 ✓
  */
-export function rollImplant() {
+export function rollImplant(key = null) {
     // ★ 改成「在区间里均匀掷」（2026-10-20）：原来固定 1d5 → 6~10 天，只有 5 个可能值，
     //   连着几次同一天数看着就很可疑（实测三次都 8 天）；现在区间可调，值就是天数 ✓
     //   ⚠️ 依旧是**真随机**：区间里每天概率一样，不做任何概率倾斜 ✓
+    // ★ 2026-11-07：夹的上界从 60 放到 400 —— 熊那种**滞育**就写着床 130-170 天，
+    //   原来那道 60 天的卡口会把它压回 60，滞育根本填不进去 ✗
+    //   （60 天以上在 derive.js 里会被当成滞育：孕期从着床那天算 ✓）
     let lo = 6, hi = 10;
     try {
-        const st = settings();
-        lo = Math.max(1, Math.min(60, Math.round(Number(st.implantDaysMin) || 6)));
-        hi = Math.max(lo, Math.min(60, Math.round(Number(st.implantDaysMax) || 10)));
+        const r = readImplantDaysOf(key);
+        lo = Math.max(1, Math.min(400, Math.round(Number(r.lo) || 6)));
+        hi = Math.max(lo, Math.min(400, Math.round(Number(r.hi) || 10)));
     } catch { /* 读不到就用默认 6~10 */ }
     const span = hi - lo + 1;
     const days = span <= 1 ? lo : (lo + (fallbackRoll(span) - 1));
@@ -173,8 +179,9 @@ export function drawFromPool(label = '致孕方锁定') {
  * 执行一次受精判定。
  *
  * @param {number} rate 判定当时的累计受孕率（百分数，如 52.5）
+ * @param {string} key  对象键（着床天数要按这一族从图鉴里读 ✓）
  */
-export function runFertilizationJudgment(rate) {
+export function runFertilizationJudgment(rate, key = null) {
     try {
         const r0 = Number(rate);
         if (!Number.isFinite(r0)) return { ok: false, error: '累计受孕率不是数字' };
@@ -201,7 +208,7 @@ export function runFertilizationJudgment(rate) {
             }
             // ⚠️ 没着床也照样掷「着床天数」：那是**这颗受精卵预计的着床日**，
             //   也是"到哪天才能确认没成"的日子（提醒 / 喂回给模型都拿它当揭晓日 ✓）
-            implantRoll = rollImplant();
+            implantRoll = rollImplant(key);
             implantDays = implantRoll.days;
         }
 

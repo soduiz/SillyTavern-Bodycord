@@ -13,13 +13,17 @@
  * 这里也照样显示——你填过的东西不该因为开关而看不见。
  */
 
-import { moduleText, moduleTextRaw, setModuleText, settings, save, CYCLE_RATE_DEF, ACH_LEN_DEF, PROT_COEF_DEF, AWARENESS_TIER_DEF, ZONE_LV_DEF, zoneParamsOf, parseZoneRows, serializeZoneRows, stripLegacyTailBlocks, BODY_COEF_RE, BODY_COEF_OLD_RE, RACE_LINE_RE, RACE_READ_NEW_RE, RACE_READ_OLD_RE, postpartumParamsOf, fetusCountTableOf, fetusSexRangeOf, fetusOvumRangeOf, fetusMixRangeOf, implantRangeOf, talentTierTableOf, dominantSourceRangeOf } from './settings.js';
+import { moduleText, moduleTextRaw, setModuleText, settings, save, CYCLE_RATE_DEF, ACH_LEN_DEF, PROT_COEF_DEF, AWARENESS_TIER_DEF, ZONE_LV_DEF, zoneParamsOf, parseZoneRows, serializeZoneRows, stripLegacyTailBlocks, BODY_COEF_RE, BODY_COEF_OLD_RE, RACE_LINE_RE, RACE_READ_NEW_RE, RACE_READ_OLD_RE, postpartumParamsOf, talentTierTableOf, dominantSourceRangeOf, parseBodyCycleParams, fetusParamsOf, setFetusParams } from './settings.js';
 import {
     zoneTextOf, setZoneTextOf, setZonePresetOf,
     isUserKey, fertilityTierOf, setFertilityTierOf, fertilityManualOf, setRaceManualOf,
     awarenessTierIdOf, setAwarenessTierIdOf, noteAwarenessEvent,
+    bodyRaceSetOf, setBodyRaceSetOf, raceJudgeOf,
 } from './store.js';
 import { MODULE_MAP } from './modules.js';
+// ★ 改了「这个角色的种族」的名字 ⇒ 原来那条图鉴绑定要作废（第三批会按绑定算数值 ✓）
+import { codexIdOf, setCodexIdOf } from './codex-bind.js';
+import { codexEntry } from './codex.js';
 
 // ---------------------------------------------------------------------------
 // 规格
@@ -47,40 +51,33 @@ const OVU_OLD_READ = /排卵日第\s*(\d+)\s*天/;
 const BASE_READ = BODY_COEF_RE;          // ★ 乙-4：正则从 settings.js 来（一份解析 ✓）
 const BASE_OLD_READ = BODY_COEF_OLD_RE;
 const PEAK_READ = /排卵日当天临时提升至\s*([\d.]+)/;
-const CYCLE_WRITE = /(周期长度：\s*)\d+\s*天/;
+const CYCLE_WRITE = /(周期长度：\s*)(?:\d+|@@CYCLE_LEN@@)(\s*天)/;
 const CYCLE_OLD_WRITE = /(周期：\s*)\d+\s*天([，,]\s*排卵日第\s*)\d+\s*天/;
-const OVU_WRITE = /(排卵日：\s*)\d+/;
+const OVU_WRITE = /(排卵日：\s*)(?:\d+|@@CYCLE_OVU@@)/;
 const BASE_WRITE = /(日常体质系数：\s*)[\d.]+/;
 const BASE_OLD_WRITE = /(日常体质系数\s*)[\d.]+(\s*[，,]\s*排卵日当天临时提升至\s*)[\d.]+/;
 const PEAK_WRITE = /(排卵日当天临时提升至\s*)[\d.]+/;
 
 // ---------------------------------------------------------------------------
-// 「这个角色的种族」那一格的锚点（改口径）
+// 「这个角色的种族」那一格
 //
-// 人类不是体质、是种族，改成"种族为 XX"这种更合适（需要锚点的话）✓
+// ★ 2026-11-08：这格已经**不写正文**了（正文那行删掉了，改存档案：`bodyRaceSetOf` / `setBodyRaceSetOf`）——
+//   下面这三个读锚点只留给**老存档**：玩家的正文里可能还留着那行，读它当兜底 ✓
 //   · 最新写法（改排版后）：独占一行 `种族：人类`
 //   · 上一版：`{{user}} 的种族为人类`
 //   · 老写法（别人存档里可能还留着）：`{{user}} 为人类体质`（中间还可能夹一个性别词）
 //
-// ⚠️ 三种都要认、都要能改 —— 老存档不能因为换了个说法就读不出来 / 写不进去 ✗
-// ⚠️ 同一套判据还在 `settings.js` 的 `isNumbersOnlyDiff` 里（它要判断"是不是只改了数值面板那些值"）；
-//    那边不能 import 这里（会循环：params.js 已经 import 了 settings.js）⇒ 照旧两处各写一份，
-//    靠 自测脚本 拿同一段文本走两边比对 ✓
+// ⚠️ 写的那一侧（RACE_LINE_WRITE / RACE_LINE_KILL / RACE_WRITE_*）已经删了 —— 不再往正文里写名字 ✓
 // ---------------------------------------------------------------------------
 const RACE_LINE_READ = RACE_LINE_RE;          // ★ 正则从 settings.js 来（一份解析 ✓）
 const RACE_READ_NEW = RACE_READ_NEW_RE;
 const RACE_READ_OLD = RACE_READ_OLD_RE;
-const RACE_LINE_WRITE = /(种族：\s*)[^\s，,。]+/;
-// 清空种族名时用：**整行删掉**（含换行；留半截「- 种族：」更糟 ✗）✓
-const RACE_LINE_KILL = /^[^\n]*种族：\s*[^\s，,。]+[^\n]*(?:\n|$)/m;
-const RACE_WRITE_NEW = /(\{\{user\}\}\s*的种族为\s*)[^\s，,。]+/;
-const RACE_WRITE_OLD = /(\{\{user\}\}\s*为\s*)[^\s，,。]+?(\s*(?:女性|男性|雌性|雄性|扶她)?\s*体质)/;
 
 export const PARAM_SPECS = [
     {
         moduleId: 'body_base',
         title: '身体基础参数',
-        desc: '这个身体的基础周期。改这里等于改「身体补丁」里的数值，正文描写会跟着变',
+        desc: '这个身体的基础周期。默认跟这个角色的种族（图鉴里那一族的平均值）；在这里填了就只改这个人',
         fields: [
             { key: 'cycle', label: '周期长度', suffix: '天', type: 'number' },
             // ⚠️ suffix 里**不许自带括号** —— 渲染时统一套一对（ui-params.js:125）
@@ -90,65 +87,78 @@ export const PARAM_SPECS = [
             { key: 'base', label: '日常体质系数', type: 'number' },
             { key: 'peak', label: '排卵日暴击', suffix: '当天临时提升至', type: 'number' },
             // ★ 种族名字（这角色是什么种族）—— 只影响叫法，不影响规则 ✓
-            //   「种族用哪条判定规则」是另一件事，在「异种扩展包 · 西方与通用」里 ✓
+            //   「种族用哪条判定规则」是另一件事：2026-11-08 起由这一族在图鉴里那条决定 ✓
             { key: 'raceName', label: '这个角色的种族', type: 'text', wide: true },
             // ⚠️ 「月经表现」**不在这里** ✗ ——
             //   它在**补丁页顶部的全局「周期模式」切换**里 ✓
             //   （曾经在这里放过一个 select，那和全局切换控制同一件事 ⇒ 必然打架 ✓）
         ],
-        read: (t) => {
+        read: (t, targetKey) => {
             // 周期长度 / 排卵日：先认新排版那两行，再认老的一句（老存档 ✓）
             const cyc = t.match(CYCLE_READ) || t.match(CYCLE_OLD_READ);
             const ov = t.match(OVU_READ) || t.match(OVU_OLD_READ);
             const bs = t.match(BASE_READ) || t.match(BASE_OLD_READ);
             const pk = t.match(PEAK_READ);
             if (!cyc && !bs) return null;
-            // 种族名：三种写法都认（见文件顶上那段说明 ✓）
-            const rn = t.match(RACE_LINE_READ) || t.match(RACE_READ_NEW) || t.match(RACE_READ_OLD);
+            // ★ 2026-11-08：种族名不再存在正文里（正文那行已删）——
+            //   先读档案里那格；再退到「绑的图鉴条目名」；再退到推演报的；
+            //   老存档正文里还留着那行的，最后才读它 ✓
+            let rn = '';
+            try { rn = bodyRaceSetOf(targetKey || null); } catch { rn = ''; }
+            if (!rn) {
+                try {
+                    const bid = codexIdOf(targetKey || null);
+                    if (bid) rn = String(codexEntry(bid)?.name || '');
+                } catch { rn = ''; }
+            }
+            if (!rn) {
+                try { rn = String(raceJudgeOf(targetKey || null)?.asked || '').trim(); } catch { rn = ''; }
+            }
+            if (!rn) {
+                const m = t.match(RACE_LINE_READ) || t.match(RACE_READ_NEW) || t.match(RACE_READ_OLD);
+                rn = m ? m[1].trim() : '';
+            }
             return {
                 cycle: cyc ? cyc[1] : '',
                 ovu: ov ? ov[1] : '',
                 base: bs ? bs[1] : '',      // 日常体质系数
                 peak: pk ? pk[1] : '',      // 排卵日暴击
-                raceName: rn ? rn[1].trim() : '',
+                raceName: rn,
             };
         },
         write: (t, v) => {
             let out = t;
-            if (String(v.cycle ?? '').trim() !== '' || String(v.ovu ?? '').trim() !== '') {
+            // ★ 2026-11-08：这两格现在是**个人值** —— 填了写数字，清空就写回占位符（= 跟图鉴这一族）
+            const hasField = Object.prototype.hasOwnProperty.call(v, 'cycle')
+                || Object.prototype.hasOwnProperty.call(v, 'ovu');
+            const hasCycle = String(v.cycle ?? '').trim() !== '';
+            const hasOvu = String(v.ovu ?? '').trim() !== '';
+            if (hasCycle || hasOvu) {
                 // ★ 这两格以前没有边界 ⇒ 排卵日填得比周期还大时，
                 //   「排卵窗口最后一天」永远不出现、受精判定**永不触发**（推演出来的）✗
                 //   夹一道：周期 5~90 天，排卵日 1~（周期 − 2）
-                const cyc = Math.max(5, Math.min(90, Math.round(Number(v.cycle) || 28)));
-                const ovu = Math.max(1, Math.min(Math.round(Number(v.ovu) || 14), cyc - 2));
+                const cur = parseBodyCycleParams(out);
+                const cyc = Math.max(5, Math.min(90, Math.round(Number(hasCycle ? v.cycle : cur.cycle) || 28)));
+                const ovu = Math.max(1, Math.min(Math.round(Number(hasOvu ? v.ovu : cur.ovu) || 14), cyc - 2));
                 // 新排版：两行各换各的；老排版：一句里两个一起换（老存档照样能改 ✓）
                 if (CYCLE_WRITE.test(out)) {
-                    out = out.replace(CYCLE_WRITE, `$1${cyc}天`);
-                    if (OVU_WRITE.test(out)) out = out.replace(OVU_WRITE, `$1${ovu}`);
+                    if (hasCycle) out = out.replace(CYCLE_WRITE, `$1${cyc}$2`);
+                    if (hasOvu && OVU_WRITE.test(out)) out = out.replace(OVU_WRITE, `$1${ovu}`);
                 } else {
                     out = out.replace(CYCLE_OLD_WRITE, `$1${cyc}天$2${ovu}天`);
                 }
+            } else if (hasField) {
+                // 两格都清空 ⇒ 恢复「跟图鉴这一族」：字面数字换回占位符（正文里没有字面数字就一个字节不动 ✓）
+                if (CYCLE_WRITE.test(out)) out = out.replace(CYCLE_WRITE, '$1@@CYCLE_LEN@@$2');
+                if (OVU_WRITE.test(out)) out = out.replace(OVU_WRITE, '$1@@CYCLE_OVU@@');
             }
             if (String(v.base ?? '').trim() !== '' || String(v.peak ?? '').trim() !== '') {
                 if (BASE_WRITE.test(out)) out = out.replace(BASE_WRITE, `$1${v.base || 1.0}`);
                 else out = out.replace(BASE_OLD_WRITE, `$1${v.base || 1.0}$2${v.peak || 1.5}`);
                 out = out.replace(PEAK_WRITE, `$1${v.peak || 1.5}`);
             }
-            // 种族名：新排版那行优先；再退到「的种族为X」；最后才是老写法 ✓
-            // ⚠️ **明确传了空串 = 清空那一格**：以前空值直接跳过 ⇒
-            //   界面看着清空了、底层那行还在，重建设置页又冒出来 ✗
-            //   ⚠️⚠️ 但「**没传这一格**」和「传了空串」必须分开（写周期长度时传的那份
-            //   压根没有 raceName ⇒ 一个字节都不许动，否则会把种族那行顺手抹掉 ✗
-            //   —— 这一条是单元测试当场抓出来的）
-            const hasRaceField = Object.prototype.hasOwnProperty.call(v, 'raceName');
-            const raceName = String(v.raceName ?? '').trim();
-            if (raceName) {
-                if (RACE_LINE_WRITE.test(out)) out = out.replace(RACE_LINE_WRITE, `$1${raceName}`);
-                else if (RACE_WRITE_NEW.test(out)) out = out.replace(RACE_WRITE_NEW, `$1${raceName}`);
-                else out = out.replace(RACE_WRITE_OLD, `$1${raceName}$2`);
-            } else if (hasRaceField) {
-                out = out.replace(RACE_LINE_KILL, '');       // 整行删掉（留半截「- 种族：」更糟 ✗）
-            }
+            // ★ 2026-11-08：种族名已经不住正文里了（正文那行删了）——
+            //   那一格改由 writeParams 写档案（见下面的 setBodyRaceSetOf）✓
             return out;
         },
     },
@@ -354,7 +364,7 @@ export const PARAM_SPECS = [
         //   但写回走的是设置 ⇒ 用同一个标记让语义一致 ✓
         fromSettings: true,
         title: '受孕基础率与防护系数',
-        desc: '各阶段每次内射的基础受孕率；下面那 8 格是各情境的防护乘数（计算和提示词正文都用这些数）',
+        desc: '各阶段每次内射的基础受孕率；下面那 8 格是各情境的防护乘数（计算和提示词正文都用这些数）。最下面那格是产后恢复的天数：轻松 42 天（默认），现实 42 到 180 天，也可以选自定义自己填两格；图鉴条目里填了这一项的族按条目走，个人还能单独调',
         fields: [
             { key: 'menstrual', label: '经期', suffix: '%', type: 'number' },
             { key: 'follicular', label: '卵泡期', suffix: '%', type: 'number' },
@@ -430,7 +440,8 @@ export const PARAM_SPECS = [
             for (const [sk, n] of Object.entries(next)) {
                 // ⚠️ 比之前把两边都归一成数字：面板传进来的是**字符串**（"8"），
                 //   直接 `!==` 比数字 8 会永远"变了"⇒ 每次都回"已保存"（小事，但读数会骗人 ✓）
-                if (Number(s[sk]) !== n) { s[sk] = n; changed = true; }
+                const same = (typeof n === 'string') ? (String(s[sk] ?? '') === n) : (Number(s[sk]) === n);
+                if (!same) { s[sk] = n; changed = true; }
             }
             if (changed) save();
             return changed;                                          // 没变 ⇒ 面板显示"内容没有变化" ✓
@@ -438,16 +449,19 @@ export const PARAM_SPECS = [
     },
     {
         // ★★ 「怀孕判定模块」那几张概率表——
-        //   起因：这些数住在**正文**里，而这张卡是判定类模块 ⇒ 默认「只能改数值」档下正文被锁住，
-        //   那几个数实际上**改不了**（去面板上找也找不到入口 ✗）
-        //   ⇒ 照「受孕基础率与防护系数」那套做成数值面板：**面板格子与正文那几行是同一份数据**，
-        //     默认档下就能改，而且以后插件更新内置正文时数字照旧留得住（`rebaseNumbers` ✓）
-        //   ⚠️ 真相源是**正文**（不是设置）：`read` 走 settings.js 里那几个现成解析器
-        //     （判定那一侧读的也是正文 ⇒ 一处事实源 ✓），`write` 只把数字换掉。
+        //   ★ 2026-11-08（规则剥离第二步）：这几个数原来住在**正文**里（面板改的就是那几行），
+        //     正文里再留一张人类 D100，模型就会照着人类的数抄 ✗
+        //     ⇒ 数字搬到设置（`settings().fetus`），判定与面板读同一份；
+        //       正文里那几张表已经删了，只留"由系统判、你照抄" ✓
+        //   ⚠️ 老存档：设置里没有这一块时仍然从正文读（见 settings.js 的 fetusXxxOf ✓）
         //   ⚠️ 同一个 moduleId 只能有一条 spec（`specFor()` 用 `find` ⇒ 两条的话后一条渲染不出来）
         moduleId: 'pregnancy_module',
         title: '怀孕与胎儿的概率',
-        desc: '胎数怎么分、同卵占多少、受精后有多少能着床、性别怎么分。这几格都是 1-100 的分界：随机数落在哪一段就是哪个结果。计算用的就是正文里那几行，改这里等于改它们。着床成功率那一格填 80 就是 80%（掷 1-100，80 及以下着床成功）；填 100 就是受精成功必定怀上。混合胎概率填 5 就是 5%（只有 3 胎以上、且判成异卵时才用；混合＝一对同卵＋其余异卵）。性别那一行是人类的写法：人类的孩子写男 / 女，非人类写雄 / 雌。天赋与显性来源那两张表在下面那张卡里',
+        // ★ 2026-11-08（规则剥离第二步）：真相源搬到**设置**（settings().fetus）——
+        //   正文里那几张表已经删了（插件按图鉴掷、模型只照抄），面板改的是设置里这一份 ✓
+        //   老存档那条"从正文读"的路还在 settings.js 里（fetusXxxOf 先看设置、没有再读正文）✓
+        fromSettings: true,
+        desc: '胎数怎么分、同卵占多少、受精后有多少能着床、性别怎么分。这几格都是 1-100 的分界：随机数落在哪一段就是哪个结果。图鉴里那一条写了的族以条目为准（见「图鉴」页），这里改的是没写那一项的族，也就是全局默认。着床成功率那一格填 80 就是 80%（掷 1-100，80 及以下着床成功）；填 100 就是受精成功必定怀上。混合胎概率填 5 就是 5%（只有 3 胎以上、且判成异卵时才用；混合＝一对同卵＋其余异卵）。性别那一行是人类的写法：人类的孩子写男 / 女，非人类写雄 / 雌。天赋与显性来源那两张表在下面那张卡里',
         fields: [
             { key: 'count1', label: '单胎上限', type: 'number' },
             { key: 'count2', label: '双胎上限', type: 'number' },
@@ -461,77 +475,13 @@ export const PARAM_SPECS = [
             { key: 'sex', label: '男性上限', type: 'number' },
         ],
         read: () => {
-            const rows = fetusCountTableOf();
-            const at = (n) => { const r = rows.find((x) => x.n === n); return r ? String(r.to) : ''; };
-            const ov = fetusOvumRangeOf();
-            const mx = fetusMixRangeOf();
-            const sx = fetusSexRangeOf();
-            // 着床那一条：认得出区间就用区间上界；认不出但正文写着「1-100 着床成功」
-            //   （手改过的写法）⇒ 也是 100 ＝ 没有失败档 ✓
-            let im = '';
-            const r = implantRangeOf();
-            if (r) im = String(r.ok[1]);
-            else if (/1-100\s*着床成功/.test(String(moduleText('pregnancy_module') || ''))) im = '100';
+            const p = fetusParamsOf();
             return {
-                count1: at(1), count2: at(2), count3: at(3),
-                ovum: ov ? String(ov.same[1]) : '',
-                mix: mx ? String(100 - mx.none[1]) : '',
-                implant: im,
-                sex: sx ? String(sx.male[1]) : '',
+                count1: String(p.count1), count2: String(p.count2), count3: String(p.count3),
+                ovum: String(p.ovum), mix: String(p.mix), implant: String(p.implant), sex: String(p.sex),
             };
         },
-        write: (t, v) => {
-            const num = (x) => {
-                const s = String(x ?? '').trim();
-                if (!s) return null;
-                const n = Number(s);
-                return Number.isFinite(n) ? Math.round(n) : null;
-            };
-            const c1 = num(v.count1), c2 = num(v.count2), c3 = num(v.count3);
-            const ov = num(v.ovum), im = num(v.implant), sx = num(v.sex);
-            // ★ 混合胎概率（%）：0 = 关，1~99；留空 ⇒ 不动那一行 ✓
-            const mx = num(v.mix);
-            const within = (x, lo, hi) => x !== null && x >= lo && x <= hi;
-            // 有一格不合法 / 区间倒挂 ⇒ **一个字都不动**（宁可"没变化"，也不能写出倒挂的表 ✗）
-            if (!within(c1, 1, 99) || !within(c2, 1, 99) || !within(c3, 1, 99)
-                || !(c1 < c2 && c2 < c3)) return t;
-            if (!within(ov, 1, 99) || !within(im, 1, 100) || !within(sx, 1, 99)) return t;
-            if (mx !== null && !within(mx, 0, 99)) return t;
-            let out = t;
-            out = out.replace(
-                /(D100\s*[：:]\s*)1-\d+(\s*单胎，)\d+-\d+(\s*双胎，)\d+-\d+(\s*三胎，)\d+-100(\s*四胎或以上[^\n]*)/,
-                (m, a, b, c, d, e) => `${a}1-${c1}${b}${c1 + 1}-${c2}${c}${c2 + 1}-${c3}${d}${c3 + 1}-100${e}`);
-            out = out.replace(
-                /(同卵判定（D100）\s*[：:]\s*)1-\d+(\s*同卵，)\d+-100(\s*异卵)/,
-                (m, a, b, c) => `${a}1-${ov}${b}${ov + 1}-100${c}`);
-            // ★ 2026-10-23：混合胎那一行（老正文没有 ⇒ 补在同卵判定后面 ✓）
-            if (mx !== null) {
-                const safe = 100 - mx;                 // 1..safe 不混合，safe+1..100 混合
-                const line = `混合胎判定（D100）：1-${safe} 不混合，${safe + 1}-100 混合`;
-                if (/混合胎判定（D100）/.test(out)) {
-                    out = out.replace(
-                        /(混合胎判定（D100）\s*[：:]\s*)1-\d+(\s*不混合，)\d+-100(\s*混合)/,
-                        (m, a, b, c) => `${a}1-${safe}${b}${safe + 1}-100${c}`);
-                } else {
-                    out = out.replace(/(同卵判定（D100）[^\n]*\n)/, `$1${line}\n`);
-                }
-            }
-            out = out.replace(
-                /(着床判定（D100）\s*[：:]\s*)1-\d+(\s*着床成功，)\d+\s*(?:-\s*\d+)?\s*(?:及以上\s*)?(着床失败)/,
-                // ⚠️ 上限填 100 ＝ **没人够得着失败**，写成「101 及以上着床失败」。
-                //   为什么不写成「永远不会失败」那种好读的话：那一改就**不是纯数字改动**了 ⇒
-                //   这条补丁会被判成"改过正文"⇒ 整条冻结、玩家的改动不生效 ✗（玩家自己踩到过）
-                //   为什么不写成 `101-100`：那是倒挂的区间，看着像坏了 ✗
-                (m, a, b, c) => `${a}1-${im}${b}${im + 1} 及以上${c}`);
-            out = out.replace(
-                // ★ 三种写法都要认（新版「判为男」／老版「为雄性」／手改过的「为男性」）——
-                //   只认一种的话，玩家一点这颗格子就"没反应"，看起来像坏了 ✗
-                /(（1-)\d+(\s*判?为(?:雄性|男性|男)[，,])\d+(-100\s*判?为(?:雌性|女性|女)）)/,
-                (m, a, b, c) => `${a}${sx}${b}${sx + 1}${c}`);
-            // ★ 2026-10-24（她的判断）：天赋五档 / 显性来源这两张表属于「血脉遗传特质」，
-            //   已经搬到那张卡里去了（见下面那条 spec）——这里不再写它们 ✓
-            return out;
-        },
+        write: (t, v) => setFetusParams(v),
     },
     {
         // ★ 2026-10-24：天赋五档 ＋ 显性来源（血脉遗传那一轮由插件掷，同卵组共一颗、异卵各一颗）
@@ -867,6 +817,75 @@ export const PARAM_SPECS = [
             return out;
         },
     },
+    {
+        // ★★ 2026-11-08（她定的）：产后恢复**单独一张卡** ——
+        //   原来这三格塞在「受孕基础率与防护系数」里，她要求剥出来单独做一条，
+        //   理由是「有人不想要」⇒ 这张卡的最上面挂一个总开关，关掉就整条不生效
+        //   （分娩那轮照旧直接拨回周期第 1 天，跟加这个功能之前一样）。
+        //   ⚠️ 它**不是** modules.js 里的模块：这一块没有要发给 AI 的规则正文，
+        //     全是插件自己算的 ⇒ 用虚 id `__postpartum__` 走参数面板那套
+        //     （跟成就那条 `__ach__` 一个套路 ✓）
+        //   ⚠️ 真相源是**设置**（不是正文）⇒ fromSettings ✓
+        moduleId: '__postpartum__',
+        fromSettings: true,
+        title: '产后恢复',
+        desc: '生完那一段：周期暂停，月经还没有回来，到恢复日那天接回周期第 1 天。这一段仍然能怀：现实里排卵常常比第一次月经先恢复，所以默认就允许这一段受孕（按「无月经」那一档的基础率算）。想更贴近现实，把最下面那格「排卵提前恢复」填几天（比如 14），最后这几天就按受孕窗口那一档算；填 0 就是把排卵和月经绑在同一天。恢复天数三层取值：个人单独调 > 图鉴条目里「产后恢复」那一格 > 这里。',
+        fields: [
+            {
+                key: 'postpartumPreset', label: '恢复天数', type: 'select', options: [
+                    ['easy', '轻松：42 天（默认）'],
+                    ['real', '现实：42 到 180 天'],
+                    ['custom', '自定义（按下面两格）'],
+                ],
+            },
+            { key: 'postpartumMin', label: '自定义 · 最短', suffix: '天', type: 'number' },
+            { key: 'postpartumMax', label: '自定义 · 最长', suffix: '天', type: 'number' },
+            // ★ 2026-11-08（她指出的现实）：排卵常常比第一次月经先回来 ⇒
+            //   填几天就把恢复期最后这几天算"排卵已恢复"；默认 0 ＝ 简化成跟月经同一天 ✓
+            { key: 'postpartumOvulationDays', label: '排卵提前恢复（0 ＝ 跟月经同一天）', suffix: '天', type: 'number' },
+        ],
+        defaults: () => ({ postpartumPreset: 'easy', postpartumMin: '42', postpartumMax: '42', postpartumOvulationDays: '0' }),
+        read: () => {
+            const s = settings();
+            return {
+                postpartumPreset: String(s.postpartumPreset || 'easy'),
+                postpartumMin: String(Number.isFinite(Number(s.postpartumMin)) ? s.postpartumMin : 42),
+                postpartumMax: String(Number.isFinite(Number(s.postpartumMax)) ? s.postpartumMax : 42),
+                postpartumOvulationDays: String(Number.isFinite(Number(s.postpartumOvulationDays)) ? s.postpartumOvulationDays : 0),
+            };
+        },
+        write: (t, v) => {
+            const s = settings();
+            // 先全验一遍（有一格不合法 ⇒ 一个字都不动 ✓）
+            const preset = String(v.postpartumPreset || '').trim();
+            if (!['easy', 'real', 'custom'].includes(preset)) return false;
+            const dayNum = (raw, def, max = 730) => {
+                const str = String(raw ?? '').trim();
+                if (str === '') return def;
+                const n = Math.round(Number(str));
+                return (Number.isFinite(n) && n >= 0 && n <= max) ? n : null;
+            };
+            const ppMin = dayNum(v.postpartumMin, 42);
+            const ppMax = dayNum(v.postpartumMax, 42);
+            // 「排卵提前恢复」夹 0 到 400 天（0 ＝ 跟月经同一天 ✓）
+            const ppOvu = dayNum(v.postpartumOvulationDays, 0, 400);
+            if (ppMin === null || ppMax === null || ppOvu === null) return false;
+            const next = {
+                postpartumPreset: preset,
+                postpartumMin: Math.min(ppMin, ppMax),
+                postpartumMax: Math.max(ppMin, ppMax),
+                postpartumOvulationDays: ppOvu,
+            };
+            let changed = false;
+            for (const [sk, n] of Object.entries(next)) {
+                // 档位那格是**文字**（easy / real / custom）⇒ 按字符串比 ✓
+                const same = (typeof n === 'string') ? (String(s[sk] ?? '') === n) : (Number(s[sk]) === n);
+                if (!same) { s[sk] = n; changed = true; }
+            }
+            if (changed) save();
+            return changed;
+        },
+    },
 ];
 
 export function specFor(moduleId) {
@@ -886,7 +905,9 @@ export function specFor(moduleId) {
 //   （除了数值也得给单独的重置 ✓ —— 早先"没登记的就不画那颗按钮"的口径已作废 ✗）
 // ---------------------------------------------------------------------------
 export const FIELD_DEFAULTS = {
-    body_base: () => ({ cycle: '28', ovu: '14', base: '1.0', peak: '1.5' }),
+    // ★ 2026-11-08：周期长度 / 排卵日这两格的「默认」不再是 28 / 14 ——
+    //   出厂正文是占位符，默认值来自图鉴里这一族的平均值 ⇒ 这一格的 ↩ = **清空**（跟种族）✓
+    body_base: () => ({ cycle: '', ovu: '', base: '1.0', peak: '1.5' }),
     period_patch: () => ({ days: '5' }),
     body_trace: () => ({ light: '1', mid: '3', heavy: '6', deep: '12' }),
     lactation_patch: () => ({ rate: '5-15', burst: '60-150', total: '300-500' }),
@@ -918,7 +939,7 @@ export const FIELD_DEFAULTS = {
     __ach__: () => ({ name: String(ACH_LEN_DEF.name), why: String(ACH_LEN_DEF.why), quip: String(ACH_LEN_DEF.quip) }),
     row_sex: () => ({ keep: '3' }),
     // ★ 怀孕与胎儿的概率（数值面板）：出厂值就是内置正文里那几个数 ✓
-    pregnancy_module: () => ({ count1: '78', count2: '94', count3: '98', ovum: '33', implant: '80', sex: '50' }),
+    pregnancy_module: () => ({ count1: '78', count2: '94', count3: '98', ovum: '33', mix: '5', implant: '80', sex: '50' }),
     // ★ 敏感带等级表现参考（2026-10-15）：6 格的默认值 ＝ **内置正文里那 6 行** ✓
     //   ⚠️ 取的是 `MODULE_MAP` 里的**内置正文**，不是 `moduleText()`（那个会把玩家改过的算进默认 ✗）
     zone_levels: () => {
@@ -1073,7 +1094,7 @@ export function normalizeAwarenessTier(word) {
 /**
  * 推演报了一个察觉档位 ⇒ 记下来（定过就不再问 ✓）。
  * ★ 改判通道：以后剧情 / 设定上有了更准的判断，模型可以再报一次，以新的为准 ✓
- *   （跟 `race` / `impregnator_side` 那两格同一条做法 ✓）
+ *   （跟 `race` / `impregnator_xeno` 那两格同一条做法 ✓）
  */
 export function applyAwarenessTierReport(key, word) {
     if (!key) return false;
@@ -1250,7 +1271,7 @@ export function readParams(spec, targetKey) {
     const t = textOf(spec, targetKey);
     if (!t) return null;
     try {
-        const v = spec.read(t);
+        const v = spec.read(t, targetKey);
         if (!v) return null;
         // 空值就算解析失败
         if (Object.values(v).every(x => !String(x).trim())) return null;
@@ -1275,12 +1296,27 @@ export function writeParams(spec, targetKey, values) {
     }
     const before = writeSourceOf(spec, targetKey);
     const after = spec.write(before, values);
-    // ★ 动过「这个角色的种族」那格就打个标记（所有编辑器都走这条 ⇒ 一网打尽 ✓）——
-    //   不然"选了人类（正好是出厂值）"会被当成"没改过" ✗
+    // ★ 2026-11-08：种族那格搬到档案里了（正文那行删了）——
+    //   写档案要单独算"变没变"，因为正文一个字节都没动 ✓
+    let sideChanged = false;
     if (spec?.moduleId === 'body_base' && values && ('raceName' in values)) {
+        const name = String(values.raceName ?? '').trim();
+        let prev = '';
+        try { prev = bodyRaceSetOf(targetKey || null); } catch { prev = ''; }
+        if (name !== prev) {
+            try { setBodyRaceSetOf(targetKey || null, name); sideChanged = true; } catch { /* 忽略 */ }
+        }
         try { setRaceManualOf(targetKey || null, true); } catch { /* 忽略 */ }
+        // ★ 名字改得跟绑的那条不一样了 ⇒ 绑定作废（名字写"骷髅"、绑着"人类"的话会算错 ✗）
+        try {
+            const boundId = codexIdOf(targetKey || null);
+            if (boundId) {
+                const be = codexEntry(boundId);
+                if (!be || be.name !== name) setCodexIdOf(targetKey || null, '');
+            }
+        } catch { /* 忽略 */ }
     }
-    if (after === before) return false;
+    if (after === before) return sideChanged;
     setModuleText(spec.moduleId, after, targetKey || null);
     return true;
 }

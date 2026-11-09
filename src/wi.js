@@ -31,6 +31,8 @@ import { wiOn, wiCharOn, wiGlobalOn, wiBookAllowed, wiEntryAllowed, wiDescOn, wi
 import { isExcluded } from './store.js';
 // ★ 「提示词模板的代码」渲染（选「乙」）—— 详见 pt-ejs.js 顶部那段说明
 import { hasEjs, ptRenderReady, renderEjsText } from './pt-ejs.js';
+// ★ 第七批：「设定来源」—— 对象自己绑的世界书条目（只读，现读现用 ✓）
+import { readBoundEntries } from './wi-bind.js';
 
 let _installed = false;
 
@@ -48,8 +50,12 @@ const _snap = {
 /** 最近一次"打包给推演"的结果（界面 / 诊断报告读它 ✓）
  *  ⚠️ `rendered` / `skipped` 是「提示词模板的代码」那一套的读数：
  *     rendered = 这一轮有几条是**渲染成正文之后**才发出去的；
- *     skipped  = 有几条含模板代码、但**没能渲染**（这一条一个字都没发 ✓） */
-let _last = { at: 0, count: 0, chars: 0, mode: '', books: 0, desc: 0, persona: 0, reason: '', rendered: 0, skipped: 0 };
+ *     skipped  = 有几条含模板代码、但**没能渲染**（这一条一个字都没发 ✓）
+ *  ★ 第七批：`bound` = 这一轮真正带上的「角色绑定条目」条数；
+ *     `boundMissing` = 绑了但本机找不到的条数（书被删 / 条目被删 ✓）；
+ *     `boundOff` = 绑了但被你排除掉的条数（排除表照旧生效 ✓） */
+let _last = { at: 0, count: 0, chars: 0, mode: '', books: 0, desc: 0, persona: 0, reason: '', rendered: 0, skipped: 0,
+    bound: 0, boundMissing: 0, boundOff: 0, boundTotal: 0 };
 
 function key() {
     try { return getChatKey(); } catch { return 'global'; }
@@ -85,6 +91,26 @@ export function characterDescription() {
         // `{{char}}` 换成角色名；`{{user}}` **保持原样**（推演契约里玩家本人就是写 {{user}} ✓）
         const nm = String(ch.name || c.name2 || '');
         if (nm) d = d.replace(/\{\{\s*char\s*\}\}/gi, nm);
+        return d;
+    } catch { return ''; }
+}
+
+/**
+ * 按**卡名**现取那一张卡的角色描述（2026-11-09：给对象绑角色描述用）——
+ * 只在内存里读，不写任何东西；卡没了 / 描述空 ⇒ 返回 ''（调用方据此报"找不到"，不拿旧副本冒充 ✓）
+ */
+export function cardDescriptionByName(name) {
+    const n = String(name || '').trim();
+    if (!n) return '';
+    try {
+        const c = getCtx() || {};
+        const list = Array.isArray(c.characters) ? c.characters : [];
+        const ch = list.find((x) => x && String(x.name || '').trim() === n) || null;
+        if (!ch) return '';
+        let d = String(ch.description || '').trim();
+        if (!d) return '';
+        // `{{char}}` 换成这张卡的名字；`{{user}}` 保持原样（推演契约里玩家本人就是写 {{user}} ✓）
+        d = d.replace(/\{\{\s*char\s*\}\}/gi, String(ch.name || n));
         return d;
     } catch { return ''; }
 }
@@ -248,6 +274,30 @@ export function currentBookNames() {
 }
 
 /**
+ * ★ 第七批：**库里全部世界书**（「设定来源」的挑选弹窗用 ✓）
+ *   为什么需要全部：绑定是"这个人的设定在哪本书里"，跟"这本书现在开没开"无关
+ *   （作者可能把角色设定单独放一本、平时不挂在卡上 ✓）。
+ *   ⚠️ 优先用酒馆给的 `getWorldInfoNames()`；老版本没有就退回 `world_names` / 当前在用的那几本 ✓
+ */
+export function allWiBookNames() {
+    const out = [];
+    try {
+        const c = getCtx() || {};
+        if (typeof c.getWorldInfoNames === 'function') {
+            const list = c.getWorldInfoNames();
+            if (Array.isArray(list)) out.push(...list);
+        }
+        if (!out.length && Array.isArray(c.world_names)) out.push(...c.world_names);
+        if (!out.length && typeof window !== 'undefined' && Array.isArray(window.world_names)) {
+            out.push(...window.world_names);
+        }
+    } catch { /* 忽略 */ }
+    // 一本都没读到 ⇒ 退回"当前在用的那几本"（至少别让挑选窗空着 ✓）
+    const names = uniq(out.map((s) => String(s || '').trim()).filter(Boolean));
+    return names.length ? names : currentBookNames();
+}
+
+/**
  * ★ 手动「刷新」：只读重扫一遍（拿最新的"当前在用的世界书 ＋ 条目"）✓
  *   ⚠️ 扫之前**不清空旧名单**：`getWorldInfoPrompt` 的干跑不一定回发"名单"事件，
  *     清空再扫会把上一次的名单弄丢
@@ -291,12 +341,14 @@ function wiKey(e) {
  */
 export function packWorldInfo(opts = {}) {
     const renderMap = opts.renderMap || null;
+    // ★ 第七批：绑定条目的读数（外面算好的，这里只负责带进 `_last` ✓）
+    const boundStat = (opts.boundStat && typeof opts.boundStat === 'object') ? opts.boundStat : {};
     const empty = (reason, extra = {}) => {
         _last = {
             at: Date.now(), count: 0, chars: 0,
             mode: wiFollows() ? '跟随酒馆' : '已锁死（手动）',
-            books: 0, desc: 0, persona: 0, reason,
-            rendered: 0, skipped: 0, ...extra,
+            books: 0, desc: 0, cardDescs: 0, cardDescMissing: 0, persona: 0, reason,
+            rendered: 0, skipped: 0, ...boundStat, ...extra,
         };
         return { text: '', ..._last };
     };
@@ -305,24 +357,49 @@ export function packWorldInfo(opts = {}) {
     //   以前总开关一关就整份空掉 ⇒ 描述那格变成一颗"点了没反应"的开关 ✗
     //   （摆在界面上的东西就该真的有用 ✓）
     const src = (opts.sources && typeof opts.sources === 'object') ? opts.sources : null;
-    const desc = src
-        ? (src.desc === true ? characterDescription() : '')
-        : ((opts.skipDesc === true) ? '' : (wiDescOn() ? characterDescription() : ''));
+    // ⚠️ 「开关开着」和「当前这张卡有描述」是两件事：绑了卡的对象要的是开关，不是当前卡有没有正文
+    const descOn = src ? (src.desc === true) : (opts.skipDesc !== true && wiDescOn());
+    const desc = descOn ? characterDescription() : '';
     // ★ 2026-10-23：用户自己那份人设描述（她提的「用户角色信息也要一颗开关」）——
     //   没开就不取；`forcePersona` 是遗传判定那一轮的临时放行（**不改开关的存值** ✓）
     const persona = src
         ? (src.persona === true ? personaDescriptionForChat() : '')
         : ((wiPersonaOn() || opts.forcePersona === true) ? personaDescriptionForChat() : '');
+    // ★ 2026-11-09（她提的：给对象绑一段角色描述）——
+    //   绑定的卡描述跟「当前角色描述」是**同一个概念**，常驻只看那一颗开关；
+    //   遗传那一轮用它自己那份来源表（`bindDesc`），所以这里允许调用方单独指定 ✓
+    //   ⚠️ 只发**这一轮在场**的那些（调用方按在场对象算好传进来）✓
+    const cardDescOn = (opts.cardDescOn === undefined) ? descOn : (opts.cardDescOn === true);
+    const cardDescWant = Array.isArray(opts.cardDescs) ? opts.cardDescs : [];
+    const cardDescs = [];
+    let cardDescMissing = 0;
+    if (cardDescOn && cardDescWant.length) {
+        for (const it of cardDescWant) {
+            const txt = cardDescriptionByName(it?.name);
+            if (!txt) { cardDescMissing++; continue; }   // 卡没了 / 描述空 ⇒ 不发，读数里报几条找不到
+            const nm = String(it?.name || '');
+            cardDescs.push({
+                who: String(it?.who || '').trim() || nm,
+                name: nm,
+                text: txt,
+            });
+        }
+    }
     const wiEntriesOn = src
         ? (src.charBook === true || src.globalBook === true)
         : (wiOn() || opts.forceWi === true);
-    const picked = wiEntriesOn
-        ? (Array.isArray(opts.picks) ? opts.picks : pickEntries(opts.forceWi === true))
-        : [];                                   // 总开关关着 ⇒ 条目一条都不取
-    if (!picked.length && !desc && !persona) {
-        return empty(wiEntriesOn
-            ? (_snap.scanned ? '这一轮酒馆没有注入任何世界书条目' : '还没有世界书数据')
-            : '世界书开关关着，角色描述与用户角色设定也没开');
+    // ★ 第七批：**传了 picks 就照传的那份发** —— 绑定条目只走"角色绑定"那颗开关，
+    //   不受"整本世界书"那几颗管（不然开关关着时绑定会静默失效 ✗）
+    const picked = Array.isArray(opts.picks)
+        ? opts.picks
+        : (wiEntriesOn ? pickEntries(opts.forceWi === true) : []);
+    if (!picked.length && !desc && !persona && !cardDescs.length) {
+        const hasBound = Number(boundStat.boundTotal || 0) > 0;
+        return empty(hasBound
+            ? '绑定的世界书条目没能读到（书或条目可能被删了）'
+            : (wiEntriesOn
+                ? (_snap.scanned ? '这一轮酒馆没有注入任何世界书条目' : '还没有世界书数据')
+                : '世界书开关关着，角色描述与用户角色设定也没开'), { cardDescMissing });
     }
 
     // ⚠️ 一个字都不截（世界书条目动辄很大，"默认多少字"这种上限不要搞 ✓）
@@ -343,12 +420,16 @@ export function packWorldInfo(opts = {}) {
         used.push(e);
     }
     if (desc) parts.push(`[角色卡] 当前角色描述\n${substituteMacros(desc)}`);
+    // ★ 2026-11-09：对象自己绑的那张卡的角色描述（一个人一段，抬头带名字，免得模型张冠李戴 ✓）
+    for (const c of cardDescs) {
+        parts.push(`[角色卡] ${c.who} 的角色描述\n${substituteMacros(c.text)}`);
+    }
     // ★ 用户角色设定：**单独一块**，抬头写明这是玩家自己写的（别和角色卡描述混成一堆）
     if (persona) parts.push(`[玩家角色] 玩家自己写的角色设定\n${substituteMacros(persona)}`);
 
     // 条目全被跳过（含模板代码的那几条渲染失败）⇒ 如实报，别假装"没有世界书" ✓
-    if (!used.length && !desc && !persona) {
-        return empty(skipped ? '含模板代码的条目没能渲染，已跳过' : '这一轮没有可用的条目', { skipped });
+    if (!used.length && !desc && !persona && !cardDescs.length) {
+        return empty(skipped ? '含模板代码的条目没能渲染，已跳过' : '这一轮没有可用的条目', { skipped, cardDescMissing });
     }
 
     // 抬头按"这次到底带了什么"来写 —— 只带角色描述时说"世界书设定"会自相矛盾 ✗
@@ -358,9 +439,9 @@ export function packWorldInfo(opts = {}) {
             '下面是这个世界当前生效的设定资料，用来帮助你理解角色、种族与背景。',
             '它们只是设定，不是判定规则；不要照抄原文的句子，也不要因为这里没提到就自行编造。',
         ].join('\n')
-        : (desc ? [
+        : ((desc || cardDescs.length) ? [
             '===== 角色设定（只读参考） =====',
-            '下面这段是当前角色卡里的角色描述，用来帮助你理解这个人。',
+            '下面这些是角色卡里的角色描述，用来帮助你理解这些人（每段开头写了它是谁）。',
             '它只是设定，不是判定规则；不要照抄原文的句子。',
         ].join('\n') : [
             '===== 用户角色设定（只读参考） =====',
@@ -376,10 +457,13 @@ export function packWorldInfo(opts = {}) {
         mode: wiFollows() ? '跟随酒馆' : '已锁死（手动）',
         books: uniq(used.map(e => String(e.world))).length,
         desc: desc ? 1 : 0,
+        cardDescs: cardDescs.length,
+        cardDescMissing,
         persona: persona ? 1 : 0,
         reason: '',
         rendered,
         skipped,
+        ...boundStat,
     };
     return { text, ..._last };
 }
@@ -388,18 +472,25 @@ export function packWorldInfo(opts = {}) {
  * 推演前调它：把这一轮要带给推演的"参考设定"准备好。
  * ⚠️ 两个开关各管各的：总开关关着 ⇒ 不扫、不带条目，
  *   但**角色描述**那格仍然照它的开关走 ✓
- * @param {{forceWi?:boolean, forcePersona?:boolean}} [opts]
+ * @param {{forceWi?:boolean, forcePersona?:boolean, bounds?:Array, sources?:object, skipWi?:boolean, charOnly?:boolean}} [opts]
  *   forceWi / forcePersona：**只看这一轮**临时放行（遗传判定那一轮用），不改任何开关 ✓
+ *   bounds：★ 第七批 —— 这一轮要带的「角色绑定条目」（`[{book,uid,title}]`，由调用方按在场对象算好 ✓）
  * @returns {Promise<string>} 要注入的文字（'' = 真的没有）
  */
 export async function prepareWorldInfoForJudge(opts = {}) {
     // 总开关关着 ⇒ 世界书那半整段跳过（不扫、不取、不渲染）；描述那半下面照样组装 ✓
     // ★ 2026-10-24：`sources` = 遗传判定那轮按编辑好的四类来源**精确发**（覆盖常驻开关）✓
     const src = (opts.sources && typeof opts.sources === 'object') ? opts.sources : null;
-    const wiEntriesOn = src
+    // ★ 第七批：绑定的条目**不经过**"这轮酒馆注入了哪些"那一套（它们本来就是按需现读的）✓
+    const bounds = Array.isArray(opts.bounds) ? opts.bounds : [];
+    // 要不要去扫整本世界书（只看来源开关；只带绑定的那几条时不用扫 ✓）
+    const needScan = src
         ? (src.charBook === true || src.globalBook === true)
         : (!opts.skipWi && (wiOn() || opts.forceWi === true));
-    if (wiEntriesOn) {
+    const wiEntriesOn = opts.skipWi === true
+        ? false
+        : (needScan || bounds.length > 0);
+    if (needScan) {
         try {
             const k = key();
             if (_snap.chatKey !== k) {
@@ -420,15 +511,50 @@ export async function prepareWorldInfoForJudge(opts = {}) {
         }
     }
 
+    // ★ 第七批：现读绑定条目（每次现读，不留缓存副本 ✓）
+    let boundEntries = [];
+    let boundMissing = 0;
+    if (wiEntriesOn && bounds.length) {
+        try {
+            const r = await readBoundEntries(bounds);
+            boundEntries = r.entries || [];
+            boundMissing = (r.missing || []).length;
+        } catch (e) {
+            console.warn('[Bodycord] 读角色绑定的世界书条目失败', e);
+        }
+    }
+
     // ★ 「提示词模板的代码」渲染（选「乙」）——
     //   先把这次该带的条目**取一份快照**，再只对含 `<%` 的那几条请提示词模板渲染，
     //   最后拿**同一份快照**去组装 ⇒ 渲染期间就算换了聊天，发出去的也还是这一批 ✓
     let picks = [];
     let renderMap = null;
+    let boundOff = 0;
+    let sentBound = 0;
     if (wiEntriesOn) {
+        let base = [];
         try {
-            picks = src ? pickEntries(false, false, src) : pickEntries(opts.forceWi === true, opts.charOnly === true);
-        } catch { picks = []; }
+            base = needScan
+                ? (src ? pickEntries(false, false, src) : pickEntries(opts.forceWi === true, opts.charOnly === true))
+                : [];
+        } catch { base = []; }
+        // 合进来：去掉跟整本那批重复的；排除表（整本 / 单条）照旧生效 ✓
+        const seen = new Set(base.map(wiKey));
+        const extra = [];
+        for (const e of boundEntries) {
+            const kk = wiKey(e);
+            if (seen.has(kk)) continue;                       // 整本那批已经发过这一条了
+            if (!wiBookAllowed(String(e.world || '')) || !wiEntryAllowed(String(e.world || ''), e.uid)) {
+                boundOff++;
+                continue;
+            }
+            seen.add(kk);
+            extra.push({ ...e });
+        }
+        picks = [...base, ...extra];
+        // 这一轮真正带上的绑定条数（含跟整本重复的那几条 ✓）
+        const pickKeys = new Set(picks.map(wiKey));
+        sentBound = boundEntries.filter((e) => pickKeys.has(wiKey(e))).length;
         try {
             const need = picks.filter(e => hasEjs(e?.content));
             if (need.length && ptRenderReady()) {
@@ -453,6 +579,15 @@ export async function prepareWorldInfoForJudge(opts = {}) {
         forcePersona: opts.forcePersona === true,
         skipDesc: opts.skipDesc === true,
         sources: src,
+        cardDescs: Array.isArray(opts.cardDescs) ? opts.cardDescs : [],
+        // 传了 sources（遗传那一轮）⇒ 六类来源里那个「角色绑定的角色描述」说了算 ✓
+        cardDescOn: src ? (src.bindDesc === true) : undefined,
+        boundStat: {
+            bound: sentBound,
+            boundMissing,
+            boundOff,
+            boundTotal: bounds.length,
+        },
     }).text;
 }
 
@@ -465,10 +600,17 @@ export function wiStatus() {
         chars: last.chars || 0,
         books: last.books || 0,
         desc: last.desc || 0,
+        cardDescs: last.cardDescs || 0,
+        cardDescMissing: last.cardDescMissing || 0,
         persona: last.persona || 0,
         reason: last.reason || '',
         rendered: last.rendered || 0,
         skipped: last.skipped || 0,
+        // ★ 第七批：角色绑定条目的读数（界面用来报"带了几条 / 几条找不到" ✓）
+        bound: last.bound || 0,
+        boundTotal: last.boundTotal || 0,
+        boundMissing: last.boundMissing || 0,
+        boundOff: last.boundOff || 0,
         scanned: _snap.scanned,
         globalBooks: _snap.globalBooks.length,
         charBooks: _snap.charBooks.length,

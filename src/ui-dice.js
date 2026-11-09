@@ -461,11 +461,11 @@ export function renderDiceTab(container, ctx = {}) {
         button('恢复骰子默认值', async () => {
             // ★ 它会把你**自己加过的骰子清单**一起清掉（`entries` 回 null）⇒
             //   破坏性动作必须**先问一次**（原来直接执行、title 只说"不碰什么"，代价一个字没提 ✗）
-            if (!(await askConfirm('把骰子设置恢复成出厂默认？\n\n你自己加过的骰子清单会一起没掉，其余设置（接口、追踪对象、图标）不受影响'))) return;
+            if (!(await askConfirm('把骰子设置恢复成默认？\n\n你自己加过的骰子清单会一起没掉，其余设置（接口、追踪对象、图标）不受影响'))) return;
             resetDiceDefaults();
             repaint();
             window.toastr?.success?.('骰子设置已恢复默认');
-        }, { title: '恢复成出厂默认（自定义骰子清单会一起清掉），不影响接口、追踪对象和图标' }),
+        }, { title: '恢复成默认（自定义骰子清单会一起清掉），不影响接口、追踪对象和图标' }),
     ));
     container.appendChild(modeCard);
 

@@ -1,5 +1,35 @@
 
-import { phaseNameOf, periodDaysOf, bodyCycleParamsOf, isNoCycleMode, cycleDayInfoOf, amenorrheaRateOf } from './settings.js';
+import { phaseNameOf, periodDaysOf, bodyCycleParamsOf, isNoCycleMode, cycleDayInfoOf, amenorrheaRateOf, windowRateOf } from './settings.js';
+
+// ★ 2026-11-07：**滞育**（熊那种：受精卵悬浮几个月、等冬眠了才着床）。
+//   判据只有一条：着床天数长到 60 天以上，就不可能是"普通的着床等待"，
+//   而是胚胎压根还没开始发育 ⇒ ① 孕期那几档按**着床日**起算 ② 这几个月不算周期在走。
+//   ⚠️ 60 是分界线不是"上限"：真正的族（熊 130-170 天）远在这之上，
+//     而现有的长着床族（象 35-50 天）仍按原来的算法走，一个字不变 ✓
+export const DIAPAUSE_IMPLANT_DAYS = 60;
+
+/**
+ * 孕期早晚的切法（2026-11-07 改成按**总孕期**比例切）。
+ *
+ * 为什么改：原来写死「12 周 / 27 周」，那是人类 40 周的口径 ——
+ *   鼠 20 天、兔 31 天、熊（实际发育）60 天这些族，整个孕期都会显示「孕早期」✗。
+ *   比例取 30% / 70%：人类 280 天 × 30% = 84 天 = 孕 12 周、× 70% = 196 天 = 孕 28 周，
+ *   跟医学口径**正好对上**（人类的说法一个字没变 ✓）；短孕期的族也跟着按自己的长度切 ✓
+ * ⚠️ 总孕期读不到（还没定预产期）⇒ 退回老口径 12 / 27 周，不假造总长度 ✓
+ */
+export function pregPhaseOf(days, totalDays) {
+    const d = Math.max(0, Math.round(Number(days) || 0));
+    const t = Math.round(Number(totalDays) || 0);
+    let phaseId;
+    if (t >= 14) {
+        const r = d / t;
+        phaseId = r <= 0.3 ? 'pregEarly' : (r < 0.7 ? 'pregMid' : 'pregLate');
+    } else {
+        const w = Math.floor(d / 7);
+        phaseId = w <= 12 ? 'pregEarly' : (w <= 27 ? 'pregMid' : 'pregLate');
+    }
+    return { phaseId, phase: { pregEarly: '孕早期', pregMid: '孕中期', pregLate: '孕晚期' }[phaseId] };
+}
 /**
  * derive.js —— 由插件推导「本该插件算」的字段
  *
@@ -42,8 +72,11 @@ function num(v, fallback) {
  * @param {number|null} pregDays **孕期已经过了几天**（可选）—— 只给「植入卵」那种用：
  *   **这个和怀孕不太一样，因为是植入的，所以应该从植入那天算**✓
  *   不给（普通怀孕）⇒ 照旧用周期日当孕周基准（LMP 那套，一个字不变 ✓）
- * @param {{noConception?:boolean}} [opts] `noConception`＝这个对象锁了「能不能怀孕：不能」⇒
- *   **没有阶段可算**（见下面那段注释）；不传＝照旧按周期日算 ✓
+ * @param {{noConception?:boolean, totalDays?:number|null, diapauseWait?:boolean}} [opts]
+ *   `noConception`＝这个对象锁了「能不能怀孕：不能」⇒ **没有阶段可算**（见下面那段注释）；
+ *   `totalDays`＝这一族的孕期总天数（用来按比例切孕早/中/晚，读不到就退回 12/27 周 ✓）；
+ *   `diapauseWait`＝受精成功、但着床还隔着几个月（滞育）⇒ 阶段写「滞育」 ✓
+ *   不传＝照旧按周期日算 ✓
  * @returns {{phase:string, sub:string, d1:string}|null} 拿不到天数时返回 null（不接管）
  */
 export function deriveCycleFields(vars = {}, mode = null, periodDays = 5, cycleDay = null, pregDays = null, opts = {}) {
@@ -69,12 +102,18 @@ export function deriveCycleFields(vars = {}, mode = null, periodDays = 5, cycleD
         if (!Number.isFinite(days)) return null;
         const w = Math.floor(days / 7);
         const d = days % 7;
-        // 孕 1-12 周 = 孕早期；13-27 = 孕中期；28 周至分娩 = 孕晚期
-        const phaseId = w <= 12 ? 'pregEarly' : (w <= 27 ? 'pregMid' : 'pregLate');
-        // 孕期阶段名**与周期模式无关** ✓（不翻译 ✓）
-        const phase = { pregEarly: '孕早期', pregMid: '孕中期', pregLate: '孕晚期' }[phaseId];
+        // ★ 2026-11-07：早晚按**这一族的**总孕期比例切（见 pregPhaseOf ✓）
+        const { phaseId, phase } = pregPhaseOf(days, opts?.totalDays);
         // 孕期的 d1 固定「不适用」
         return { phaseId, phase, sub: `孕${w}周+${d}天`, d1: '不适用' };
+    }
+
+    // ---- 滞育：受精成功、但离着床还有几个月 ----
+    // ★ 2026-11-07：这几个月**不算周期在走**，也不算孕期（胚胎还没开始发育）。
+    //   不特判的话面板会写「黄体期 · Day164 / 28」，看着像坏了 ✗
+    //   阶段插图那行另有「滞育」的标题（stages.js），这里给的是阶段名 / 进度 / 基础率 ✓
+    if (opts?.diapauseWait === true) {
+        return { phaseId: null, phase: '滞育', sub: '—', d1: '不适用' };
     }
 
     // ---- 锁了「不能怀孕」：**没有阶段、没有进度、没有基础率** ----
@@ -88,6 +127,28 @@ export function deriveCycleFields(vars = {}, mode = null, periodDays = 5, cycleD
     //   ⚠️ 排在孕期后面：万一旧存档里"已孕 + 不能怀孕"同时在，孕期那只优先级更高 ✓
     if (opts && opts.noConception === true) {
         return { phaseId: null, phase: '不适用', sub: '—', d1: '不适用' };
+    }
+
+    // ★★ 2026-11-08 产后恢复：分娩之后那一段**没有月经、没有周期阶段**，
+    //   进度写「产后第 N 天 · 还有 M 天恢复周期」。
+    //   ⚠️ 基础率**不能写"不适用"**：恢复期能怀（她拍板），判定按「无月经」那一格算
+    //     ⇒ 这里照实显示那个数，跟无月经那一档同一个理由 ✓
+    //   ⚠️ 排在「不能怀孕」之后：那一档连阶段都不算，恢复期也一样 ✓
+    //   ⚠️ 只有 `active` 为真才写这一段：恢复日那天起就交回正常周期（周期第 1 天）✓
+    if (opts && opts.postpartum && opts.postpartum.active === true) {
+        const d = Math.max(0, Math.round(Number(opts.postpartum.dayNo) || 0));
+        const left = Math.max(0, Math.round(Number(opts.postpartum.left) || 0));
+        // ★ 2026-11-08：恢复期最后那几天算「排卵已恢复」（现实里排卵比第一次月经先回来）⇒
+        //   基础率抬到受孕窗口那一档；其余时间仍按「无月经」那一格 ✓
+        let rate = '不适用';
+        try { rate = (opts.postpartum.ovuRecovered === true ? windowRateOf() : amenorrheaRateOf()) + '%'; } catch { /* 读不到就照旧 */ }
+        return {
+            phaseId: 'postpartum',
+            phase: '产后恢复',
+            sub: `产后第 ${d} 天 · 还有 ${left} 天恢复周期`
+                + (opts.postpartum.ovuRecovered === true ? ' · 排卵已恢复' : ''),
+            d1: rate,
+        };
     }
 
     // ★ 无月经那一档：**没有周期、没有阶段**（无月经就是没有阶段，不需要阶段 ——
@@ -104,9 +165,15 @@ export function deriveCycleFields(vars = {}, mode = null, periodDays = 5, cycleD
     // ---- 未孕：按周期日查表 ----
     if (!Number.isFinite(day) || day <= 0) return null;
     const len = num(vars?.Cycle_Length, 28) || 28;
-    // ★ 排卵日也要夹一道边界（老存档 / 模型报回来的值都可能越界）。
-    //   不夹的话「排卵窗口最后一天」可能落在周期之外 ⇒ 受精判定永不触发 ✗
-    const ovu = Math.max(1, Math.min(num(vars?.Ovulation_Day, 14), Math.max(1, len - 2)));
+    // ★ 2026-11-08：排卵日写成「不固定（交配后排卵）」⇒ **没有排卵日**（null），
+    //   不是退回 14 天。`cycleDayInfoOf` / `cycleDayRanges` 都认这个 null ✓
+    //   ⚠️ 契约里**没给**这一格（老存档 / 刚建的对象）仍按老行为退 14 —— 只有明确写了
+    //      "不固定"这类字样的才当没有排卵日 ✓
+    const ovuText = String(vars?.Ovulation_Day ?? '').trim();
+    const ovuMatch = ovuText.match(/(\d+)/);
+    const ovu = ovuMatch
+        ? Math.max(1, Math.min(Number(ovuMatch[1]), Math.max(1, len - 2)))
+        : (ovuText ? null : 14);
 
     // 基础率表（来自 [生理周期模块] 的【周期规则与基础率】）
     // ★ 只算 phaseId（稳定身份 ✓），名字交给 phaseNameOf 按**周期模式**翻译 ✓
@@ -115,7 +182,9 @@ export function deriveCycleFields(vars = {}, mode = null, periodDays = 5, cycleD
     //   （面板改了 7/3，而这里写死 5 ⇒ 阶段口径 / 2% 基础率 / 「来月经时」门控全会和面板对不上）
     //   ⚠️ 夹一道上限：经期最晚在**排卵窗口前一天**结束 —— 否则经期会把排卵日吞掉，
     //      把 30% 的高危日算成 2%，比写死 5 还糟 ✗
-    const pdays = Math.max(1, Math.min(Math.round(Number(periodDays) || 5), Math.max(1, ovu - 2)));
+    const pdays = (ovu === null)
+        ? Math.max(1, Math.min(Math.round(Number(periodDays) || 5), Math.max(1, len - 2)))
+        : Math.max(1, Math.min(Math.round(Number(periodDays) || 5), Math.max(1, ovu - 2)));
     // ★ A12（定下丙案）：这条 if 链**搬进 settings.js 的 `cycleDayInfoOf`** ——
     //   正文里那句「第几天到第几天」（@@DAYS:xxx@@）要用**同一套**算法，
     //   两处各写一份迟早打架（正文说第13到15天、判定却按别的日子 ✗）✓

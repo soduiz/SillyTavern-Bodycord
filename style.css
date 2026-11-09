@@ -205,26 +205,34 @@
 /* 统一的细滚动条（夜模式不再冒出一条突兀的亮条） */
 .bc-root *,
 .bc-inline-host *,
-.bc-modal-box * {
+.bc-modal-box *,
+/* ★ 2026-11-06：下拉弹层挂到 body 上（`.bc-dd-menu`），不在上面三层里面 ⇒ 它自己那条
+   限高滚动条原来用的是宿主的样式（褐色那条）。这里把它一起收进来 ✓ */
+.bc-dd-menu,
+.bc-dd-menu * {
     scrollbar-width: thin;
     scrollbar-color: var(--bc-scroll, rgba(0, 0, 0, .18)) transparent;
 }
 .bc-root ::-webkit-scrollbar,
 .bc-inline-host ::-webkit-scrollbar,
-.bc-modal-box ::-webkit-scrollbar { width: 8px; height: 8px; }
+.bc-modal-box ::-webkit-scrollbar,
+.bc-dd-menu::-webkit-scrollbar { width: 8px; height: 8px; }
 .bc-root ::-webkit-scrollbar-track,
 .bc-inline-host ::-webkit-scrollbar-track,
-.bc-modal-box ::-webkit-scrollbar-track { background: transparent; }
+.bc-modal-box ::-webkit-scrollbar-track,
+.bc-dd-menu::-webkit-scrollbar-track { background: transparent; }
 .bc-root ::-webkit-scrollbar-thumb,
 .bc-inline-host ::-webkit-scrollbar-thumb,
-.bc-modal-box ::-webkit-scrollbar-thumb {
+.bc-modal-box ::-webkit-scrollbar-thumb,
+.bc-dd-menu::-webkit-scrollbar-thumb {
     background: var(--bc-scroll, rgba(0, 0, 0, .18));
     border-radius: 6px;
     border: 2px solid transparent;
     background-clip: content-box;
 }
 .bc-root ::-webkit-scrollbar-corner,
-.bc-inline-host ::-webkit-scrollbar-corner { background: transparent; }
+.bc-inline-host ::-webkit-scrollbar-corner,
+.bc-dd-menu::-webkit-scrollbar-corner { background: transparent; }
 
 /* 扩展被宿主禁用时，**只建一次的那些东西**（面板外壳 / 状态栏视图 / 设置页抽屉 / 内联宿主）
    加这个类名隐藏 —— ⚠️ 不能 `remove()`：重新勾选扩展之后（不刷新页面）它们回不来、
@@ -392,6 +400,11 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     -webkit-text-stroke-width: 0 !important;
     -webkit-text-stroke-color: transparent !important;
     filter: none !important;
+    /* ★ 2026-11-06（她截图：下拉选项文字模糊）——
+       宿主题常给页面设 `-webkit-font-smoothing: antialiased`（灰度抗锯齿，小字发虚）；
+       外壳里我们写了 auto，但这些挂在 body 上的层不在外壳里 ⇒ 一直继承宿主的灰度抗锯齿 ✗
+       ⇒ 跟字阴影一样，在"挂到 body 的层"这张表里一起拉回 auto ✓ */
+    -webkit-font-smoothing: auto !important;
 }
 /* ★★ 2026-10-31：她截图指出「上面（外壳）被包边、下面（面板里）正常」——
    宿主的字效果是加在**子元素**上的（不是只加在根上），之前只清了 .bc-root 自己，
@@ -445,6 +458,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     -webkit-text-stroke-width: 0 !important;
     -webkit-text-stroke-color: transparent !important;
     filter: none !important;
+    -webkit-font-smoothing: auto !important;
 }
 /* ★ 上面那几张表把 filter 清空了 ⇒ 把我们**自己要的**几处明暗反馈重新声明回来
    （都是我们自己的元素，宿主不会去动；用 !important + 更高特异性压过复位）✓ */
@@ -764,6 +778,32 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 }
 .bc-code { font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: calc(12px * var(--bc-fs-scale, 1)); }
 
+/* ---------- 长得像值框、其实点一下开选择器的按钮（种族那一格用） ----------
+   为什么不再用输入框：占满整行的大输入框会让人以为只能手打 ⇒ 一个入口更清楚 ✓ */
+.bc-pick-btn {
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--bc-tx);
+    -webkit-appearance: none;
+    appearance: none;
+}
+.bc-pick-btn:hover { border-color: var(--bc-blurple); background: var(--bc-hover); }
+.bc-pick-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc-pick-btn.is-empty .bc-pick-value { color: var(--bc-tx-3); }
+/* 下拉箭头用边框画：不用 ▾ 这类字符，免得她机器上缺字变豆腐块 ✓ */
+.bc-pick-caret {
+    flex: none;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--bc-tx-3);
+    margin-top: 2px;
+}
+
 /* ---------- 自定义下拉框 ---------- */
 .bc-dd {
     position: relative;
@@ -811,6 +851,10 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     overflow-x: hidden;
     padding: 4px;
     border-radius: 10px;
+    /* ★ 2026-11-06（她截图：下拉选项文字模糊）——
+       菜单挂在 body 上，原来跟着宿主的字体和抗锯齿走；这里显式用回插件这一套字体 ✓ */
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: auto;
     /* ★ 兜底**不能用白色**（夜模式会变白板 ✗）——
        优先用从原位置抄过来的主题变量（dom.js 的 copyThemeVars），
        实在抄不到才落到系统色 Canvas / CanvasText，它会跟着浏览器当前深浅色走 ✓ */
@@ -865,7 +909,8 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
    ⚠️ 状态字走自己的类，**故意不挂 `bc-hint`** —— 页面上 `.bc-hint` 的条数是被断言盯着的
       （那条断言防的是"每行底下压着的解释句"）⇒ 一个读数不该被算进去 ✓ */
 .bc-ident-body.collapsed { display: none; }
-.bc-ident-state {
+.bc-ident-state,
+.bc-gate-state {
     font-size: calc(12px * var(--bc-fs-scale, 1));
     font-weight: 500;
     color: var(--bc-tx-3);
@@ -967,6 +1012,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-param-line { display: flex; align-items: center; gap: 8px; }
 .bc-param-line > .bc-input, .bc-param-line > input { flex: 1 1 auto; min-width: 0; }
 .bc-param-line > .bc-row { flex: 1 1 auto; min-width: 0; }
+.bc-param-line > .bc-pick-btn { flex: 1 1 auto; min-width: 0; }
 .bc-param-reset {
     flex: 0 0 auto;
     height: 30px;
@@ -1031,6 +1077,12 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-badge {
     font-size: calc(10px * var(--bc-fs-scale, 1)); padding: 1px 7px; border-radius: 20px;
     background: rgba(128, 128, 128, .16); color: var(--bc-tx-2); font-weight: 500;
+    /* ⚠️ 徽章是"一个词"，不是一段说明 ⇒ 永远不许被挤着换行。
+       2026-11-05 她手机截图：那个表示"正在用"的徽章被压成「使用」/「中」两行 ——
+       根因是它是 flex 子项、默认 flex-shrink:1，整行放不下时被当成"能缩的软柿子"✗
+       ⇒ 不缩 + 不换行；宽度不够就让同一行里**能折行的那块**（名字 / 模型）去让 ✓ */
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 .bc-badge-lock { background: rgba(229, 164, 31, .2); color: var(--bc-yellow); }
 .bc-badge-edit { background: rgba(34, 165, 89, .18); color: #1a7d43; }
@@ -1459,6 +1511,10 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 /* 「＋ 添加一个胎儿」那行同理 */
 .bc-row > .bc-add-btn { flex: 0 0 auto; white-space: nowrap; }
 .bc-row > .bc-hint { flex: 1 1 auto; min-width: 0; }
+/* ★ 2026-11-06：行内的小字（「到」「第」「个·占」这种）**不许撑** ——
+   上面那条 `flex:1 1 auto` 是给"整行说明"用的；行内小字带上它就会被拉长，
+   把旁边的数字框挤到行尾（图鉴的胎数行、显怀那行都栽过 ✗） */
+.bc-row > .bc-hint.bc-inline-tip { flex: 0 0 auto; }
 .bc-fetus-idx {
     font-size: calc(11px * var(--bc-fs-scale, 1));
     font-weight: 700;
@@ -3382,6 +3438,33 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-wi-pick:hover { background: var(--bc-hover, rgba(0,0,0,.05)); }
 .bc-wi-picked { background: var(--bc-sel-bg, rgba(138,123,216,.16)); }
 .bc-wi-tick { font-size: calc(11.5px * var(--bc-fs-scale, 1)); font-weight: 700; color: var(--bc-accent, #8a7bd8); white-space: nowrap; }
+/* ★ 2026-11-06：「从世界书建角色」的勾选框自己画 ——
+   裸 <input type=checkbox> 会被酒馆主题重新刷一遍样式，跟插件不是一套 ✗
+   选中＝选中色实心 + 对勾（对勾用两条边框转 45 度画，不依赖字体里的符号 ✓）
+   ⚠️ 别拿 --bc-main 当选中色：它在浅色主题里是 #ffffff（页面底色）⇒ 白底白勾，看着跟没选一样 ✗
+   选中色用 --bc-sel-bg / --bc-sel-tx（跟面板里别的选中态同一套 ✓） */
+.bc-check {
+    flex: 0 0 auto;
+    width: calc(18px * var(--bc-fs-scale, 1));
+    height: calc(18px * var(--bc-fs-scale, 1));
+    border: 2px solid var(--bc-tx-3);
+    border-radius: 4px;
+    background: transparent;
+    box-sizing: border-box;
+    position: relative;
+}
+.bc-check.on { border-color: var(--bc-sel-bg); background: var(--bc-sel-bg); }
+.bc-check.on::after {
+    content: '';
+    position: absolute;
+    left: 28%;
+    top: 8%;
+    width: 30%;
+    height: 54%;
+    border: solid var(--bc-sel-tx);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
 /* ★ 2026-10-24（她：重掷窗口里显性来源和上面的选项贴在一起）——
    弹窗里每一段之间留开距离，行内控件之间也留 gap ✓ */
 .bc-reroll-sec { margin-top: 14px; }
@@ -3668,28 +3751,6 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     font-size: calc(12px * var(--bc-fs-scale, 1));
 }
 
-/* ---------------------------------------------------------------------------
-   异种比例的"可改数值"小抄（挂「异种扩展包（西方与通用）」卡片上）
-   说明里给就行，提示词不要 ⇒ 只进界面 ✓
-
-   ⚠️ 内容里有换行 ⇒ 必须 white-space: pre-line，否则 \n 不生效 ✗
-   ⚠️ 用等宽字体，玩家要照着抄数字，对齐了才好认 ✓
-   --------------------------------------------------------------------------- */
-.bc-numhint {
-    margin: 5px 0 2px 10px;
-    padding: 8px 11px;
-    font-family: ui-monospace, Consolas, 'Courier New', monospace;
-    font-size: calc(11.5px * var(--bc-fs-scale, 1));
-    line-height: 1.75;
-    color: var(--bc-tx-2);
-    background: var(--bc-surface, #f7f8f9);
-    border-radius: 6px;
-    white-space: pre-line;
-}
-.bc-root[data-vision="large"] .bc-numhint {
-    line-height: 1.9;
-}
-
 /* 「补丁数值」格里的下拉：尺寸跟数字框对齐就够 ✓
    （配色/边框**交给 .bc-select** —— 它已经用 !important 压制了酒馆主题 ✓
     别在这里重写颜色 ✗ 那样又会冒出一块不属于这里的样式） */
@@ -3839,6 +3900,13 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     .bc-toolbar .bc-select,
     .bc-dd-wide,
     .bc-zone-arch-dd { min-width: 0; width: 100%; }
+    /* 接口渠道那一行：窄屏拆两行 —— 第一行「名称 + 模型」，第二行「使用中 + 编辑 + 删除」。
+       ⚠️ 原来是一行硬挤五样东西：320 宽时整行差几像素放不下，
+          flex 就把唯一能缩的**徽章**压成「使用 / 中」两行（2026-11-05 她手机截图）✗
+       ⇒ 和上面那条同一条规矩：放不下就拆开，宁可页面长一点，别把字挤碎 ✓ */
+    .bc-api-row { flex-wrap: wrap; row-gap: 6px; }
+    .bc-api-row-main { flex: 1 1 100%; }
+    .bc-api-row > .bc-spacer { display: none; }
     /* 字段开关那张三列表（字段名 / 是什么 / 改了会怎样）：第一列就 190px ⇒ 手机上竖着叠开 ✓
        （表头那行不藏 —— 叠开时它就是一段图例，藏了反而不知道每行在说什么 ✓） */
     .bc-ff-row { grid-template-columns: 1fr; gap: 3px; }
@@ -4073,3 +4141,122 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 /* 补丁页顶上那行（世界观 / 人物 ＋「？」）：不再套卡片，自己留一段和卡片一致的间距 */
 .bc-viewsw-head { margin: 0 0 12px; }
 
+
+/* =========================================================================
+   种族图鉴（2026-11-06 第一批）
+   设置 → 补丁与档案 → 图鉴。列表是"一行一条"，点进去换到详情（不弹窗）✓
+   字号跟着 --bc-fs-scale 走（易读模式放大时这里也一起放大 ✓）
+   ========================================================================= */
+/* ★ 2026-11-08：选择器顶部（说明 / 手打名字 / 搜索）统一 10px 间隔，别挤成一团 */
+.bc-codex-picker-top { display: flex; flex-direction: column; gap: 10px; }
+.bc-codex-picker-top > .bc-hint { margin-top: 0; }
+.bc-codex-picker-top > .bc-row { margin-top: 0; }
+
+.bc-codex-list {
+    margin-top: 10px;
+    border: 1px solid var(--bc-line);
+    border-radius: 10px;
+    overflow: hidden;
+}
+.bc-codex-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--bc-line);
+    cursor: pointer;
+}
+.bc-codex-item:last-child { border-bottom: 0; }
+.bc-codex-item:hover { background: var(--bc-hover); }
+.bc-codex-item.off { opacity: .55; }
+/* ★ 2026-11-08：按种类批量停用的种类清单（可单选可多选；种类多了就自己滚，不把弹窗顶满 ✓） */
+.bc-codex-species {
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid var(--bc-line);
+    border-radius: 8px;
+    padding: 4px;
+    margin-bottom: 10px;
+}
+/* 标题行：「种类」在左、全选/全不选在右。两边各留一点，按钮之间也留开
+   （原来那串长说明和按钮挤在同一行，右边两颗按钮贴到弹窗边上去了 ✗） */
+.bc-codex-species-head { margin: 2px 0 0; padding: 0 2px; gap: 10px; }
+.bc-codex-species-tip { margin: 0 2px 8px; }
+
+/* ★ 2026-11-09：一串勾选框（图鉴「发情季节」那几个月）。
+   方块自己画（`.bc-check`），整行都能点；选中只体现在方块上，
+   整行不变色（她那边整行深蓝会让字看不见 ✗ ✓） */
+.bc-check-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+    gap: 2px 10px;
+    margin-top: 6px;
+}
+.bc-check-row {
+    margin-top: 0;
+    min-height: calc(32px * var(--bc-fs-scale, 1));
+    gap: 8px;
+    padding: 0 4px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.bc-check-row:hover { background: var(--bc-hover); }
+.bc-check-label { font-size: calc(13px * var(--bc-fs-scale, 1)); color: var(--bc-tx-2); }
+/* 手机上固定两列（别让窄屏又竖成一条 ✓），顺手好点一点 */
+@media (max-width: 560px) {
+    .bc-check-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 6px; }
+    .bc-check-row { min-height: calc(38px * var(--bc-fs-scale, 1)); }
+}
+.bc-codex-main { flex: 1 1 auto; min-width: 0; }
+.bc-codex-name {
+    font-size: calc(13px * var(--bc-fs-scale, 1));
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+.bc-codex-meta {
+    margin-top: 2px;
+    font-size: calc(11.5px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+/* 发育段那行的「起始刻度」窄一点，一句话那段占剩下的（手机上再说 ✓） */
+.bc-codex-at { flex: 0 0 auto; max-width: 46%; }
+/* ★ 2026-11-06：图鉴详情改成两列网格 ——
+   一行一项竖着排太长，而且数字框是 width:100% ⇒ 一格里塞不下两个数。
+   三个「按栏目填」的行（胎数 / 性别 / 同卵）占满整行 ✓ */
+.bc-codex-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 2px 18px;
+    align-items: start;
+}
+.bc-codex-grid > .bc-field { margin-bottom: 10px; min-width: 0; }
+.bc-codex-grid > .bc-codex-wide { grid-column: 1 / -1; }
+
+/* ★ 2026-11-08：图鉴详情里「性特征」那一张卡的间距。
+   她截图说「太近了」⇒ 组内 12、两组之间 20、字段名到控件 6、四列之间 12/18。
+   ⚠️ 只作用于 `.bc-sex-card`：**别去改 `.bc-label` / `.bc-codex-grid` 的全局间距**，
+      别的页（数值表、混血卡）是按原来的排的 ✓ */
+.bc-sex-card .bc-section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.bc-sex-card .bc-sex-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.bc-sex-card .bc-sex-group > .bc-label { margin: 0; }
+.bc-sex-card .bc-field { margin-bottom: 0; }
+.bc-sex-card .bc-field .bc-label { margin-bottom: 6px; }
+.bc-sex-card .bc-codex-grid { gap: 12px 18px; }
+.bc-sex-card .bc-codex-grid > .bc-field { margin-bottom: 0; }
+@media (max-width: 560px), (hover: none) and (max-height: 520px) {
+    .bc-codex-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+    .bc-codex-item { flex-wrap: wrap; }
+    .bc-codex-at { max-width: 100%; }
+}

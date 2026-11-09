@@ -23,6 +23,8 @@ import { isCardExcluded } from './src/cardexclude.js';
 import { emptyProfile, buildStatusProfile } from './src/serialize.js';
 import { noteSkip } from './src/runstat.js';
 import { scheduleRun, beginRun, endRun, clearPending, abortRun, isRunning } from './src/judge-queue.js';
+// ★ 图鉴数据是用到才读进来的（见 src/codex.js 顶上那段）：这里负责"什么时候读"和"读完补一次"
+import { ensureBuiltinCodex, onBuiltinReady, builtinReady } from './src/codex.js';
 
 /**
  * ★ 版本串 —— 扩展面板上会显示它（`版本：1.0（构建号）`）。
@@ -88,6 +90,10 @@ async function doJudge(reason = '') {
     const s = settings();
     if (!s.enabled) return;
     if (judging) return;
+
+    // ★ 2026-11-09：推演要读图鉴的数值表（周期 / 孕期 / 胎数 / 性特征…）——
+    //   而图鉴现在是**用到才读进来**的 ⇒ 没就绪就先等它，绝不能拿"空图鉴"去判（会全按全局默认算）✗
+    try { await ensureBuiltinCodex(); } catch { /* 读不到就照旧，失败了会记在推演结果里 */ }
 
     // 被「不参与推演」排除掉的楼层：**连状态都不记**。
     // 不是"记了但不显示" —— 玩家标记它就是为了让它彻底不影响数值。
@@ -569,16 +575,44 @@ function installWandMenuEntryWhenReady() {
 // 扩展抽屉里的设置块
 // ---------------------------------------------------------------------------
 async function mountDrawer() {
-    let html;
+    // 已经挂过就不再挂第二份（重载插件 / 重复调用时会出现两个抽屉 ✗）
+    if (document.querySelector('.bodycord-drawer')) return;
+
+    let html = '';
     try {
         html = await renderTemplate('settings.html');
     } catch (e) {
         console.warn('[Bodycord] settings.html 加载失败', e);
-        return;
+    }
+    if (!html || !html.trim()) {
+        // ★ 2026-11-08：模板没读到时**照样给一个能用的抽屉**。
+        //   以前读不到就拿着空字符串挂上去 ⇒ 扩展设置里是一个点不开的空壳，
+        //   玩家只会看到「设置打不开」，控制台里的那条警告没人会看 ✓
+        console.warn('[Bodycord] settings.html 没读到，改用内置的最小抽屉');
+        html = '<div class="bodycord-drawer-inner"><div class="inline-drawer">'
+            + '<div class="inline-drawer-toggle inline-drawer-header"><b>生理孕育状态面板</b>'
+            + '<div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>'
+            + '<div class="inline-drawer-content">'
+            + '<div class="bodycord-drawer-row"><input type="button" class="menu_button" id="bc-drawer-openpanel" value="打开面板"></div>'
+            + '<div class="bodycord-drawer-row"><label class="checkbox_label" for="bc-drawer-enabled">'
+            + '<input type="checkbox" id="bc-drawer-enabled"><span>启用插件</span></label></div>'
+            + '</div></div></div>';
     }
 
-    const host = document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings');
-    if (!host) return;
+    // ★ 2026-11-08：宿主要等酒馆把「扩展设置」那一栏画出来。
+    //   以前只查一次、查不到就静默返回 ⇒ 宿主的 DOM 晚一点 / 版本不同时就**没有设置抽屉**，
+    //   玩家表现成「设置打不开 / 跳不出来」，而插件别的功能都正常 ✓
+    //   ⇒ 最多等 20 秒，每 0.5 秒查一次
+    let host = null;
+    for (let i = 0; i < 40; i++) {
+        host = document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings');
+        if (host) break;
+        await new Promise((res) => setTimeout(res, 500));
+    }
+    if (!host) {
+        console.warn('[Bodycord] 找不到扩展设置区（#extensions_settings2 / #extensions_settings），设置抽屉没挂上');
+        return;
+    }
 
     const wrap = document.createElement('div');
     wrap.className = 'bodycord-drawer';
@@ -679,6 +713,27 @@ try {
     bindEvents();
     installWandMenuEntryWhenReady();
     mountDrawer().catch(e => console.warn('[Bodycord] 抽屉挂载失败', e));
+
+    // ★★ 图鉴数据（757KB）**等页面画完再读** ——
+    //   插件自己的启动（悬浮球 / 面板 / 注入）先跑完，别让它跟酒馆抢首屏的 CPU ✓
+    //   读完之后补一次注入和界面：读之前那一轮如果正好在发提示词，
+    //   `prompt.js` 会**整段跳过种族设定**（不拿空图鉴骗模型），这里负责把它补上 ✓
+    onBuiltinReady(() => {
+        console.log('[Bodycord] 图鉴数据读进来了');
+        try { rebuildInjection(); } catch { /* 忽略 */ }
+        try { refreshAll(); } catch { /* 忽略 */ }
+        try { refreshSettingsPaneForce(); } catch { /* 忽略 */ }
+    });
+    {
+        const kick = () => { ensureBuiltinCodex().catch(() => { /* 日志在 codex.js 里 */ }); };
+        try {
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(kick, { timeout: 2000 });
+            } else {
+                setTimeout(kick, 1200);
+            }
+        } catch { setTimeout(kick, 1200); }
+    }
 
     console.log('[Bodycord] 已加载。聊天：', chatKeySafe());
 }

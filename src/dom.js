@@ -224,15 +224,17 @@ export function dropdown(value, options, onChange, opts = {}) {
         let left = rr.left;
         if (left + rr.width > vw - 8) left = Math.max(8, vw - 8 - rr.width);
         let top = rr.bottom + gap;
-        menu.style.left = left + 'px';
-        menu.style.top = top + 'px';
+        // ★ 2026-11-06：坐标取整 —— 弹层是 fixed 定位、会被提到自己的图层上，
+        //   落在半个像素上时文字会发虚（她截图的那条模糊下拉就是这么来的之一）✓
+        menu.style.left = Math.round(left) + 'px';
+        menu.style.top = Math.round(top) + 'px';
 
         const mh = menu.getBoundingClientRect().height;
         const below = vh - 8 - (rr.bottom + gap);
         const above = rr.top - gap - 8;
         if (mh > below && above > below) {
             top = Math.max(8, rr.top - gap - mh);
-            menu.style.top = top + 'px';
+            menu.style.top = Math.round(top) + 'px';
         } else if (mh > below) {
             // 两边都不够：放下面，限高 + 自己滚（别让标题被切掉一半 ✓）
             menu.style.maxHeight = Math.max(120, below) + 'px';
@@ -249,7 +251,9 @@ export function dropdown(value, options, onChange, opts = {}) {
      *     抄不到才轮到 CSS 里那个系统色兜底（`Canvas` / `CanvasText`，跟着浏览器深浅色走 ✓）。
      */
     const THEME_VARS = ['--bc-main', '--bc-surface-2', '--bc-tx', '--bc-tx-3', '--bc-line',
-        '--bc-hover', '--bc-hover-strong', '--bc-sel-bg', '--bc-sel-tx', '--bc-fs-scale'];
+        '--bc-hover', '--bc-hover-strong', '--bc-sel-bg', '--bc-sel-tx', '--bc-fs-scale',
+        // ★ 2026-11-06：下拉弹层挂到 body 上，它自己的滚动条也要用插件这套颜色
+        '--bc-scroll'];
     function copyThemeVars() {
         try {
             const cs = window.getComputedStyle(rootEl);
@@ -324,6 +328,27 @@ export function select(value, options, onChange, opts = {}) {
 export function toggle(checked, onChange) {
     const input = h('input', { type: 'checkbox', checked: !!checked, onchange: (e) => onChange(e.target.checked) });
     return h('label', { class: 'bc-toggle' }, input, h('span', { class: 'bc-slider' }));
+}
+
+/**
+ * 插件自己画的勾选框（一个方块 + 一行字，整行都能点）。
+ *
+ * ★ 2026-11-09：**裸 `<input type="checkbox">` 不许直接用** —— 它会被酒馆主题
+ *   重新刷一遍样式，长成酒馆的样子，跟插件不是一套 ✗（图鉴「发情季节」那 12 个月
+ *   就是这么漏出去的，她截图问「是不是又没用插件的选择框」）。
+ *   方块本身是 CSS 画的 `.bc-check`（对勾用两条边框转 45 度，不吃字体里的符号 ✓）。
+ * ★ 选中**不靠整行变色**：只画方块（她那边整行变深蓝会让字看不见 ✗）。
+ * `onToggle` 收的是「点完之后应该是勾上还是取消」。
+ */
+export function checkRow(labelText, checked, onToggle, opts = {}) {
+    return h('div', {
+        class: 'bc-row bc-check-row' + (opts.class ? ' ' + opts.class : ''),
+        title: opts.title || '',
+        onclick: () => onToggle(!checked),
+    },
+        h('span', { class: 'bc-check' + (checked ? ' on' : '') }),
+        h('span', { class: 'bc-check-label', text: labelText }),
+    );
 }
 
 export function button(text, onClick, opts = {}) {

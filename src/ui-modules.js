@@ -12,14 +12,14 @@ import {
     moduleText, moduleTextRaw, setModuleText, resetModuleText, isTextOverridden,
     moduleScope, patchScope, setPatchScope, isPatchLocked, isPatchFrozen,
     frozenPatchText, frozenPatchIds, frozenPatchCount, overriddenPatchIds,
-    DEFAULT_TERM_NAMES, DEFAULT_PHASE_NAMES, cycleModeLabel, NO_CYCLE_HIDDEN_IDS, isNoCycleMode,
+    DEFAULT_TERM_NAMES, DEFAULT_PHASE_NAMES, cycleModeLabel, NO_CYCLE_HIDDEN_IDS,
     periodMode, moduleHasModeVariants, moduleVariantText, setModuleVariantText, resetModuleVariants,
     projectModeStructure, MODULE_VARIANT_MODES, applyTalentPreset, detectTalentPreset, applyDominantPreset, detectDominantPreset,
 } from './settings.js';
 import { defaultCycleStartDay } from './derive.js';
 import { templates, previewInjection, moduleActive, unknownTemplatePlaceholders } from './prompt.js';
 import { estimateTokens, formatTokens, tokenLevel, sumTokens } from './tokens.js';
-import { targetList, displayName, hasConceptionData, USER_KEY, userLabel, userSelfLabel, anyTargetHasCycle, isUserKey, state, setPeriodModeOf, awarenessTierIdOf, setAwarenessTierIdOf, traceOnOf, setTraceOnOf, cycleStartRuleOf, setCycleStartRuleOf, cycleDayNow, periodModeOf } from './store.js';
+import { targetList, displayName, hasConceptionData, USER_KEY, userLabel, userSelfLabel, anyTargetHasCycle, isUserKey, state, setPeriodModeOf, awarenessTierIdOf, setAwarenessTierIdOf, traceOnOf, setTraceOnOf, cycleStartRuleOf, setCycleStartRuleOf, cycleDayNow, periodModeOf, applyAutoEstrusToLightTargets } from './store.js';
 import { h, clear, button, modal, textArea, textInput, numberInput, select, dropdown, toggle, askConfirm, cardHead, helpButton } from './dom.js';
 import { renderParamFields } from './ui-params.js';
 // ★ 角色基础信息那四格 + 别名备注：**三处共用一份实现**（设置页 / 悬浮球弹窗 / 这里 ✓）
@@ -141,6 +141,9 @@ function fixedFieldsBar() {
  */
 let _glossaryOpen = false;
 
+/** ★ 2026-11-08：自动门控那张卡折起来了，开合状态也放模块级（重建 / 重画不弹回去 ✓） */
+let _gateOpen = false;
+
 function gateGlossaryBlock() {
     const rows = h('div', { class: 'bc-gate-glossary-body' },
         ...GATE_GLOSSARY.map(([term, desc]) => h('div', { class: 'bc-gate-glossary-row' },
@@ -256,11 +259,28 @@ function templatesCard(handlers) {
                 title: '主 API 现在会收到的内容',
                 width: 880,
                 build: (bd) => {
-                    bd.appendChild(h('div', { class: 'bc-hint', text: '上面「状态摘要」放在对话末尾附近（倒数第 2 条消息之前），下面「沉浸设定」放在系统段，状态的用法那段也在系统段里，一起发' }));
+                    bd.appendChild(h('div', { class: 'bc-hint', text: '上面「状态摘要」放在对话末尾附近（倒数第 2 条消息之前），下面「沉浸设定」「种族设定」放在系统段，状态的用法那段也在系统段里，一起发' }));
                     bd.appendChild(h('div', { class: 'bc-section-title', text: '状态摘要' }));
                     bd.appendChild(h('pre', { class: 'bc-pre', text: pv.state || '（空）' }));
                     bd.appendChild(h('div', { class: 'bc-section-title', text: '沉浸设定' }));
                     bd.appendChild(h('pre', { class: 'bc-pre', text: pv.patch || '（空）' }));
+                    // ★ 第六批：这一轮发了哪几族、每一族发了哪几段
+                    bd.appendChild(h('div', { class: 'bc-section-title', text: '种族设定' }));
+                    const plan = pv.codexPlan;
+                    const sum = (plan && plan.entries || []).filter((e) => e.segments.length);
+                    if (sum.length) {
+                        bd.appendChild(h('div', { class: 'bc-hint', text: '这一轮在场 ' + plan.targetCount + ' 个对象，发了 '
+                            + sum.length + ' 个种族的设定，共 ' + plan.chars + ' 字、约 ' + formatTokens(plan.tokens) + ' token' }));
+                        for (const e of sum) {
+                            bd.appendChild(h('div', { class: 'bc-hint', text: '· ' + e.name + '：' + e.segLabels.join('、')
+                                + '（' + e.chars + ' 字，约 ' + formatTokens(e.tokens) + ' token）' }));
+                        }
+                    }
+                    if (plan && plan.unmatched && plan.unmatched.length) {
+                        bd.appendChild(h('div', { class: 'bc-hint', text: '· 名字对不上：'
+                            + plan.unmatched.map((u) => u.race).join('、') + '（会发一份种族目录，不会默认当人类，也不替你借别的族）' }));
+                    }
+                    bd.appendChild(h('pre', { class: 'bc-pre', text: pv.codex || '（空）' }));
                 },
             });
         }),
@@ -474,8 +494,165 @@ const MODULE_HELP = {
     ],
 };
 
-function moduleCard(mod, targetKey, handlers) {
-    // 这个变体依赖的本体模块有没有开（见 prompt.js 的 moduleActive 双锁）。
+/**
+ * ★ 2026-11-08（她定的）：**产后恢复单独一张卡**。
+ *
+ * 原来那三格塞在「受孕基础率与防护系数」那张卡里，她要求剥出来单独做一条 ——
+ * 理由是「有人不想要」⇒ 所以这张卡最上面挂一个**总开关**：
+ * 关掉之后分娩那一轮照旧直接拨回周期第 1 天，跟加这个功能之前一模一样。
+ *
+ * ⚠️ 它**不是** modules.js 里的模块（这一块没有要发给 AI 的规则正文，全是插件自己算的）⇒
+ * 用虚 id `__postpartum__` 走参数面板那套，卡也自己画（跟成就那条 `__ach__` 一个套路 ✓）。
+ */
+function postpartumCard(H) {
+    const s = settings();
+    // ★ 默认**关**（她 2026-11-08 定的：有人不想要 ⇒ 不主动碰她的周期）
+    const on = s.postpartumOn === true;
+    const rerender = () => { if (H && H.rebuild) H.rebuild(); };
+    const card = h('div', {
+        class: 'bc-card bc-module-card' + (on ? ' on' : ''),
+        'data-module': '__postpartum__',
+    });
+    // 头部照模块卡那套排：标题 → 徽章 → 留白 → 帮助 → 开关（开关永远在最右边 ✓）
+    card.appendChild(h('div', { class: 'bc-card-head' },
+        h('span', { class: 'bc-card-title', text: '产后恢复' }),
+        h('span', { class: 'bc-badge', text: '全局' }),
+        h('div', { class: 'bc-spacer' }),
+        helpButton('产后恢复', [
+            '生完那一段：周期暂停，月经还没有回来，到恢复日那天接回周期第 1 天。',
+            '这一段仍然能怀：现实里排卵常常比第一次月经先恢复，所以这一段默认就允许受孕（按「无月经」那一档的基础率算）。',
+            '想更贴近现实，把「排卵提前恢复」填几天（比如 14）：恢复日之前这几天按受孕窗口那一档算；填 0 就是跟月经绑在同一天。',
+            '怀上就当场结束恢复期，孕周还是从上一次月经算那套（周期接在排卵日上）。',
+            '关掉这个开关：分娩那一轮照旧直接拨回周期第 1 天，跟加这个功能之前一样。',
+            '恢复天数三层：个人单独调 > 图鉴条目里「产后恢复」那一格 > 下面这里；图鉴填了范围就在范围里掷一个数，只掷一次。',
+        ]),
+        h('div', { class: 'bc-card-toggle' }, toggle(on, (v) => {
+            s.postpartumOn = !!v;
+            save();
+            rerender();
+        }))));
+    if (!on) {
+        // ★ 2026-11-08：这一行要和上面那行的标题**左边缘对齐** ——
+        //   `.bc-card-hint` 自带 `margin-left: 10px + padding-left: 2px`（它是给"卡身里的提示"
+        //   用的，卡身自己有 13px 内边距）；我们这条是直接挂在卡上的 ⇒ 那 12px 会顶出来 ✗
+        //   ⇒ 包进 `.bc-card-body`（左右内边距和卡头同源），再把提示自己那点左缩进清零 ✓
+        card.appendChild(h('div', { class: 'bc-card-body' },
+            h('div', {
+                class: 'bc-card-hint bc-card-hint-warn',
+                style: { marginLeft: '0', paddingLeft: '0', marginTop: '0' },
+                text: '已关闭：分娩那一轮照旧直接拨回周期第 1 天。要这一段的话把右边那个开关打开。',
+            })));
+    } else {
+        // 卡身跟模块卡用同一个容器（左右内边距同源 ⇒ 里面的内容跟标题对齐 ✓）
+        const host = h('div', { class: 'bc-card-body' });
+        const pf = renderParamFields('__postpartum__', null, H || {});
+        if (pf) host.appendChild(pf);
+        card.appendChild(host);
+    }
+    return card;
+}
+
+/**
+ * ★ 2026-11-08（第 0 批）：**性特征的总开关**。
+ *
+ * 她定的口径：不能强制开启，要能关。所以单独一张卡、默认关。
+ * 关着时：图鉴条目里不出现「性特征」那一栏，提示词也不会发这一段 ✓
+ * 打开后：图鉴条目里出现这一栏；只在有性接触的那一轮发给主模型。
+ *
+ * ⚠️ 跟产后恢复一样，它不是 modules.js 里的模块（没有要发给 AI 的规则正文），
+ *   用虚 id `__sex__` 自己画卡 ✓
+ */
+function sexTraitsCard(H) {
+    const s = settings();
+    const on = s.sexTraitsOn === true;
+    const rerender = () => { if (H && H.rebuild) H.rebuild(); };
+    const card = h('div', {
+        class: 'bc-card bc-module-card' + (on ? ' on' : ''),
+        'data-module': '__sex__',
+    });
+    card.appendChild(h('div', { class: 'bc-card-head' },
+        h('span', { class: 'bc-card-title', text: '性特征' }),
+        h('span', { class: 'bc-badge', text: '全局' }),
+        h('div', { class: 'bc-spacer' }),
+        helpButton('性特征', [
+            '打开之后，种族图鉴的每一条里会多出「性特征」这一栏：上面是雄性（兽形写雄性，亚人与兽人写男性），下面是雌性。',
+            '这一段跟正文一样常驻发送，不另设门控。',
+            '关掉这个开关：图鉴里不显示这一栏，也不会发给主模型。已经填过的内容不会删，重新打开还在。',
+            '默认关，不想要的人可以一直不开。',
+        ]),
+        h('div', { class: 'bc-card-toggle' }, toggle(on, (v) => {
+            s.sexTraitsOn = !!v;
+            save();
+            rerender();
+        }))));
+    card.appendChild(h('div', { class: 'bc-card-body' },
+        h('div', {
+            class: 'bc-card-hint' + (on ? '' : ' bc-card-hint-warn'),
+            style: { marginLeft: '0', paddingLeft: '0', marginTop: '0' },
+            text: on
+                ? '已打开：图鉴条目里会出现「性特征」这一栏，跟正文一起常驻发给主模型。'
+                : '已关闭：图鉴里不显示这一栏，也不会发给主模型。要写这一段就把右边开关打开。',
+        })));
+    return card;
+}
+
+/**
+ * ★ 2026-11-08（发情期第 0 批）：发情期总开关 ＋ 自动追踪开关。
+ *
+ * 她定的：开关放规则补丁页、默认关；关着时整条不发，档位「发情记录」也不可选 ✓
+ * 自动追踪只对「仅致孕、不能被受孕、这一族有发情期」的对象生效，默认关 ✓
+ */
+function estrusCard(H) {
+    const s = settings();
+    const on = s.estrusOn === true;
+    const auto = s.autoTrackEstrus === true;
+    const rerender = () => { if (H && H.rebuild) H.rebuild(); };
+    const card = h('div', {
+        class: 'bc-card bc-module-card' + (on ? ' on' : ''),
+        'data-module': '__estrus__',
+    });
+    card.appendChild(h('div', { class: 'bc-card-head' },
+        h('span', { class: 'bc-card-title', text: '发情期' }),
+        h('span', { class: 'bc-badge', text: '全局' }),
+        h('div', { class: 'bc-spacer' }),
+        helpButton('发情期', [
+            '这一族有没有发情期、多久一次、一次几天、哪几个月，都在种族图鉴那一条的「发情期」那一栏里填。人类和无血肉的族填「无」。',
+            '发情期跟生理周期是两件事：它自己算日子，不读周期、也不改周期。雌雄都能发情。',
+            '发情期不参与受孕判定：在发情不等于容易怀，也不等于不能怀，怀不怀还是按受孕窗口与系统判定。',
+            '季节空着 = 全年发情。季节存的是「一年里的位置」，换历法或自定义历法都不会错位。',
+            '关掉这个开关：发情这一段整条不发，档位「发情记录」也不出现；已经填过的图鉴内容不会删。',
+            '自动追踪：只把「仅致孕、不能被受孕、这一族有发情期」的对象提进「发情记录」档，默认关；你手动改过档位的不再自动动。',
+        ]),
+        h('div', { class: 'bc-card-toggle' }, toggle(on, (v) => {
+            s.estrusOn = !!v;
+            save();
+            rerender();
+        }))));
+    const body = h('div', { class: 'bc-card-body' });
+    body.appendChild(h('div', {
+        class: 'bc-card-hint' + (on ? '' : ' bc-card-hint-warn'),
+        style: { marginLeft: '0', paddingLeft: '0', marginTop: '0' },
+        text: on
+            ? '已打开：有发情期的族会在状态摘要里报「发情第几天」，面板与日历也会标出来。'
+            : '已关闭：不发发情这一段，档位「发情记录」也不出现。要这一段就把右边开关打开。',
+    }));
+    if (on) {
+        body.appendChild(h('div', { class: 'bc-row bc-row-wrap', style: { marginTop: '10px' } },
+            toggle(auto, (v) => {
+                s.autoTrackEstrus = !!v;
+                save();
+                // ★ 刚打开时，把已经在名单里的轻档也按条件提一遍（不满足条件的原样不动 ✓）
+                if (v) { try { applyAutoEstrusToLightTargets(); } catch { /* 忽略 */ } }
+                rerender();
+            }),
+            h('span', { class: 'bc-hint', text: '自动把「仅致孕、不能被受孕、这一族有发情期」的对象放进「发情记录」档' }),
+        ));
+    }
+    card.appendChild(body);
+    return card;
+}
+
+function moduleCard(mod, targetKey, handlers) {    // 这个变体依赖的本体模块有没有开（见 prompt.js 的 moduleActive 双锁）。
     // ⚠️ 必须写在 moduleCard 里 —— 之前误插到了 templatesCard（那里没有 mod），
     //   运行时 ReferenceError: missingBase is not defined，整个面板建不出来。
     const reqIds = mod.requires ? (Array.isArray(mod.requires) ? mod.requires : [mod.requires]) : [];
@@ -556,6 +733,11 @@ function moduleCard(mod, targetKey, handlers) {
 
     card.appendChild(h('div', { class: 'bc-card-desc', text: mod.desc }));
 
+    // ★ 2026-11-08（她说没对齐）：附加在卡身里的这些行（提示 / 档位 / 规则行）统一放进同一个
+    //   `.bc-card-body`，左右内边距才跟卡头和说明同源；没有附加内容时它自己 display:none ✓
+    const extraBody = h('div', { class: 'bc-card-body' });
+    card.appendChild(extraBody);
+
     // ★ 2026-10-24（她：给继承加三档运气）——
     //   不做加权：一键只是把「怀孕判定模块」里那两行区间**换成对应的一套**，
     //   换完照样能在参数面板逐格改 ✓（预设是"换表"，不是"改概率偏向"）
@@ -563,8 +745,14 @@ function moduleCard(mod, targetKey, handlers) {
         // ★ 2026-10-24（她：三颗按钮看不出现在用的是哪档）⇒ 改成下拉，当前档位一眼可见 ✓
         const curPreset = (() => { try { return detectTalentPreset(useTarget); } catch { return 'custom'; } })();
         const curLabel = { normal: '正常', lucky: '好运', super: '超好运' }[curPreset] || '自定义（现在这套）';
-        card.appendChild(h('div', { class: 'bc-card-hint', text:
-            '运气档位决定孩子拿到好天赋的概率，外貌不受这一项影响。换完还能在参数面板逐格改。' }));
+        // ★ 2026-11-08（她说这里没对齐）——
+        //   `.bc-card-hint` 自带 10+2 的左缩进，本来只适合放在卡身里再额外缩一点；
+        //   这一段和下面两行都进了 `extraBody`，提示自己的缩进清零，左边缘跟卡头对齐 ✓
+        extraBody.appendChild(h('div', {
+            class: 'bc-card-hint',
+            style: { marginLeft: '0', paddingLeft: '0', marginTop: '0' },
+            text: '运气档位决定孩子拿到好天赋的概率，外貌不受这一项影响。换完还能在参数面板逐格改。',
+        }));
         const presetOpts = [
             ['normal', '正常（默认）'],
             ['lucky', '好运'],
@@ -572,7 +760,7 @@ function moduleCard(mod, targetKey, handlers) {
         ];
         // ★ 2026-10-24（她：咋四个）——「自定义」只在当前值认不出预设时才出现在列表里 ✓
         if (curPreset === 'custom') presetOpts.push(['custom', curLabel]);
-        card.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+        extraBody.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
             h('span', { class: 'bc-label', text: '运气档位' }),
             dropdown(curPreset, presetOpts, (v) => {
                 if (v === 'custom' || v === curPreset) return;
@@ -591,7 +779,7 @@ function moduleCard(mod, targetKey, handlers) {
             ['pat', '偏向致孕方'],
         ];
         if (curDom === 'custom') domOpts.push(['custom', domLabel]);
-        card.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+        extraBody.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
             h('span', { class: 'bc-label', text: '显性倾向' }),
             dropdown(curDom, domOpts, (v) => {
                 if (v === 'custom' || v === curDom) return;
@@ -602,35 +790,25 @@ function moduleCard(mod, targetKey, handlers) {
         ));
     }
 
-    // ★ 异种：各族比例是按"物种现实 + 作品惯例"定的。
-    //   ⇒ **只进界面**，提示词一个字都不加（加了白吃 TOKEN）✓
-    if (mod.id === 'xenotype') {
-        card.appendChild(h('div', { class: 'bc-card-hint', text:
-            '各族胎数按物种现实定（犬科一窝 4-8 只、鱼类成百上千枚、虫族按作品惯例）' +
-            '性别比例同理：真实昆虫按生物学（蜂/蚁的工蜂全是雌性），虫族默认「雌性稀有」' }));
-        card.appendChild(h('div', { class: 'bc-card-hint', text:
-            '想换成别的世界观，直接改这个模块文案里那一行：' }));
-        card.appendChild(h('div', { class: 'bc-numhint', text:
-            '虫族性别 · 雌性稀有（默认）  1-12 雌，13-100 雄\n' +
-            '虫族性别 · 雌性主导          1-97 雌，98-100 雄\n' +
-            '虫族性别 · 均衡              1-50 雌，51-100 雄' }));
-    }
-
     // ★★ 精子这一组三行并在一起（2026-10-20）——
     //   原来「周期结算方式」在卡头、「判定口径」在卡身、中间夹着存活期 ⇒
     //   三个不同层级的旋钮挤在一起，而且两颗规则变体都用「存活」这个词
     //   ⇒ 现在包成一块、每行前面写清它管什么，名字也不再撞 ✓
-    if (mod.id === 'cycle_module') card.appendChild(spermGroup(handlers));
+    if (mod.id === 'cycle_module') extraBody.appendChild(spermGroup(handlers));
     // ★ 着床判定什么时候掷（怀孕判定模块那张卡）
     if (mod.id === 'pregnancy_module') {
-        card.appendChild(implantDaysRow(handlers));
-        card.appendChild(implantTimingRow(handlers));
+        extraBody.appendChild(implantDaysRow(handlers));
+        extraBody.appendChild(implantTimingRow(handlers));
     }
     // 互斥的变体（现实向/二次元向、人类版/异种版）明确说明二选一
     if (mod.exclusive) {
         const mates = MODULES.filter(m => m.exclusive === mod.exclusive && m.id !== mod.id);
         if (mates.length) {
-            card.appendChild(h('div', { class: 'bc-card-hint', text: '与其他变体二选一：' + mates.map(m => m.name).join('、') }));
+            extraBody.appendChild(h('div', {
+                class: 'bc-card-hint',
+                style: { marginLeft: '0', paddingLeft: '0' },
+                text: '与其他变体二选一：' + mates.map(m => m.name).join('、'),
+            }));
         }
     }
     // 本体没开就明说，别让人打开变体却看不出为什么没效果
@@ -641,7 +819,10 @@ function moduleCard(mod, targetKey, handlers) {
     if (missingBase.length) {
         const baseId = missingBase[0];
         const baseName = MODULES.find(x => x.id === baseId)?.name || baseId;
-        card.appendChild(h('div', { class: 'bc-card-hint bc-card-hint-warn' },
+        extraBody.appendChild(h('div', {
+            class: 'bc-card-hint bc-card-hint-warn',
+            style: { marginLeft: '0', paddingLeft: '0' },
+        },
             h('span', { text: '⚠️ 这个变体需要先打开：' + missingBase.map(id => MODULES.find(x => x.id === id)?.name || id).join('、') }),
             // 跳转到本体的按钮：点完之后还要能跳回这个之前被锁的条目
             button('🔓 去开启「' + baseName + '」', () => {
@@ -663,7 +844,10 @@ function moduleCard(mod, targetKey, handlers) {
         //   ⇒ 换成一条说明 + 两个出口（切全文可改 / 丢弃）✓
         paramHost.appendChild(frozenBar(mod, useTarget, handlers));
     } else {
-        const pf = renderParamFields(mod.id, paramTarget, handlers);
+        // ★ 2026-11-06：人物视图里「种族 / 属于哪个大类」已经在上面那张
+        //   「角色基础信息」卡里了 ⇒ 下面身体补丁的参数面板不再重复画（一个动作一个入口）
+        const ph = { ...handlers, hideBodyMeta: paramTarget !== null };
+        const pf = renderParamFields(mod.id, paramTarget, ph);
         if (pf) paramHost.appendChild(pf);
     }
     body.appendChild(paramHost);
@@ -1142,14 +1326,15 @@ function implantDaysRow(handlers) {
     row.appendChild(h('span', { class: 'bc-label', text: '着床天数（天）' }));
     const mk = (val, key) => {
         const inp = h('input', {
-            type: 'number', min: '1', max: '60', step: '1',
+            type: 'number', min: '1', max: '400', step: '1',
             class: 'bc-num-sm', value: String(val),
             title: key === 'implantDaysMin' ? '最短几天着床' : '最长几天着床',
         });
         inp.onchange = () => {
             let v = Math.round(Number(inp.value));
             if (!Number.isFinite(v)) v = (key === 'implantDaysMin') ? DEF.min : DEF.max;
-            v = Math.max(1, Math.min(60, v));
+            // ★ 2026-11-07：上界放到 400（滞育族要填 130-170 天 ✓）
+            v = Math.max(1, Math.min(400, v));
             const s2 = settings();
             s2[key] = v;
             if (Number(s2.implantDaysMin) > Number(s2.implantDaysMax)) {
@@ -1177,7 +1362,7 @@ function implantDaysRow(handlers) {
     row.appendChild(reset);
     row.appendChild(h('span', {
         class: 'bc-hint bc-hint-inline',
-        text: '受精之后过几天才着床：这个区间里每天的可能性都一样',
+        text: '受精之后过几天才着床：这个区间里每天的可能性都一样；超过 60 天按滞育算，孕周从着床那天起算',
     }));
     return row;
 }
@@ -1479,19 +1664,11 @@ function periodModeSwitch(handlers) {
 function personBasicInfoCard(targetKey, rerender) {
     const body = h('div', { class: 'bc-card-body' });
     const onChange = () => { try { rerender?.(); } catch { /* 忽略 */ } };
-    // ★ 规则补丁的人物这里不重复画「属于哪个大类」那一格（下面有一个 ✓）
-    //   ＋这一页也带上**种族名**（要能自定义名字）
-    //   ⇒ 这张卡**不重复画**那两格（下面「身体补丁（生理设定）」的参数面板里都有 ✓）。
-    //   ⚠️ **只在下面那份真的画得出来时才藏**：
-    //     ① 无月经那一档：身体补丁整条不发、卡片也不画 ⇒ 下面没有
-    //     ② 这条正文被冻结：卡里换成"冻结提示条"、参数面板不画 ⇒ 下面也没有
-    //     这两种情况下必须把这两格留在上面，否则在人物里就彻底找不到它们了 ✗
-    //     （本项目老规矩：被藏起来的控件 = 等于不存在 ✓）
-    let paramBelow = true;
-    try {
-        paramBelow = !isNoCycleMode(periodModeOf(targetKey)) && !isPatchFrozen('body_base', targetKey);
-    } catch { paramBelow = true; }
-    bodyLockRows(body, targetKey, { onChange, hideParamDup: paramBelow });
+    // ★ 2026-11-06（她：人物里凭什么不能设种族）：这张卡**现在**带「种族 / 属于哪个大类」，
+    //   下面身体补丁的参数面板不再重复画那两格 ⇒ 一个动作一个入口，而且人待的地方就有 ✓
+    //   ⚠️「属于哪个大类」是**临时的**：等图鉴那一批种族数据接管异种表，这一格就退休；
+    //     长期留在这张卡上的是「种族」那格（她说这一格之后会删掉 ✓）
+    bodyLockRows(body, targetKey, { onChange });
     // ★ 2026-10-24：察觉档位（A~E）——这里也能改；玩家自己存全局，别的存本聊天
     {
         const curTier = (() => { try { return awarenessTierIdOf(targetKey); } catch { return ''; } })();
@@ -1971,7 +2148,8 @@ export function renderModulesTab(container, handlers = {}) {
     const gatedAll = sumTokens(gatedOn.map(m => _tkText(m.id)));
     const judgeTk = alwaysTk + gatedTk;
     const pv = previewInjection();
-    const mainTk = estimateTokens(pv.patch);
+    // ★ 第六批：注入主 API 的体量＝状态摘要 ＋ 沉浸设定 ＋ 种族设定（三样都算，跟下面那行说明对上 ✓）
+    const mainTk = estimateTokens([pv.state, pv.patch, pv.codex].filter(Boolean).join('\n'));
 
     container.appendChild(h('div', { class: 'bc-token-bar' },
         h('div', { class: 'bc-token-item' },
@@ -1999,7 +2177,7 @@ export function renderModulesTab(container, handlers = {}) {
             '插件 API · 常驻：每轮都发的那些补丁总共多少',
             '插件 API · 非常驻：带「自动」徽章、条件满足才发的那些总共多少（全开值写在括号里）',
             '本轮合计：上面两格加起来，就是这一轮推演真的送出去的量',
-            '注入主 API：整套注入（状态摘要 + 沉浸设定）的体量',
+            '注入主 API：整套注入（状态摘要 + 沉浸设定 + 种族设定）的体量',
             isWorld
                 ? '这里只算「世界观」这一批（所有对象共用，只发一次）'
                 : `这里只算给「${targetLabel(targetKey)}」的「人物」这一批（没改过的对象共用一份，改过的各单独一份；这里按一份算）`,
@@ -2029,11 +2207,15 @@ export function renderModulesTab(container, handlers = {}) {
         container.appendChild(periodNamesCard(handlers));
 
         // ---- 自动门控（放在这里而不是设置页：它管的就是「哪些提示词发出去」） ----
-        const gateBody = h('div', { class: 'bc-gate-grid' });
-        // ★ 非月经模式下，「来月经时」这个门控永远不会开 ⇒ 不显示它 ✓
+        // ★ 2026-11-08（她提的：这张卡平常没人去动，摆在页面上占格子）——
+        //   折成一条可折叠行、默认收起，标题右边带状态字「N 个开着」：
+        //   不展开也一眼看得出开没开（跟「别名与备注」那条同一个做法 ✓）。
+        //   折叠状态放**模块级** ⇒ 分类页签重建 / 整页重画之后不会自己弹回去 ✓
         const _pmNone = pmNone;
-        for (const [kind, label] of Object.entries(GATE_LABEL)) {
-            if (kind === 'menstruation' && _pmNone) continue;   // 跳过 ✓
+        const gateKinds = Object.entries(GATE_LABEL)
+            .filter(([kind]) => !(kind === 'menstruation' && _pmNone));   // 非月经模式下「来月经时」永远不会开 ⇒ 不列 ✓
+        const gateBody = h('div', { class: 'bc-gate-grid' });
+        for (const [kind, label] of gateKinds) {
             const isOn = isGateEnabled(kind);
             // ★ 归属要把「gate 数组里含它」和「gateAny 里含它」都算上 ——
             //   ⚠️ 只认 `m.gate === kind` 的话 ⇒ heritage_once 那一行的模块名单是空的（看着像没人在用），
@@ -2050,19 +2232,36 @@ export function renderModulesTab(container, handlers = {}) {
                 ),
             ));
         }
-        container.appendChild(h('div', { class: 'bc-card bc-gate-card' },
-            cardHead('自动门控（省 token）', [
-                '打开之后，带「自动」徽章的补丁只在条件满足时才真的发出去，平时一个字都不占，不是「发了叫 AI 忽略」',
-                '关掉某条 = 那一类永远发送',
-            ]),
-            h('div', { class: 'bc-card-body' },
-                (_pmNone
-                    ? h('div', { class: 'bc-hint', text: '当前是「非月经」模式，「来月经时」那条自动关闭（不显示在这里）' })
-                    : null),
-                gateBody,
-                gateGlossaryBlock(),
-            ),
-        ));
+        const gateOnCount = gateKinds.filter(([kind]) => isGateEnabled(kind)).length;
+        const gateState = h('span', { class: 'bc-gate-state', text: gateOnCount + ' 个开着' });
+        const gateCaret = h('span', { class: 'bc-sec-caret' });
+        const gateHelp = helpButton('自动门控（省 token）', [
+            '打开之后，带「自动」徽章的补丁只在条件满足时才真的发出去，平时一个字都不占，不是「发了叫 AI 忽略」',
+            '关掉某条 = 那一类永远发送',
+        ]);
+        const gateHead = h('div', { class: 'bc-card-head bc-sec-toggle', title: '点击展开 / 收起' },
+            gateCaret,
+            h('div', { class: 'bc-card-title', text: '自动门控（省 token）' }),
+            h('div', { class: 'bc-spacer' }),
+            gateState,
+            gateHelp,
+        );
+        // 点「？」只开说明，别顺带把卡片收起 / 展开 ✓
+        gateHelp.addEventListener('click', (e) => e.stopPropagation());
+        const gateCardBody = h('div', { class: 'bc-card-body' },
+            (_pmNone
+                ? h('div', { class: 'bc-hint', text: '当前是「非月经」模式，「来月经时」那条自动关闭（不显示在这里）' })
+                : null),
+            gateBody,
+            gateGlossaryBlock(),
+        );
+        const gateSync = () => {
+            gateCaret.textContent = _gateOpen ? '▾' : '▸';
+            gateCardBody.style.display = _gateOpen ? '' : 'none';
+        };
+        gateHead.addEventListener('click', () => { _gateOpen = !_gateOpen; gateSync(); });
+        gateSync();
+        container.appendChild(h('div', { class: 'bc-card bc-gate-card' }, gateHead, gateCardBody));
 
         // ---- 世界观档案（存 / 取整套规则 ✓）----
         container.appendChild(worldArchiveRow(H));
@@ -2085,6 +2284,10 @@ export function renderModulesTab(container, handlers = {}) {
     const active = TABS.some(t => t[0] === s.ui.patchCat) ? s.ui.patchCat : TABS[0][0];
 
     const tabBar = h('div', { class: 'bc-cat-tabs' });
+    // ★ 2026-11-09：这几页末尾**另挂**了几张全局开关卡（没有正文、不算「模块」）——
+    //   页签名必须把它们也说一句，否则页签数字会跟下面数出来的卡片数对不上 ✗
+    //   ⚠️ 这个数要跟下面 `pane` 里真正 append 的那几张一致（改一处就一起改 ✓）
+    const EXTRA_SWITCHES = isWorld ? { pregnancy: 1, period: 2 } : {};
     for (const [id, label] of TABS) {
         // ★ 页签上的"几条 / 多少 tk"必须和**下面真正列出来的**是同一份清单 ✓
         //   ⚠️ 不能写 `MODULES.filter(m => m.cat === id && scoped(m.id))` ✗ —— 那只按视图过滤，
@@ -2099,7 +2302,12 @@ export function renderModulesTab(container, handlers = {}) {
         },
             h('div', { class: 'bc-cat-tab-name', text: label }),
             h('div', { class: 'bc-cat-tab-meta' },
-                mods.length ? h('span', { class: 'bc-cat-count', text: mods.length + ' 条' }) : null,
+                mods.length
+                    ? h('span', {
+                        class: 'bc-cat-count',
+                        text: mods.length + ' 条' + (EXTRA_SWITCHES[id] ? ' + ' + EXTRA_SWITCHES[id] + ' 个开关' : ''),
+                    })
+                    : null,
                 mods.length ? tokenBadge(tk) : null,
             ),
         ));
@@ -2129,6 +2337,25 @@ export function renderModulesTab(container, handlers = {}) {
             // ★ 人物视图：卡片编辑的是**当前这个对象**那份 ✓（世界观视图：直接编全局 ✓）
             pane.appendChild(moduleCard(m, isWorld ? '__global__' : targetKey, H));
         }
+        // ★ 2026-11-08：这几张卡是**全局开关**（卡头徽章就写着「全局」），不是有正文的模块 ——
+        //   原来只按「是不是生理期这一页」挂，结果**人物视图也画了一份**（她问「人物为什么里面
+        //   也有性特征和产后恢复」）⇒ 那些开关按人不分，画在人物里只是同一个开关的副本 ✗
+        //   ⇒ 只在**世界观**视图挂 ✓
+        //   ⚠️ 判据仍然用**页面**；加的是"哪个视图"这一条，
+        //     别拿"这页里有没有某个模块"当条件（模块会被 scoped() 藏掉 ⇒ 整张卡不见 ✗）
+        //
+        // ★ 2026-11-09：**产后恢复搬到「怀孕与孕期」页** ——
+        //   它本质是孕期结束之后的事，跟周期模块不在一条线上 ✓
+        //   ⇒ 搬完**两页的页签数字都得跟着算**，否则又会出现"写着 2 条、下面 4 张卡" ✗
+        if (isWorld && active === 'pregnancy') {
+            pane.appendChild(postpartumCard(H));
+        }
+        if (isWorld && active === 'period') {
+            // ★ 2026-11-08：性特征的总开关（排在发情期前面，跟原来的相对顺序一致 ✓）
+            pane.appendChild(sexTraitsCard(H));
+            // ★ 2026-11-08（发情期第 0 批）：发情期总开关 ＋ 自动追踪 ✓
+            pane.appendChild(estrusCard(H));
+        }
     }
 
     // ---- 底部：批量操作（按**当前视图**限范围 ✓）----
@@ -2141,7 +2368,7 @@ export function renderModulesTab(container, handlers = {}) {
             () => { for (const m of viewMods) setModuleOn(m.id, !!m.locked); refresh?.(); rerender(); }),
     );
     if (isWorld) {
-        toolbar.appendChild(button('恢复出厂设置（含文案）', async () => {
+        toolbar.appendChild(button('恢复默认设置（含文案）', async () => {
             if (!(await askConfirm('会把所有补丁开关恢复成默认，并清掉你改过的文案与模板。确定吗？'))) return;
             s.modules = {};
             s.injectTemplates = {};
@@ -2153,7 +2380,7 @@ export function renderModulesTab(container, handlers = {}) {
         toolbar.appendChild(h('div', { class: 'bc-spacer' }));
         toolbar.appendChild(helpButton('批量操作', [
             '「全部打开 / 全部关闭」只作用于当前视图：世界观那一批，或者当前这个对象的专属那份',
-            '「恢复出厂设置」只清世界观那批（开关 + 改过的文案 + 注入模板）',
+            '「恢复默认设置」只清世界观那批（开关 + 改过的文案 + 注入模板）',
             '人物专属补丁在「人物」那一栏单独清，这里不会碰它',
         ]));
     } else {

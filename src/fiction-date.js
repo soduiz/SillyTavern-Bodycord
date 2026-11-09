@@ -567,6 +567,16 @@ export function monthsPerYear(cal) {
     return normalizeCalendar(cal).months.length;
 }
 
+/**
+ * ★ 2026-11-08（发情期第 0 批）：这一年有几天。
+ *   发情季节按「一年里的位置」存（不是月份序号）⇒ 要用它把位置换算成日子 / 反过来 ✓
+ *   认不出来一律按公历平年兜（绝不抛 ✓）
+ */
+export function daysInYearOf(y, cal) {
+    const c = cal ? normalizeCalendar(cal) : activeCalendar();
+    return diyRaw(c, Math.max(1, Math.floor(Number(y) || 1)));
+}
+
 /** 天数 → 从元年 1/1 起算的绝对天数（用来做加减和差值） */
 function toAbs(c, p) {
     let days = 0;

@@ -20,7 +20,8 @@ import { h, button, toggle, section, clear, askConfirm, modal, scrollTopOf, setS
 import {
     wiOn, wiFollows, wiDescOn, setWiDescOn,
     wiPersonaOn, setWiPersonaOn, wiHeritageAuto, setWiHeritageAuto,
-    wiHeritageSources, setWiHeritageSource,
+    wiBindOn, setWiBindOn,
+    wiHeritageSources, setWiHeritageSource, resetWiHeritageSources,
     wiCharOn, setWiCharOn, wiGlobalOn, setWiGlobalOn, wiOffBookNames,
     wiBookAllowed, wiEntryAllowed, setWiBook, setWiEntry, wiResetFollow, wiOffCounts,
 } from './settings.js';
@@ -93,33 +94,57 @@ export function wiSection(container) {
         toggle(wiPersonaOn(), (v) => { setWiPersonaOn(v); paint(); }),
         h('div', { class: 'bc-spacer' }),
     );
+    // ★ 2026-11-06（第七批）：角色自己绑的世界书条目（「设定来源」）——
+    //   跟上面几颗各管各的：它只看对象绑了哪几条，不看关键词有没有命中 ✓
+    const rowBind = h('div', { class: 'bc-row' },
+        h('span', { class: 'bc-label', text: '带上角色绑定的世界书条目' }),
+        toggle(wiBindOn(), (v) => { setWiBindOn(v); paint(); }),
+        h('div', { class: 'bc-spacer' }),
+    );
     // ★ 2026-10-23（她要的）：遗传判定那一轮临时带上（只看那一轮，不改上面几颗开关）
     // ★ 2026-10-24（她：自动带一次发送什么要能编辑；遗传那一轮完全按它自己的配置发）——
     //   四类来源各自可选，编辑结果覆盖常驻那几颗开关（只看遗传那一轮）✓
-    const openHeritageSources = () => modal({
-        title: '遗传判定时自动带的内容',
-        width: 520,
-        saveText: '关闭',
-        hideCancel: true,
-        build: (body) => {
+    const openHeritageSources = () => {
+        const host = h('div', {});
+        const draw = () => {
+            clear(host);
             for (const [k, label] of [
                 ['charBook', '角色卡世界书'],
                 ['globalBook', '全局世界书'],
                 ['desc', '角色卡描述'],
+                // ★ 2026-11-09：跟上面的「角色卡描述」分开写清楚 ——
+                //   上面那颗是**当前这张卡**，这颗是**对象自己绑的那张卡** ✓
+                ['bindDesc', '角色绑定的角色描述'],
                 ['persona', '用户角色设定'],
+                ['bind', '角色绑定的世界书条目'],
             ]) {
-                body.appendChild(h('div', { class: 'bc-row' },
+                host.appendChild(h('div', { class: 'bc-row' },
                     h('span', { class: 'bc-label', text: label }),
                     toggle(wiHeritageSources()[k], (v) => { setWiHeritageSource(k, v); }),
                     h('div', { class: 'bc-spacer' }),
                 ));
             }
-            body.appendChild(h('div', {
-                class: 'bc-hint',
-                text: '遗传判定那一轮只按这份配置发（覆盖上面那几颗常驻开关）；正常推演和当场重判共用同一份',
-            }));
-        },
-    });
+            host.appendChild(h('div', { class: 'bc-row' },
+                button('恢复默认', () => { resetWiHeritageSources(); draw(); },
+                    { title: '六类来源改回默认：只勾用户角色设定、角色绑定的角色描述、角色绑定的条目' }),
+                h('div', { class: 'bc-spacer' }),
+            ));
+        };
+        return modal({
+            title: '遗传判定时自动带的内容',
+            width: 520,
+            saveText: '关闭',
+            hideCancel: true,
+            build: (body) => {
+                draw();
+                body.appendChild(host);
+                body.appendChild(h('div', {
+                    class: 'bc-hint',
+                    text: '遗传判定那一轮只按这份配置发（覆盖上面那几颗常驻开关）；默认只勾用户角色设定和角色绑定的条目。正常推演和当场重判共用同一份',
+                }));
+            },
+        });
+    };
     const rowHeritage = h('div', { class: 'bc-row' },
         h('span', { class: 'bc-label', text: '遗传判定时自动带一次' }),
         toggle(wiHeritageAuto(), (v) => { setWiHeritageAuto(v); paint(); }),
@@ -141,14 +166,17 @@ export function wiSection(container) {
     );
     // ★ 减密度：卡片上不留说明文字，全在右上角「？」的弹窗里（定下的形态 ✓）
     //   ⚠️ 这里**不碰 `.bc-section-body`**（假 DOM 里 querySelector 返回 null ⇒ 冒烟测试会炸 ✗）
-    const box = section('世界书（给推演看）', rowChar, rowGlobal, rowDesc, rowPersona, rowHeritage, rowTools, stat, {
+    const box = section('世界书（给推演看）', rowChar, rowGlobal, rowDesc, rowPersona, rowBind, rowHeritage, rowTools, stat, {
         help: [
             '插件 API（状态推演）会读一下世界书，用来理解角色、种族与背景。读法跟酒馆给正文的读法一致：只取【当前角色卡的世界书】+【全局世界书】里这一轮生效的那几条（常驻 + 关键词命中的）；聊天书、人设书不读',
-            '「角色卡世界书」和「全局世界书」是两颗开关，各管各的：想只带作者给这张卡写的那几本，就关掉全局那颗。两颗都出厂关着（世界书体量大，默认带上等于每轮白吃一截 token）',
+            '「角色卡世界书」和「全局世界书」是两颗开关，各管各的：想只带作者给这张卡写的那几本，就关掉全局那颗。两颗都默认关着（世界书体量大，默认带上等于每轮白吃一截 token）',
             '同一本书如果既挂在全局、又被这张卡绑定，算角色卡那一类（按角色卡那颗开关走）',
-            '「带角色卡的角色描述」= 把角色卡里那段角色描述也一起塞给推演。它跟上面两颗各管各的：世界书都关着，它也能单独带；反过来关了它，世界书照常发。它出厂也是关的（那段通常最长、每轮都吃 token，还常塞着状态栏格式）；要更准就打开它',
-            '「带用户角色设定」= 把你自己那份人设描述（酒馆里当前用的人设）也一起带给推演。它跟前面几颗都各管各的。出厂关着：那是你写给自己看的设定，每轮都发会一直吃 token',
-            '「遗传判定时自动带一次」= 孩子第一次判遗传特质的那一轮，只看这一轮，按右边「编辑…」里勾的内容发（角色卡世界书 / 全局世界书 / 角色卡描述 / 用户角色设定，四类各自可选）；这一轮完全按它自己的配置发，覆盖上面那几颗常驻开关，下一轮恢复。出厂开着；当场重判也走同一份配置',
+            '「带角色卡的角色描述」= 把角色卡里那段角色描述也一起塞给推演。它跟上面两颗各管各的：世界书都关着，它也能单独带；反过来关了它，世界书照常发。它默认也是关的（那段通常最长、每轮都吃 token，还常塞着状态栏格式）；要更准就打开它。它管的是当前这张卡，也管对象自己绑的那张卡（在人物页「设定来源」里绑，只在这个人在场时发）',
+            '「带用户角色设定」= 把你自己那份人设描述（酒馆里当前用的人设）也一起带给推演。它跟前面几颗都各管各的。它默认关着（那是你写给自己看的设定，每轮都发会一直吃 token）；要更准就打开它',
+            '「带上角色绑定的世界书条目」= 把对象在「人物页 → 角色基础信息 → 设定来源」里绑的那几条世界书条目也带给推演。它跟上面几颗都各管各的，也不看关键词有没有命中：它默认开着，每轮都带上；不想带就关掉。先给对象绑上，才有东西可带',
+            '遗传判定时先带两边绑定的条目：受孕方和致孕方各自绑了设定来源，就发那几条，不把整本铺开；两边一条都没绑，才按上面「编辑…」里那份配置临时带一次整本',
+            '「遗传判定时自动带一次」= 孩子第一次判遗传特质的那一轮，只看这一轮，按右边「编辑…」里勾的内容发（角色卡世界书 / 全局世界书 / 角色卡描述 / 角色绑定的角色描述 / 用户角色设定 / 角色绑定的条目，六类各自可选）；这一轮完全按它自己的配置发，覆盖上面那几颗常驻开关，下一轮恢复。默认开着；「编辑…」里默认只勾用户角色设定、角色绑定的角色描述、角色绑定的条目；当场重判也走同一份配置',
+            '默认状态：角色卡世界书、全局世界书、角色卡描述、用户角色设定是关的；角色绑定的角色描述、角色绑定的条目、遗传判定时自动带一次是开的；遗传判定那一轮「编辑…」里默认只勾用户角色设定、角色绑定的角色描述、角色绑定的条目。这里说的只是默认值，你自己动过的开关不会被改回来',
             '什么时候打开比较值：人设复杂、或者设定不摆在台面上的时候。比如角色其实不是人类、妖装成人类，而且剧情里没人看得出来，这种推演最容易判错，开着更准；人设简单、一眼能看明白的时候关着就行。当然开不开随你，带上这些设定只是让推演把这个角色定得更准',
             '「编辑世界书…」里只列当前在用的那几本（角色卡的书 ＋ 当前开着的全局书），不再把库里所有书都摊出来；已经排除的书在下面的池子里，随时能放回',
             '「刷新」= 重新扫一遍当前在用的世界书与条目。刚进聊天、酒馆还没生成过时，清单可能是空的，点它一下就好',
@@ -164,6 +192,18 @@ export function wiSection(container) {
             stat.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
                 h('span', { class: 'bc-badge', text: '已锁死（手动）' }),
                 h('span', { class: 'bc-hint', text: `已排除 ${books} 本 / ${entries} 条（点「编辑世界书…」可以放回）` }),
+            ));
+        }
+        // ★ 第七批：绑定的那颗开着时给一句"去哪儿绑"（不然她不知道这个人绑了没 ✓）
+        if (wiBindOn()) {
+            stat.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+                h('span', { class: 'bc-hint', text: '角色绑定的世界书条目会每轮带上（去人物页 · 角色基础信息 · 设定来源里绑）' }),
+            ));
+        }
+        // ★ 2026-11-09：对象绑了角色卡的，在那个人在场时各带一段角色描述
+        if (wiDescOn()) {
+            stat.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+                h('span', { class: 'bc-hint', text: '人物页里绑了角色卡的对象，在场时会各带一段那张卡的角色描述（同上，在「设定来源」里绑）' }),
             ));
         }
     }
@@ -215,6 +255,14 @@ export function openWiEditor(onDone) {
                     // ★ 含模板代码的条目没渲染成功 ⇒ 如实说一句（异常才说话，正常不啰嗦 ✓）
                     ...(s.skipped ? [h('span', { class: 'bc-hint', text:
                         `有 ${s.skipped} 条含模板代码、没能渲染，这次跳过了` })] : []),
+                    // ★ 2026-11-09：绑了角色卡的对象，这一轮带了几段角色描述
+                    ...(s.cardDescs ? [h('span', { class: 'bc-hint', text:
+                        `角色描述 ${s.cardDescs} 段` + (s.cardDescMissing ? ` · ${s.cardDescMissing} 张卡找不到` : '') })] : []),
+                    // ★ 第七批：角色绑定的那几条（带了 / 找不到 / 被排除，都如实报 ✓）
+                    ...(s.boundTotal ? [h('span', { class: 'bc-hint', text:
+                        `角色绑定 ${s.boundTotal} 条：带上 ${s.bound}`
+                        + (s.boundMissing ? ` · ${s.boundMissing} 条找不到` : '')
+                        + (s.boundOff ? ` · ${s.boundOff} 条被排除` : '') })] : []),
                     h('div', { class: 'bc-spacer' }),
                     button('恢复跟随酒馆', async () => {
                         const { books, entries } = wiOffCounts();

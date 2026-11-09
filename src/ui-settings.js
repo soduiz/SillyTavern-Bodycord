@@ -26,9 +26,7 @@ import { settings, save, TARGET_MODES, ICON_SLOTS, customIcons, setCustomIcon,
 import { STAGE_ORDER, stageTextOf, stageLayersFor,
     STAGE_LAYERS, STAGE_LAYER_LABEL,
     vaginaKeyOf, wombKeyOf, pregnantKeyOf, PREGNANT_STAGES } from './stages.js';
-// ★ 「属于哪个大类」的选项表（一份来源：照抄 [异种扩展包 · 西方与通用] 那张表第一列 ✓）
-//   ＋ 最前面的「人类」那一项（见 modules.js 的 XENO_CLASS_HUMAN ✓）
-import { XENO_CLASSES, XENO_CLASSES_EAST, XENO_CLASS_HUMAN, RACE_NAME_SUGGESTIONS } from './modules.js';
+// ★ 2026-11-06：大类那格退休（判定只看种族）⇒ 不再引选项表 ✓
 // ★ 「上次推演」那行说人话（命中率 / 输入输出），口径只写在 tokens.js 一处 ✓
 import { formatUsage } from './tokens.js';
 // ★ 「这个角色的种族」那一格的读写走 params 的同一份 spec（锚点只写一处 ✓）
@@ -39,8 +37,9 @@ import { PARAM_SPECS, readParams, writeParams } from './params.js';
 import {
     targetList, displayName, createTarget, removeTarget, setActive, state,
     lightTargetList, setTargetLight,
-    resetAll, commit, userLabel, filterTargets,
-    bodyLockOf, setBodyLockField, USER_KEY, xenoClassOf, setXenoClassOf, reportedBodyFlagOf, raceJudgeOf, setRaceManualOf,
+    setTrackMode, trackModeOf, estrusTargets, estrusInfoOf, isTargetLoose,
+    resetAllKeepUser, commit, userLabel, filterTargets,
+    bodyLockOf, setBodyLockField, USER_KEY, reportedBodyFlagOf, raceJudgeOf, setRaceManualOf,
     cycleWhileInfertileOf, setCycleWhileInfertileOf,
     awarenessTierIdOf, setAwarenessTierIdOf,
     identOf, setIdentField, mergeTargets, setPeriodModeOf, periodModeOf, parseAliases,
@@ -70,7 +69,15 @@ import { pickAndCompressImage, pickImageFile, humanBytes } from './image.js';
 import { saveStageImage, deleteNotesImage } from './notes-image.js';
 import { ST, getCtx } from './st.js';
 import { askArchiveName, applyPersonArchiveInteractive } from './ui-archive.js';
+// ★ 图鉴（第二批）：选条目 / 单独调 / 绑定读数 ——
+//   ⚠️ 方向是**单向**的（ui-settings 引 ui-codex；ui-codex 不引 ui-settings）⇒ 不成环 ✓
+import { openCodexOverrideEditor, codexPickControl } from './ui-codex.js';
+import { codexIdOf, setCodexIdOf, resolveRaceText, codexOverrideCount, setShowWeekOf } from './codex-bind.js';
+import { readShowWeeksOf, readShowWeekOf, showWeekForLevel, SHOW_LEVELS } from './codex-values.js';
+import { codexEntry } from './codex.js';
 import { wiSection } from './ui-wi.js';
+// ★ 第七批：「设定来源」（角色绑了哪几条世界书条目）＋「从世界书建角色」
+import { wiBindRows, openWiBuildTargets, openCardBuildTargets, wiBuildUndoRow } from './ui-wi-bind.js';
 import { lunarSpecText } from './lunar.js';
 import {
     listPersonArchives, savePersonArchive, deleteArchive, downloadArchive, archiveLabel, getArchive,
@@ -690,7 +697,7 @@ function openApiEditor(id, onDone) {
                 h('span', { class: 'bc-label', text: '关闭模型原生思考（thinking.disabled）' }),
                 toggle(draft.noThink === true, (v) => { draft.noThink = v; }),
             ));
-            body.appendChild(h('div', { class: 'bc-hint', text: '出厂就是勾上的：我们的契约本来就要求它把推理分点写进 cot，模型自带的思考等于同一件事做两遍，勾上能省掉那一份。火山方舟 / DeepSeek 认这个写法；接口不认（严格的接口会回 400）时插件会去掉它再发一次，那一趟就按"带思考"跑，推演状态里会记一笔' }));
+            body.appendChild(h('div', { class: 'bc-hint', text: '默认就是勾上的：我们的契约本来就要求它把推理分点写进 cot，模型自带的思考等于同一件事做两遍，勾上能省掉那一份。火山方舟 / DeepSeek 认这个写法；接口不认（严格的接口会回 400）时插件会去掉它再发一次，那一趟就按"带思考"跑，推演状态里会记一笔' }));
             body.appendChild(h('div', { class: 'bc-hint', text: '⚠️ 这一项只在「直连」这条路上带得过去。走酒馆后端转发时请求体是酒馆自己重拼的，这一项和下面的"额外请求体 / 额外请求头"都会被丢掉（要它们生效就把请求方式改成只用直连）' }));
 
             body.appendChild(field('额外请求头（JSON，可留空）',
@@ -877,7 +884,8 @@ function injectSection(container, onChange) {
                     h('div', { class: 'bc-spacer' }),
                     helpButton('把「孩子」也发给主 API', [
                         '默认关。开了之后，写正文的 AI 才知道这个对象有几个孩子、多大了',
-                        '发出去的内容：每个孩子一行「名字 · 年龄 · 出生日期 · 另一个亲代」。两个家长的名字都在里面：开头是生这个孩子的那一方，末尾「另一个亲代」是另一个家长',
+                        '发出去的内容：每个孩子一行「名字 · 年龄 · 出生日期 · 另一个亲代」。同一次出生、性别和天赋都一样的会并成一行，名字串在一起（卵生一窝几百个时靠这个省字数）',
+                        '单个孩子不想发：在面板的「孩子」频道，每张卡右上角那颗「发送 / 不发送」。关掉只是不写进这一段，账本里照旧留着，面板上也看得见',
                         // ⚠️ 说明里不许写"只在追踪对象只有一个时才发" ✗：
                         //   每一行开头就写着是谁的孩子 ⇒ 别的追踪对象影响不到它 ⇒ 不需要这个限制 ✓
                         '这段跟着这一轮要注入的对象走：每个对象各发各自的孩子，和"追了几个对象"无关',
@@ -1236,8 +1244,8 @@ function targetSection(container, onChange) {
         try {
             const curKey = state().active;
             const cur = curKey ? state().targets[curKey] : null;
-            if (cur && cur.light) {
-                const first = targetList().find((x) => x.light !== true);
+            if (cur && isTargetLoose(cur.key)) {
+                const first = targetList().find((x) => !isTargetLoose(x.key));
                 if (first) { setActive(first.key); onChange?.(true); }
             }
         } catch { /* 读不到就算了，不影响这一段渲染 */ }
@@ -1251,6 +1259,23 @@ function targetSection(container, onChange) {
                 b.appendChild(h('div', { class: 'bc-row' },
                     h('span', { text: displayName(t) || t.key }),
                     h('div', { class: 'bc-row-end' },
+                        // ★ 2026-11-09：这一档原来只有「自动追踪」能进，玩家**手动选不到** ✗
+                        //   ⇒ 补一颗按钮 ✓
+                        //   总开关关着时这一档不存在（跟 store.setTrackMode 的判据一致），
+                        //   按钮灰着但**留着**，让人看得见有这条路 ✓
+                        button('只追发情期', () => {
+                            if (!setTrackMode(t.key, 'estrus')) {
+                                window.toastr?.warning?.('先在「生理期」页打开「发情期」总开关，这一档才有');
+                                return;
+                            }
+                            save();
+                            onChange?.(true);
+                        }, {
+                            disabled: settings().estrusOn !== true,
+                            title: settings().estrusOn === true
+                                ? '只追发情期这一本账：不进推演、不占名额、也不进主面板'
+                                : '先在「生理期」页打开「发情期」总开关，这一档才有',
+                        }),
                         // 查看：
                         //   轻档没有致孕/受孕这些记录，切进主面板会按默认值显示成
                         //   「可受孕 / 可致孕」，看着像插件替他编了事实 ✗
@@ -1286,7 +1311,46 @@ function targetSection(container, onChange) {
     //   （退回轻档 / 删除）是给正式档设计的 ⇒ 出现对它没意义的「退回轻档」（点了当然没反应 ✗）。
     //   ⇒ 这份**只列正式档**；轻档一律在上面那一栏（那边有「查看」和「开始追踪」✓）。
     //   ⚠️ 这是老毛病，不是新写的：以前没人有轻档，所以那行从没露过面 ✓
-    const targets = targetList().filter((t) => t.light !== true);
+    // ★ 2026-11-08（发情期第 0 批）：**发情记录**那一档 —— 只追发情这一本账 ✓
+    //   不进推演、不占名额、也不切进主面板（它没有周期与受孕记录 ✓）
+    {
+        const esList = estrusTargets();
+        if (esList.length) {
+            b.appendChild(h('div', { class: 'bc-section-title', text: '发情记录的对象' }));
+            b.appendChild(h('div', {
+                class: 'bc-hint',
+                text: '只追发情期这一本账：不进推演、不占追踪名额，也不显示在主面板里。想连别的账一起追就转正式档',
+            }));
+            for (const t of esList) {
+                let e = null;
+                try { e = estrusInfoOf(t.key); } catch { e = null; }
+                const stateTxt = e
+                    ? (e.inHeat ? ('发情第 ' + e.dayNo + ' 天') : (e.next ? ('下次 ' + e.next) : '不在发情期'))
+                    : '（还没算出发情期）';
+                b.appendChild(h('div', { class: 'bc-row' },
+                    h('span', { text: (displayName(t) || t.key) + ' · ' + stateTxt }),
+                    h('div', { class: 'bc-row-end' },
+                        button('转正式档', () => {
+                            setTrackMode(t.key, 'full');
+                            save();
+                            onChange?.(true);
+                        }, { title: '从下一轮起进推演名单，也会占一个名额' }),
+                        button('改回轻档', () => {
+                            setTrackMode(t.key, 'light');
+                            save();
+                            onChange?.(true);
+                        }, { title: '只留名字和种族，发情记录留着但不再显示' }),
+                        t.isUser ? null : button('移除', async () => {
+                            if (!(await askConfirm(`把「${displayName(t) || t.key}」从发情记录里移除？\n\n这一条没有身体数据可删，以后再出现会重新登记。`))) return;
+                            removeTarget(t.key);
+                            onChange?.(true);
+                        }, { variant: 'danger' })),
+                ));
+            }
+        }
+    }
+
+    const targets = targetList().filter((t) => !isTargetLoose(t.key));
     b.appendChild(h('div', { class: 'bc-section-title', text: '当前聊天已建档的对象' }));
     if (!targets.length) {
         // ★ 轻档都列在上面那一栏了 ⇒ 这里空着的时候说清楚去哪儿看，别只写「暂无」（会像数据没了 ✗）
@@ -1328,6 +1392,20 @@ function targetSection(container, onChange) {
                     h('div', { class: 'bc-target-actions' },
                         isActive ? h('span', { class: 'bc-badge bc-badge-on', text: '正在查看' })
                                  : button('查看', () => { setActive(t.key); onChange?.(true); }),
+                        // ★ 2026-11-09：正式档也能一步落到发情记录档，不用先退回轻档再选一次 ✓
+                        button('只追发情期', () => {
+                            if (!setTrackMode(t.key, 'estrus')) {
+                                window.toastr?.warning?.('先在「生理期」页打开「发情期」总开关，这一档才有');
+                                return;
+                            }
+                            save();
+                            onChange?.(true);
+                        }, {
+                            disabled: settings().estrusOn !== true,
+                            title: settings().estrusOn === true
+                                ? '改成只追发情期：不再进推演名单、不占名额（身体数据一条不删，还留着）'
+                                : '先在「生理期」页打开「发情期」总开关，这一档才有',
+                        }),
                         // **本人也能退回轻档** ✓
                         //   轻档＝只留名字和种族，不进推演、不占名额；想再追就点「开始追踪」✓
                         button('退回轻档', async () => {
@@ -1369,6 +1447,22 @@ function targetSection(container, onChange) {
     };
     input2.addEventListener('keydown', (e) => { if (e.key === 'Enter') add2(); });
     b.appendChild(h('div', { class: 'bc-row' }, input2, button('添加对象', add2)));
+
+    // ★ 2026-11-06（第七批）：从世界书建角色 —— 这是"建追踪对象"的事，
+    //   放这张卡里；**不塞到某个人的规则补丁下面**（她 2026-11-06 点掉的形态 ✗）
+    const undoRow = (() => { try { return wiBuildUndoRow(() => onChange?.(true)); } catch { return null; } })();
+    b.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+        button('从世界书建角色…', () => openWiBuildTargets(() => onChange?.(true)),
+            { title: '勾世界书里的条目，一条建一个追踪对象，并绑上那条设定来源' }),
+        // ★ 2026-11-09（她提的）：从角色卡建角色，只绑那张卡的「角色描述」那一段
+        button('从角色卡建角色…', () => openCardBuildTargets(() => onChange?.(true)),
+            { title: '勾角色卡，一张建一个追踪对象，并绑上那张卡的角色描述' }),
+        undoRow,
+    ));
+    b.appendChild(h('div', {
+        class: 'bc-hint',
+        text: '勾哪个建哪个；从世界书建的会自动绑那条「设定来源」，从角色卡建的会绑那张卡的「角色描述」，推演页对应开关打开后才会每轮带上。建出来的档位默认是轻档（只记名字和种族，不占名额、不进推演），想正常追踪就在建的时候选正式档',
+    }));
 
     container.appendChild(box);
 }
@@ -1552,7 +1646,7 @@ function dataSection(container, onChange) {
             // ★ 2026-10-26：仅状态跨时间轴时的日期处理（不然 2012 的判定日会出现在 2022 的档里）
             '「仅状态」导出时会把记录里的具体日期换成相对天数（孕第几天、还剩几天）：时间线属于那个聊天，不跟着档案走。导入后按当前聊天的剧情日期重新算成日期；当前档还没有日期就先挂着，等第一次有日期再落',
             // ★ 那颗红按钮整张卡的说明里一个字都没提，代价还被说小了 ✗
-            '「清空当前聊天档案」= 把这个聊天里插件存的东西整个清掉：对象与数值、日程、成就、随手记、占卜台历史、孩子、历史快照。只影响这个聊天，但删了回不来，建议先导出一份',
+            '「清空当前聊天档案」= 把这个聊天里插件存的东西整个清掉：对象与数值、日程、成就、随手记、占卜台历史、孩子、历史快照。只影响这个聊天，但删了回不来，建议先导出一份。{{user}} 本人那一条会留着，建成一份空档案（这样「追踪本人」开着时列表不会变成「暂无」）；本人存在设置里的那些（能不能怀、种族、人设、周期长度）本来就不在这个聊天里，清空不会动它们',
         ],
     });
     const b = box.querySelector('.bc-section-body');
@@ -1771,8 +1865,9 @@ function dataSection(container, onChange) {
         button('清空当前聊天档案', async () => {
             // ★ 说明里只写「身体档案」不行 —— 这个动作清的是**整个 state**
             //   （对象数值 / 日程 / 成就 / 随手记 / 占卜台历史 / 孩子 / 历史快照）⇒ 代价会被说小 ✗
-            if (!(await askConfirm('把这个聊天里插件存的东西整个清空？\n\n包括对象与数值、日程、成就、随手记、占卜台历史、孩子、历史快照。\n\n只影响这个聊天，其他聊天不受影响；删了回不来，建议先「导出当前聊天档案」'))) return;
-            resetAll();
+            if (!(await askConfirm('把这个聊天里插件存的东西整个清空？\n\n包括对象与数值、日程、成就、随手记、占卜台历史、孩子、历史快照。\n\n{{user}} 本人那一条会留着（建成一份空档案，这一个聊天的数值同样会没），这样列表不会和「追踪本人」那颗开关对不上。\n\n只影响这个聊天，其他聊天不受影响；删了回不来，建议先「导出当前聊天档案」'))) return;
+            // ★ 2026-11-09（她报的 BUG）：整份换新会把本人那条也换掉 ⇒ 清完把本人建回来 ✓
+            resetAllKeepUser();
             onChange?.(true);
         }, notInChat ? { variant: 'danger', disabled: true, title: '先打开要清的那个聊天（不在聊天里时，可能清到上一次打开的那个）' } : { variant: 'danger' }),
     ));
@@ -2173,7 +2268,7 @@ function fabAvatarSection(container, onChange, actions = {}) {
         shellRow.appendChild(h('button', {
             class: 'bc-swatch' + (c ? '' : ' bc-swatch-def'),
             type: 'button',
-            title: c ? c : '默认（出厂红）',
+            title: c ? c : '默认（红色）',
             'data-color': c,
             style: c ? { background: c } : null,
             onclick: () => {
@@ -2473,6 +2568,7 @@ function stageSection(container, onChange, actions = {}) {
             host.appendChild(baseSection());
             host.appendChild(wombSection());
             host.appendChild(pregnantSection());
+            host.appendChild(incubatingSection());
             host.appendChild(layerSection());
         } else {
             host.appendChild(h('div', { class: 'bc-hint', text: '你选的是「只显示文字」⇒ 图那几段先收起来了（图一张都没删；切回「只显示图片」就能继续管）' }));
@@ -2669,6 +2765,24 @@ function stageSection(container, onChange, actions = {}) {
             text: '按"已孕天数 ÷ 这一胎总孕期"算。默认 20/40/60/80：人类 40 周时正好是 8/16/24/32 周',
         }));
         sb.appendChild(cutRow);
+        return slots;
+    }
+
+    // ---- 待孵：一张透明层（卵生那几族产卵之后）----
+    //   ★ 2026-11-06（第五批）：没有专门的图之前，**先用「卵子」那张顶着**（不影响任何老图 ✓）
+    function incubatingSection() {
+        const slots = section('待孵（一层透明图）', {
+            collapsible: true,
+            open: false,
+            plain: true,
+            help: [
+                '卵生那几族产卵之后、破壳之前用这一张：底图和子宫照常铺，这一层盖在上面',
+                '没传之前先用「卵子」那张顶着，画好之后传进来就自动换',
+                '必须是透明底，跟底图同一张 1200×900 画布',
+            ],
+        });
+        const sb = slots.querySelector('.bc-section-body');
+        imgRow(sb, 'incubating', '待孵 · 蛋', '待孵时贴在底图上');
         return slots;
     }
 
@@ -3278,7 +3392,7 @@ function timeSection(container, onChange) {
         // 内置那条：出厂公历（不可删、不可改名 ✓）
         presetChips.appendChild(h('div', {
             class: 'bc-chip bc-chip-pick' + (onName === '公历' ? ' bc-chip-on' : ''),
-            title: '出厂那套：一年 12 个月，日期写法也是出厂那套',
+            title: '默认那套：一年 12 个月，日期写法也是默认那套',
             onclick: () => pickPreset(CAL_PRESET_BUILTIN, '公历'),
         }, h('span', { class: 'bc-pill-name', text: '公历' })));
         for (const p of listCalendarPresets()) {
@@ -3619,12 +3733,13 @@ function bubbleSection(container, onChange, actions = {}) {
             '日程到日子了，会从悬浮球旁边冒一个气泡提醒你，它不会自己消失',
             '点 ✕ 就是知道了，点气泡本身会跳到日历那一页',
             '气泡顶上那句可以自己写，改完点「日程气泡」立刻能看到',
-            '留空就用出厂的「到日子了」',
+            '留空就用默认的「到日子了」',
             '预览出来的那个气泡只给你看长相，点它不会跳页',
             '番茄钟到点那个气泡是另一套词（在下面那张「番茄钟」卡里改）',
             '下面两颗是插件自己发的提醒：着床完成（怀孕）那一刻、以及每胎的预产期到那天',
             '气泡里会写清"距今多少天"（例：已着床 32 天、预产期已过 5 天），剧情跳过一段时间也不会看错',
             '这两条不会写进日历日程，只是借这个气泡弹一下：不占你的日程、也不跟你的日程混在一起',
+            '卵生那几族还有一颗：产卵日和破壳日到了各提醒一次',
         ],
     });
     const b = box.querySelector('.bc-section-body');
@@ -3642,6 +3757,11 @@ function bubbleSection(container, onChange, actions = {}) {
     b.appendChild(h('div', { class: 'bc-inline' },
         h('span', { class: 'bc-label', text: '到预产期提醒我（每胎一条）' }),
         toggle(settings().notifyDue !== false, v => { settings().notifyDue = !!v; save(); }),
+    ));
+    // ★ 2026-11-06（第五批）：卵生那两族的日子（产卵 / 破壳）
+    b.appendChild(h('div', { class: 'bc-inline' },
+        h('span', { class: 'bc-label', text: '产卵 / 破壳提醒我（每一窝一条）' }),
+        toggle(settings().notifyEgg !== false, v => { settings().notifyEgg = !!v; save(); }),
     ));
     b.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
         button('日程气泡', () => { actions.previewBubble?.(); }),
@@ -4196,13 +4316,8 @@ export function bodyLockRows(host, key, opts = {}) {
     //   这一块里任何一处改动，都顺手把下面那行读数与警告**当场重画** ✓
     //   （读数还没建好时（render 早期）调用会被 try 挡掉，不会炸 ✓）
     const onChange = (structural) => { notify(structural); try { paintRace(); } catch { /* 还没建好 */ } };
-    // ★ 补丁页 · 人物视图那份卡**默认不画**「属于哪个大类」和「这个角色的种族」——
-    //   下面的「身体补丁（生理设定）」参数面板里那两格都有（而且种族就在大类上面，放一起更顺）✓
-    //   同一份数据、别处照样能改 ✓
-    //   ⚠️ 只在"下面那份真的画得出来"时才藏（判据在调用方 `personBasicInfoCard`）：
-    //     无月经那档 body_base 整条不画、正文被冻结时卡里只有一条提示 ⇒ 那时**必须留着**，
-    //     不然这两格在界面上就彻底找不到了 ✗（本项目老规矩：藏起来 = 等于不存在 ✓）
-    const withParamDup = opts.hideParamDup !== true;
+    // ★ 2026-11-06：种族那格**永远画在这张卡里**（人物视图 / 用户页 / 悬浮球三处共用）。
+    //   大类那格已经退休，不再画 ✓（老档里的值不删，推演旧回退照读）
     const opts3 = [['', '未填（按推演每轮判断）'], ['true', '能'], ['false', '不能']];
     const yesOpts = [['', '未填（按推演每轮判断）'], ['true', '是'], ['false', '不是']];
 
@@ -4283,237 +4398,103 @@ export function bodyLockRows(host, key, opts = {}) {
     // 第四项：能不能跟非人类生 ✓
     row('能不能怀上异种', 'canBearXeno', opts3);
     row('是不是异种', 'isXeno', yesOpts, ['是', '不是']);
-    // ★ 人外还要能选「属于哪个大类」（留一个「按推演每轮判」✓）
-    if (withParamDup) host.appendChild(xenoClassField(key, onChange));
+    // ★ 2026-11-06（她定的）：大类那格**从界面退休** ——
+    //   它本来就是给玩家做分类看的，不是判定输入；判定只看「种族」那一条图鉴 ✓
+    //   → 分类以后由「种族 + 图鉴里的分类标签」承担，这里不再摆那一格。
+    //   老档里已经选过大类的值**不删**（推演的旧回退还会读它 ✓），只是界面上不再出现。
     // ★ 基础种族要能自定义名字 ⇒
     //   这一页也带上「这个角色的种族」（自由输入 ＋ 「选…」），和参数面板同一份数据 ✓
-    if (withParamDup) host.appendChild(raceNameField(key, onChange));
-    // ★ 读数和警告**摆在「这个角色的种族」那格下面**（讲的就是它 ✓）——
-    //   读数说清真身是哪来的：你改过的 ⇒ 你定的；推演判的 ⇒ 带依据；只有出厂那份 ⇒ 按设定；
-    //   真什么都没有 ⇒ 还没填；判不准 / 跟大类对不上 ⇒ 补一句 ⚠️ 黄字 ✓
-    //   ⚠️ 读数 ＋ 警告要**当场重画**（"要切换才看得见刷新" ✗）
-    //   ⚠️ 这一格只进判定层：描写层对谁公开是主 API 的事，插件不碰 ✓
-    const raceLine = h('div', { class: 'bc-param-sub', text: '' });
+    host.appendChild(raceNameField(key, onChange));
+    // ★ 2026-11-08（她的判断：有了图鉴绑定，「真实种族 / 你定的」那行读数没必要留了）——
+    //   那行只是来源说明，不参与任何判定；删掉，只留「种族待确认」这条警告
+    //   （它是要她动手确认的，删了会漏 ✓）
     const raceWarn = h('div', { class: 'bc-warn', text: '' });
     const paintRace = () => {
         const rj = raceJudgeOf(key);
-        if (rj.src === '玩家') raceLine.textContent = `真实种族：${rj.race || '（还没填）'} · 你定的`;
-        else if (rj.asked) raceLine.textContent = `种族：${rj.asked} · 推演判（依据：${rj.src === '存疑' ? '待确认' : rj.src}）`;
-        else if (rj.race) raceLine.textContent = `种族：${rj.race} · 按设定`;
-        else raceLine.textContent = '种族：还没填';
-        const cls = String(xenoClassOf(key) || '');
-        const byClass = cls ? (cls !== '人类') : null;
-        const rep = reportedBodyFlagOf(key, 'isXeno');
-        const clash = (byClass !== null && rep !== null && byClass !== rep);
-        const raceSaysXeno = !!(rj.race && !/人/.test(rj.race));
-        const clashRace = (byClass === false && raceSaysXeno);
         let warn = '';
-        if (clashRace) warn = `⚠️ 「属于哪个大类」选的是人类，种族却写着「${rj.race}」，确认一下`;
-        else if (clash) warn = '⚠️ 和上面选的「属于哪个大类」对不上，确认一下';
-        else if (rj.src === '存疑') warn = '⚠️ 种族待确认：会影响异种规则与孕期，确认一下这格';
+        if (rj.src === '存疑') warn = '⚠️ 种族待确认：会影响异种规则与孕期，确认一下这格';
         raceWarn.textContent = warn;
         raceWarn.style.display = warn ? '' : 'none';
     };
-    // ★ 2026-10-18（种族那行和下面：别名、标签与备注贴太近）——
-    //   这两块之间原来没有任何间隔（读数自己的 margin-top 只管它和上面）
-    //   ⇒ 包一层统一的底距：警告有没有显示都留出这段，别因为 raceWarn 隐藏就贴住 ✓
-    const raceBlock = h('div', { style: { marginBottom: '12px' } }, raceLine, raceWarn);
+    const raceBlock = h('div', { style: { marginBottom: '12px' } }, raceWarn);
     host.appendChild(raceBlock);
     paintRace();
+    // ★ 2026-11-06：显怀早晚（体质，按人）——
+    //   条目给「这一族最早到最晚第几周」，这个人固定一个周数；
+    //   第一次随机一档，之后锁住，改档会在这档的范围里重新挑。
+    host.appendChild(showField(key));
+    // ★ 2026-11-06（第七批）：设定来源（这个角色绑了哪几条世界书条目）——
+    //   只显示条数，「选…」开弹窗挑；清单不铺在页面上 ✓
+    host.appendChild(wiBindRows(key, onChange));
 }
 
 /**
- * ★ 「属于哪个大类」那一格：
- *   选人外的时候要填种族，还要有一个**选属于哪个大类**的选项 ✓
- *
- * **一份实现两处用**：角色基础信息（三处入口都会带出来 ✓）＋ 身体补丁的参数面板 ✓
- * ⚠️ 选项表只有一份（`modules.js` 的 `XENO_CLASSES`，照抄表里第一列 ✓，
- *   ＋ 它前面那项「人类」= `XENO_CLASS_HUMAN` ✓），
- *   并有断言钉住"每一项都能在 [异种扩展包 · 西方与通用] 正文里找到" ✓
- * ⚠️ 第一项是「未选（按推演每轮判）」—— 这个选项要保留 ✓
- *   （「人类」紧跟它，是**所有具体种族里的第一项** ✓ —— "最前面"指的就是这个位置 ✓）
- * ⚠️ 故意**不做**"不是异种就变灰"这类联动（只要"留一个 AI 自判的选项" ✗）
+ * ★ 显怀早晚（2026-11-06）—— 跟着「角色基础信息」走的一格。
+ *   为什么放这儿：这是**这个人**的体质，跟「我是谁」那几格是一类；
+ *   塞进改数值的孕周卡里的话，没怀孕的人根本看不到（她 2026-11-06 就是这么找不到的 ✗）。
+ *   条目没写显怀范围 ⇒ 不给控件，只写清去哪儿补（藏起来 = 等于不存在 ✗）。
  */
-export function xenoClassField(key, onChange = () => {}) {
+function showField(key) {
     const box = h('div', { class: 'bc-field' },
-        h('div', { class: 'bc-label', text: '属于哪个大类' }));
-    // ★ 把下拉表换成面板（可以搜索之类的那种）✓
-    //   ⇒ 这一格不再是一个 30 多项的下拉，改成"读数 + 一颗选择按钮"，点开是带搜索的面板 ✓
-    const cur = h('span', { class: 'bc-param-status' });
-    const paint = () => { cur.textContent = xenoClassOf(key) || '未选（按推演每轮判）'; };
+        h('div', { class: 'bc-label', text: '显怀早晚' }),
+    );
+    let range = null;
+    try { range = readShowWeeksOf(key); } catch { range = null; }
+    if (!range) {
+        box.appendChild(h('div', {
+            class: 'bc-hint',
+            text: '这一族的显怀范围还没写：去「设置 → 补丁与档案 → 种族图鉴」里给这一条补上「显怀范围」，这里就能调',
+        }));
+        return box;
+    }
+    let sw = null;
+    try { sw = readShowWeekOf(key); } catch { sw = null; }
+    if (!sw) return box;
+    const line = h('div', { class: 'bc-hint' });
+    let dd = null;
+    let num = null;
+    // ★ 2026-11-06（她报「改了档，右边数字不变」）：换档之后数字框与下拉都要跟着重画，
+    //   光改下面那行说明是不够的 ✗
+    const paint = () => {
+        if (!sw) return;
+        line.textContent = '这一族 ' + sw.lo + '-' + sw.hi + ' 周；这个人第 '
+            + sw.week + ' 周起（' + SHOW_LEVELS[sw.level] + '）';
+        if (num) num.value = String(sw.week);
+        const vEl = dd ? dd.querySelector('.bc-dd-value') : null;
+        if (vEl) vEl.textContent = SHOW_LEVELS[sw.level];
+    };
+    dd = dropdown(String(sw.level), SHOW_LEVELS.map((s, i) => [String(i), s]), (v) => {
+        const wk = showWeekForLevel(range.lo, range.hi, Number(v));
+        try { setShowWeekOf(key, wk, { manual: true }); } catch { /* 忽略 */ }
+        try { sw = readShowWeekOf(key); } catch { /* 忽略 */ }
+        paint();
+    });
+    num = numberInput(sw.week, (v) => {
+        if (v === '' || v === null) return;
+        try { setShowWeekOf(key, Number(v), { manual: true }); } catch { /* 忽略 */ }
+        try { sw = readShowWeekOf(key); } catch { /* 忽略 */ }
+        paint();
+    }, { min: 1, max: 60 });
     paint();
-    // ⚠️ **属于哪个大类这个板块的 UI 要和别的对齐** ✗ ——
-    //   那一页别的格都是"整行一个框 ＋ 右边一颗按钮"，只有这一格是**裸文字** ⇒
-    //   读数套上同一个框（`.bc-readout-box`，只读），按钮挪到框右边，和「这个角色的种族」那一格
-    //   一模一样 ✓；标签也统一成「选…」（两边不能写两套 ✗）
-    box.appendChild(h('div', { class: 'bc-row' },
-        h('div', { class: 'bc-dd-host' }, h('div', { class: 'bc-readout-box' }, cur)),
-        // ⚠️ 选择框离左边太远的话，第一眼看不见在哪里选择 ✗
-        //   ⇒ 值框占满整行、按钮紧贴它右边（不是拿 spacer 推到整行最右的空位 ✓）
-        button('选…', () => openXenoClassPicker(key, (v) => {
-            setXenoClassOf(key, v);
-            paint();
-            try { onChange(false); } catch { /* 忽略 */ }
-        })),
+    box.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+        h('div', { style: { flex: '0 0 128px', minWidth: '0' } }, dd),
+        h('span', { class: 'bc-hint bc-inline-tip', text: '第' }),
+        h('div', { style: { flex: '0 0 88px', minWidth: '0' } }, num),
+        h('span', { class: 'bc-hint bc-inline-tip', text: '周起' }),
     ));
-    // ★ 外面太光秃秃了容易摸不到头脑 —— 而且这一格的信息
-    //   不该需要主动去看，应该**被动显示** ✓
-    //   ⇒ 这一格自带一句**被动**提示（属于"单个控件下面 ≤35 字的后果"那一档 ✓）
-    //   ⚠️ 用 `.bc-param-sub`、**不许用 `.bc-hint`** —— 参数面板页面上 `.bc-hint` 必须为 0
-    //     （那条守卫是"说明一律搬进「？」"留下的，两件事别搅在一起 ✓）
-    box.appendChild(h('div', {
-        class: 'bc-param-sub',
-        text: '点「选…」可以看详细分类，不填就由推演每轮自己判',
-    }));
+    box.appendChild(line);
     return box;
 }
 
-/**
- * 「属于哪个大类」的选择面板（用面板，不用下拉 ✓）
- *   结构：
- *   第一层 = 本函数：「未选」「人类」直接列出来（点一下就选好）；
- *            「西方与通用」「东方」是**两颗大按键**，点开才进第二层的方块列表 ✓
- *   为什么这么分：因为太长了、拖拽起来很麻烦，万一日后又要加的话需要拖很久，
- *     虽然点击三次有点麻烦，但算是取舍 ✓
- *   第二层 = openXenoClassList()：带搜索的列表，点一行就选好，**两层一起关** ✓
- * ⚠️ 选中的那一项要标出来（`.on` 高亮 + 圈填色）；右侧那行读数（「15 项」）只是"这一组有多少"✓
- */
-function openXenoClassPicker(key, pick) {
-    const west = XENO_CLASSES.filter(c => !XENO_CLASSES_EAST.includes(c));
-    const curVal = xenoClassOf(key);
-
-    modal({
-        title: '属于哪个大类',
-        width: 520,
-        help: [
-            '这一格是提前告诉推演"这个对象属于哪一类"，免得 AI 每轮自己猜',
-            '「人类」= 走人类默认规则；选具体大类 = 按对应那张种族表里那一行判',
-            '拿不准就选最上面的「未选」，推演每轮自己判',
-            '亚人（只有耳 / 尾 / 翼这类少量非人特征、其余都是人形的那种）选「类人」：胎数与性别跟人类一样，孕期按「类人·其他」算，约 9-10 个月 ✓',
-            '「西方与通用」「东方」里面还有一层：点开才看到具体大类，点一行就选好了',
-        ],
-        build: (body, close) => {
-            // 一行：左边是名字，右边那点小字是"这一组有多少"（不是后缀 ✓）
-            const big = (label, right, isCur, onclick) => h('div', {
-                class: 'bc-preset-entry bc-xeno-row' + (isCur ? ' on' : ''),
-                onclick,
-            },
-                h('div', { class: 'bc-preset-entry-main' },
-                    h('div', { class: 'bc-preset-entry-name' }, h('span', { text: label }))),
-                right ? h('span', { class: 'bc-param-status', text: right }) : null,
-            );
-            const done = (v) => { pick(v); try { close(); } catch { /* 忽略 */ } };
-
-            // ⚠️ 这句提示要**在这个弹窗里**，不能只加在外面那一格上 ✗
-            //   （不用去点右上角的「？」✓，这就是"应该被动显示"那条规矩 ✓）
-            body.appendChild(h('div', { class: 'bc-hint', text: '选好之后，推演就按这一类判它' }));
-            body.appendChild(h('div', { class: 'bc-hint', text: '「人类」走默认规则；两张表里的大类，按「异种扩展包（西方与通用）」或「异种扩展包（东方）」里对应那一行判' }));
-            // ★ 亚人：只有耳 / 尾 / 翼这类少量非人特征、其余人形的，
-            //   归到「类人」就行 —— 不新开大类（"亚人"是伞词，狼人/精灵/半妖都能这么叫，
-            //   繁殖参数却完全不同 ⇒ 塞进一行会算错 ✓）。这句要**被动显示在这儿**（不用点「？」✓）
-            body.appendChild(h('div', { class: 'bc-hint bc-hint-gap', text: '只有耳朵 / 尾巴 / 翅膀这类少量非人特征、其余都是人形的那种，选「类人」就行' }));
-            body.appendChild(big('未选（按推演每轮判）', '', !curVal, () => done('')));
-            body.appendChild(big(XENO_CLASS_HUMAN, '走默认规则', curVal === XENO_CLASS_HUMAN,
-                () => done(XENO_CLASS_HUMAN)));
-            body.appendChild(big('西方与通用', west.length + ' 项', west.includes(curVal),
-                () => openXenoClassList('西方与通用', west, curVal, done)));
-            body.appendChild(big('东方', XENO_CLASSES_EAST.length + ' 项', XENO_CLASSES_EAST.includes(curVal),
-                () => openXenoClassList('东方', XENO_CLASSES_EAST, curVal, done)));
-        },
-    });
-}
 
 /**
- * 第二层：一组大类的列表（带搜索）。
- * @param {(v:string)=>void} onPick 选好之后干什么（调用方负责**把外面那层也关掉** ✓）
- */
-function openXenoClassList(title, items, curVal, onPick) {
-    modal({
-        title: title + ' · 属于哪个大类',
-        width: 520,
-        // ⚠️ 这一层（点大按键之后那份列表）也得有说明，不能只有第一层有「？」✗
-        //   （项目老规矩：界面上的说明一律走「？」弹窗，别往页面上铺解释性长句 ✓）
-        help: [
-            '这里列的是大类，照抄「异种扩展包（' + title + '）」那张表的第一列（是表的分类，不是具体种族名）',
-            '点一行就是选好了，两层一起关',
-            '左边那个圈填色 + 整行变亮 = 现在选的是它',
-            '列表里没有你要的：回上一层选「未选」，推演每轮会自己判',
-        ],
-        build: (body, close) => {
-            let q = '';
-            const listHost = h('div', { class: 'bc-preset-entries' });
-            // ⚠️ 两层问题：选项没提示不知道点哪里 ＋ 就是没边框 ✗
-            //   ⇒ ① 每行加**边框**（一眼看出是条目）② 左边画一个**单选圈** ✓
-            //   ⚠️ 圈**自己画**，不用裸 `<input type=radio>` —— 酒馆主题把那玩意儿的
-            //     appearance 清掉了 ⇒ 看着什么都没有（"没边框"就是这个 ✗）
-            const row = (c) => h('div', {
-                class: 'bc-preset-entry bc-xeno-row' + (curVal === c ? ' on' : ''),
-                onclick: () => { onPick(c); try { close(); } catch { /* 忽略 */ } },
-            },
-                h('span', { class: 'bc-xeno-dot' + (curVal === c ? ' on' : '') }),
-                h('div', { class: 'bc-preset-entry-main' },
-                    h('div', { class: 'bc-preset-entry-name' }, h('span', { text: c }))),
-            );
-            const draw = () => {
-                clear(listHost);
-                const kw = q.trim().toLowerCase();
-                const hit = items.filter(c => !kw || c.toLowerCase().includes(kw));
-                for (const c of hit) listHost.appendChild(row(c));
-                if (!hit.length) listHost.appendChild(h('div', { class: 'bc-hint', text: '没有匹配的大类' }));
-            };
-            // ★ 读数：进来先写清"现在选的是哪个"（没有它，未选的时候整页看不出状态 ✓）
-            body.appendChild(h('div', { class: 'bc-hint' },
-                h('span', { text: '现在选的是：' }),
-                h('span', { class: 'bc-param-status', text: curVal || '未选（按推演每轮判）' })));
-            body.appendChild(textInput('', (v) => { q = v; draw(); }, { placeholder: '搜索大类（例：龙、妖、精灵、山海经）…' }));
-            body.appendChild(listHost);
-            draw();
-        },
-    });
-}
-
-/**
- * ★ 两件事：基础种族要能自定义名字 ＋ 身体补丁（生理设定）也要能选种族列表 ✓
- *   ⇒ 一处补齐：**自由输入照旧**（自定义一个字都不受限）＋ 一颗「选…」打开**常见种族名**列表。
- *   列表只是候选（`modules.js` 的 RACE_NAME_SUGGESTIONS），点一行填进输入框，填完照样能改 ✓
- * ⚠️ 它和「属于哪个大类」是两格、两个概念：这里是**这个对象叫什么种族**，
- *   大类是**推演拿它对异种表哪一行** ✓ 别混
- */
-export function openRaceNamePicker(cur, onPick) {
-    modal({
-        title: '选一个种族名',
-        width: 520,
-        help: [
-            '这里只是常见种族名的候选，点一行就填进输入框，填完照样能自己改',
-        ],
-        build: (body, close) => {
-            body.appendChild(h('div', { class: 'bc-hint', text: '点一行就填进去；列表里没有就直接打字' }));
-            let q = '';
-            const listHost = h('div', { class: 'bc-preset-entries' });
-            const row = (c) => h('div', {
-                class: 'bc-preset-entry' + (cur === c ? ' on' : ''),
-                onclick: () => { onPick(c); try { close(); } catch { /* 忽略 */ } },
-            },
-                h('div', { class: 'bc-preset-entry-main' },
-                    h('div', { class: 'bc-preset-entry-name' }, h('span', { text: c }))),
-            );
-            const draw = () => {
-                clear(listHost);
-                const kw = q.trim().toLowerCase();
-                const hit = RACE_NAME_SUGGESTIONS.filter(c => !kw || c.toLowerCase().includes(kw));
-                for (const c of hit) listHost.appendChild(row(c));
-                if (!hit.length) listHost.appendChild(h('div', { class: 'bc-hint', text: '没有匹配的种族名' }));
-            };
-            body.appendChild(textInput('', (v) => { q = v; draw(); }, { placeholder: '搜索种族（例：龙、妖、精灵、兽人）…' }));
-            body.appendChild(listHost);
-            draw();
-        },
-    });
-}
-
-/**
- * 「这个角色的种族」那一格：一个输入框 ＋ 一颗「选…」✓
+ * 「这个角色的种族」那一格：输入框 ＋ 一颗「选…」＋ 一行绑定读数 ✓
  * 读写走 `params.js` 的 body_base spec（锚点 `种族：X` 只写一处，别在这儿再抄一份 ✗）。
+ *
+ * ★ 第二批起的规矩：
+ *   · 手打的名字**照旧能用**（自定义不受限 ✓），但手打 = 不绑定
+ *   · 从图鉴选一条 ⇒ 名字自动填上，同时记下**编号**（改名不断绑定 ✓）
+ *   · 绑定与"单独调"都只是先存着，判定与提示词到第三批才读（这一批不改变任何行为 ✓）
  */
 export function raceNameField(key, onChange = () => {}) {
     const spec = PARAM_SPECS.find(s => s.moduleId === 'body_base');
@@ -4526,20 +4507,83 @@ export function raceNameField(key, onChange = () => {}) {
         try { writeParams(spec, key, { raceName: v }); } catch { /* 忽略 */ }
         // ★ 动过这格就打个标记 —— 这样"你选了人类"才不会被当成"你没改过" ✗
         try { setRaceManualOf(key, true); } catch { /* 忽略 */ }
+        // ★ 名字改了 ⇒ 原来那条绑定作废（名字写"骷髅"、绑着"人类"的话第三批会算错 ✗）
+        try {
+            const boundId = codexIdOf(key);
+            if (boundId) {
+                const be = codexEntry(boundId);
+                if (!be || be.name !== String(v)) setCodexIdOf(key, '');
+            }
+        } catch { /* 忽略 */ }
+        // ★ 2026-11-09（B 方案）：不再自动借"最像的一族"的数据 —— 要借得她在图鉴页确认 ✓
+        try { paintBind(); } catch { /* 还没建好 */ }
         try { onChange(false); } catch { /* 忽略 */ }
     };
     const box = h('div', { class: 'bc-field' },
         h('div', { class: 'bc-label', text: '这个角色的种族' }));
-    const inp = textInput(readOne(), (v) => writeOne(v), { placeholder: '例：精灵 / 龙族 / 九尾狐…（自己打也行）' });
-    box.appendChild(h('div', { class: 'bc-row' },
-        h('div', { class: 'bc-dd-host' }, inp),
-        button('选…', () => openRaceNamePicker(inp.value, (v) => { inp.value = v; writeOne(v); })),
-    ));
-    // ★ 被动提示（应该被动显示 ✓）
-    box.appendChild(h('div', {
-        class: 'bc-param-sub',
-        text: '填什么名字都行；点「选…」可以从常见种族里挑一个',
-    }));
+    // ★ 2026-11-08（她的判断：整行大输入框会让人以为只能手打）——
+    //   ⇒ 改成「显示当前种族的按钮」，手打也收进选择器里（选择器顶部那行打名字）✓
+    const curBindId = () => { try { return codexIdOf(key); } catch { return ''; } };
+    const raceCtl = codexPickControl(readOne, (e, nm) => {
+        if (e) {
+            writeOne(e.name);
+            try { setCodexIdOf(key, e.id); } catch { /* 忽略 */ }
+        } else {
+            writeOne(nm || '');
+        }
+        try { paintBind(); } catch { /* 还没建好 */ }
+    }, { curId: curBindId, title: '点这里选这个角色的种族（图鉴里没有的可以直接打名字）' });
+    const pick = () => raceCtl.el.click();
+    box.appendChild(raceCtl.el);
+    // ★ 绑定读数（被动显示 ✓）：绑了哪一条 / 能对上但还没绑 / 一条都没对上
+    const bindRow = h('div', { class: 'bc-param-sub' });
+    box.appendChild(bindRow);
+    function paintBind() {
+        clear(bindRow);
+        const boundId = codexIdOf(key);
+        const be = boundId ? codexEntry(boundId) : null;
+        if (be) {
+            const n = codexOverrideCount(key);
+            bindRow.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+                h('span', { text: '绑定图鉴：' + be.name + (n ? ' · 单独调了 ' + n + ' 项' : '') }),
+                button('改绑', pick),
+                button('单独调', () => {
+                    openCodexOverrideEditor(key, () => {
+                        try { paintBind(); } catch { /* 忽略 */ }
+                        try { onChange(false); } catch { /* 忽略 */ }
+                    });
+                }),
+            ));
+            return;
+        }
+        if (boundId) {
+            bindRow.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+                h('span', { text: '原来绑的条目已经不在图鉴里了' }),
+                button('改绑', pick),
+            ));
+            return;
+        }
+        const r = (() => { try { return resolveRaceText(readOne()); } catch { return { entry: null, cands: [] }; } })();
+        if (r.entry) {
+            bindRow.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+                h('span', { text: '名字能对上「' + r.entry.name + '」，还没绑' }),
+                button('绑定到「' + r.entry.name + '」', () => {
+                    setCodexIdOf(key, r.entry.id);
+                    paintBind();
+                }),
+            ));
+            return;
+        }
+        if (r.cands && r.cands.length > 1) {
+            bindRow.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+                h('span', { text: '撞到 ' + r.cands.length + ' 条，要你挑一条' }),
+                button('挑一条', pick),
+            ));
+            return;
+        }
+        bindRow.appendChild(h('span', { text: '没绑图鉴（名字对不上任何一条）' }));
+    }
+    paintBind();
     return box;
 }
 

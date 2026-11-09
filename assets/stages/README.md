@@ -54,6 +54,7 @@
 | 精子游向卵子（可选） | `sperm_egg.webp`（两者都在时**优先用它**；留空就退回上面两张叠着） |
 | 受精 | `fertilized.webp` |
 | 已着床 | `implanted.webp` |
+| 待孵（卵生那一窝） | `incubating.webp`（**还没画 ⇒ 先用 `egg.webp` 顶着**，画好放进同名文件就自动换） |
 
 ## 换图怎么办
 

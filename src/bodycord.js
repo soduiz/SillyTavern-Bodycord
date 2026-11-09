@@ -19,10 +19,12 @@ import { getChatKey, getCtx, resolvePersonaAvatar, EXT_ROOT, hasWindow } from '.
 //   这里只用它一处：日历要不要按现实日期显示 ✓
 import { isCardExcluded } from './cardexclude.js';
 import { renderDiceTab } from './ui-dice.js';
-import { snapshotChat, applySnapshotChat, state, commit, hashText, userDisplayName, displayName, raceJudgeOf, findOrCreateLightTarget, inRealChat, inChatPage, conceptionForPanel, contactsForPanel, createTarget, diffForPanel, lastJudgeForPanel, achievementsForPanel, childrenForPanel, children, updateChild, bodyStateForPanel, chatNotes, setChatNotes, zoneNotes, setZoneNote, divHistory, setDivHistoryJSON, hasChatMeta, addCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarDayCard, pruneEmptyCalendarEvents, markCalendarAlerted, activeCalendarNow, dueMarksForPanel } from './store.js';
+import { snapshotChat, applySnapshotChat, state, commit, hashText, userDisplayName, displayName, findOrCreateLightTarget, inRealChat, inChatPage, conceptionForPanel, contactsForPanel, createTarget, diffForPanel, lastJudgeForPanel, achievementsForPanel, childrenForPanel, children, updateChild, bodyStateForPanel, chatNotes, setChatNotes, zoneNotes, setZoneNote, divHistory, setDivHistoryJSON, hasChatMeta, addCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarDayCard, pruneEmptyCalendarEvents, markCalendarAlerted, activeCalendarNow, dueMarksForPanel } from './store.js';
 // ★ 「联系人」里那颗「改种族」写的就是「角色基础信息」里那一格
 //   ⇒ 复用参数面板那条写库路（它会顺手打上"玩家手改过"的标记 ✓）
 import { specFor, writeParams } from './params.js';
+import { codexIdOf, setCodexIdOf } from './codex-bind.js';
+import { openCodexPicker } from './ui-codex.js';
 import { formatFictionDate, parseFictionDate, activeCalendar } from './fiction-date.js';
 import { settings, save, customIcons, globalNotes, setGlobalNotes, holidaysOn, setHolidaysOn, addRealEvent, updateRealEvent, deleteRealEvent, realEventDayCard, pruneEmptyRealEvents, markRealAlerted, setContactsHideDead } from './settings.js';
 import { stagesForPanel } from './stages.js';
@@ -1076,6 +1078,24 @@ export class BodycordPanel {
                 try { window.dispatchEvent(new CustomEvent('bodycord:childrenRenamed')); } catch { /* 忽略 */ }
                 this.update();
             });
+        } else if (d.type === 'childMute') {
+            // ★ 2026-11-07（她：找不到哪里勾选不发送某个孩子）——
+            //   「孩子」频道每张卡上那颗「发送 / 不发送」。
+            //   ⚠️ 账本一条都不删，只是这一段不写他 ⇒ 数据还在，面板上也看得见 ✓
+            const id = String(d.id || '');
+            const rec = (() => {
+                try { return children().find((x) => String(x.id) === id) || null; } catch { return null; }
+            })();
+            if (!rec) {
+                try { window.toastr?.warning?.('这条孩子记录找不到了（刷新一下再看看）'); } catch { /* 忽略 */ }
+                return;
+            }
+            const next = rec.mute !== true;
+            updateChild(id, { mute: next });
+            try {
+                window.toastr?.info?.(next ? '这个孩子不发给主 API 了（账本里还在）' : '这个孩子恢复发送');
+            } catch { /* 忽略 */ }
+            this.update();
         } else if (d.type === 'contactsMore') {
             // ★ 「还有 N 条更早的」那颗按钮（「乙：继续加载」）——
             //   面板说"这个人再多给一页" ⇒ 外壳把这一页记上，然后重算重推 ✓
@@ -1299,21 +1319,24 @@ export class BodycordPanel {
         try {
             const t = findOrCreateLightTarget(nm);
             if (!t) { try { window.toastr?.warning?.('这个名字用不了'); } catch { /* 忽略 */ } return; }
-            const cur = (() => { try { return String(raceJudgeOf(t.key)?.race || ''); } catch { return ''; } })();
-            const v = await askText({
+            const write = (raceName) => {
+                const ok = writeParams(specFor('body_base'), t.key, { raceName: String(raceName).trim() });
+                // ★ 2026-11-09（B 方案）：不再自动记临时映射（借哪一族的数据由她在图鉴页确认 ✓）
+                try { window.toastr?.[ok ? 'success' : 'info']?.(ok ? '已记下' : '没有变化'); } catch { /* 忽略 */ }
+                this.update();
+            };
+            // ★ 2026-11-08：跟「角色基础信息」用同一个选择器（图鉴里点一条就填上），
+            //   图鉴里没有的也能在最上面手打；手打的名字不绑定条目 ✓
+            openCodexPicker({
+                curId: (() => { try { return codexIdOf(t.key); } catch { return ''; } })(),
+                allowCustom: true,
                 title: '「' + (displayName(t) || nm) + '」的种族',
-                value: cur,
-                placeholder: '例：人类 / 半精灵 / 狼人',
-                maxLen: 12,
-                help: [
-                    '跟「角色基础信息」里那一格是同一份',
-                    '填完，联系人那一行就显示它了',
-                ],
+                onPick: (e) => {
+                    write(e.name);
+                    try { setCodexIdOf(t.key, e.id); } catch { /* 忽略 */ }
+                },
+                onCustom: (v) => write(v),
             });
-            if (v === null) return;                    // 取消 ✓
-            const ok = writeParams(specFor('body_base'), t.key, { raceName: String(v).trim() });
-            try { window.toastr?.[ok ? 'success' : 'info']?.(ok ? '已记下' : '没有变化'); } catch { /* 忽略 */ }
-            this.update();
         } catch (e) {
             console.warn('[Bodycord] 改种族失败', e);
             try { window.toastr?.warning?.('改种族失败：' + (e?.message || e)); } catch { /* 忽略 */ }
@@ -1688,6 +1711,8 @@ export class BodycordPanel {
         //   （症状：面板只有一条黄条、底下全白。）
         this.host().appendChild(iframe);
         this.iframe = iframe;
+        // 新 iframe 里没有历史 ⇒ 指纹作废，下一次必须整份推一遍 ✓
+        this._pushedChatSig = '';
         // 刚挂上时 contentWindow 可能还没就绪，挂个 load 兜底
         if (!this._themeBound) {
             this._themeBound = true;
@@ -1718,6 +1743,36 @@ export class BodycordPanel {
         return true;
     }
 
+    /**
+     * 这次推给面板的"历史"跟上次那份是不是同一份。
+     *
+     * 只扫面板**真的会读**的字段（正文 + `_bcKey` / `_bcIndex` / `_bcFloor`）+ 聊天编号，
+     * 用滚动哈希拼成一个短串，成本约 0.1 ms（300 楼量级）✓
+     * ⚠️ 两边必须对得上，见 assets/bodycord.html 里 `chatIsSame` 那段：
+     *   它认的正是这几个字段 ⇒ 这里多一个少一个都会判错（判"没变"会少推新正文 ✗）。
+     */
+    _chatSigOf(chat) {
+        if (!Array.isArray(chat)) return '';
+        let h = 5381;
+        const acc = (s) => {
+            s = String(s == null ? '' : s);
+            for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+        };
+        acc(rawChatId() || '');
+        acc('\u0001');
+        for (const m of chat) {
+            acc(m?.mes);
+            acc('\u0001');
+            acc(m?._bcKey);
+            acc('\u0001');
+            acc(m?._bcIndex);
+            acc('\u0001');
+            acc(m?._bcFloor);
+            acc('\u0002');
+        }
+        return chat.length + ':' + (h >>> 0);
+    }
+
     _applyPending() {
         if (!this._pending) return;
         const p = this._pending;
@@ -1744,7 +1799,17 @@ export class BodycordPanel {
             //   它画在「透视」频道那一页（不再画在概览），而 update 会立刻 render 一屏
             //   —— 推晚了会先看见一屏没有插图的旧画面，再闪一下补上 ✗（跟上面那两个标志同一个道理 ✓）
             this.iframe?.contentWindow?.__bodycordSetStages?.(p.stages || null);
-            this.iframe?.contentWindow?.__bodycordUpdate?.(p.raw, p.chat, p.chatId, p.panelUpdateTs);
+            // ★ 2026-11-09：**历史没变就不再推第二遍**。
+            //   为了"楼层面板 / 推演记录"要显示每一楼的状态，每次刷新都会把一份
+            //   历史快照跨 iframe 推过去；一份 300 楼的聊天大约 250 到 800 KB，
+            //   走的是结构化克隆（实测桌面 1.67 ms，手机上要乘以几倍）✗
+            //   而绝大多数刷新（改设置 / 点开面板 / 切对象）历史一个字都没变
+            //   ⇒ 先算一个很便宜的指纹（只扫字符串，0.1 ms 量级），一样就传 null，
+            //   面板那边 `chatIsSame(null)` 本来就是"外壳这次没带历史 ⇒ 当没变" ✓
+            const chatSig = this._chatSigOf(p.chat);
+            const pushChat = chatSig !== this._pushedChatSig;
+            this.iframe?.contentWindow?.__bodycordUpdate?.(p.raw, pushChat ? p.chat : null, p.chatId, p.panelUpdateTs);
+            if (pushChat) this._pushedChatSig = chatSig;
             // ★ 作用域一变，自动头像也要重新解析（聊天里＝锁定/连接的人设，非聊天＝默认人设）——
             //   面板这时可能还没有这个作用域的缓存，先把权威值推过去，免得停在默认图标 ✓
             const scopeChanged = (p.avatarScope || 'nochat') !== this._avatarScope;
@@ -1779,6 +1844,8 @@ export class BodycordPanel {
         this._avatarScope = p.avatarScope || avatarScopeId();
         // 重建面板 = 它要重新读一遍自己那几个键 ⇒ 先把插件数据灌进缓存 ✓
         this._syncNotesBridge();
+        // 重建 = 新文档，历史得整份补一遍（指纹作废 ✓）
+        this._pushedChatSig = '';
         this.iframe.srcdoc = buildDoc(_tpl, { ...p, avatar: this._avatar });
     }
 
@@ -1798,8 +1865,17 @@ export class BodycordPanel {
     }
 
     setTheme(theme) {
-        this.theme = theme || 'light';
-        this._pushTheme();
+        const next = theme || 'light';
+        const changed = this.theme !== next;
+        this.theme = next;
+        // ★ 2026-11-09：**值没变就一个字都不推**。
+        //   外壳的 syncPresentation 每 1.2 秒心跳都会调到这里，而推一次 =
+        //   iframe 里两次 setAttribute（data-theme）+ 一次 localStorage 同步写，
+        //   等于面板开着的时候每 1.2 秒强制重算一遍整套样式（手机上有感觉）✗
+        //   主题 / 易读档只在设置里改得动，所以"变了才推"不会漏 ✓
+        //   ⚠️ 但那句老注释说的事还得防：iframe 还没 load 时推会**丢** ⇒
+        //     记一个"上次真的送达了没"（`_themePushed`），没送达就下一轮心跳接着补 ✓
+        if (changed || !this._themePushed) this._pushTheme();
         // ⚠️ srcdoc 的 iframe 在 onload 之前 contentWindow 可能还没就绪，
         //   那时候推主题会**丢**，然后外壳换了色、里面还是旧的 —— 就是那个日夜模式 bug。
         //   所以在 load 之后再补一次，保证内外一致。
@@ -1812,8 +1888,11 @@ export class BodycordPanel {
 
     /** 设置易读模式（normal / large） */
     setVision(v) {
-        this.vision = (v === 'large') ? 'large' : 'normal';
-        this._pushVision();
+        const next = (v === 'large') ? 'large' : 'normal';
+        const changed = this.vision !== next;
+        this.vision = next;
+        // 同 setTheme：心跳每 1.2 秒都会推，值没变就别动 iframe 里的根属性 ✓
+        if (changed || !this._visionPushed) this._pushVision();
         // 跟主题同一个道理：srcdoc 的 iframe 在 onload 之前推会丢 ⇒ load 之后补一次 ✓
         if (this.iframe && !this._visionBound) {
             this._visionBound = true;
@@ -1824,22 +1903,29 @@ export class BodycordPanel {
     /** 把易读模式推给 iframe（内部方法） */
     _pushVision() {
         const w = this.iframe?.contentWindow;
-        if (!w) return;
-        if (typeof w.__bodycordSetVision !== 'function') return;   // 还没 load，正常 ✓
-        try { w.__bodycordSetVision(this.vision); } catch (e) { console.warn('[Bodycord] 推易读模式失败', e); }
+        if (!w) { this._visionPushed = false; return; }
+        if (typeof w.__bodycordSetVision !== 'function') { this._visionPushed = false; return; }   // 还没 load，正常 ✓
+        try {
+            w.__bodycordSetVision(this.vision);
+            this._visionPushed = true;
+        } catch (e) { this._visionPushed = false; console.warn('[Bodycord] 推易读模式失败', e); }
     }
 
     /** 把当前主题推给 iframe（内部方法） */
     _pushTheme() {
         const w = this.iframe?.contentWindow;
-        if (!w) return;
+        if (!w) { this._themePushed = false; return; }
         if (typeof w.__bodycordSetTheme !== 'function') {
+            this._themePushed = false;
             // ⚠️ iframe 还没 load 的时候必然取不到这个函数 —— 那是正常的，
             //   别在这儿刷警告（会让人以为主题坏了）。只有**加载完之后**还取不到才值得报。
             if (this._loaded) console.warn('[Bodycord] iframe 已加载但取不到 __bodycordSetTheme，shim 可能没跑起来');
             return;
         }
-        try { w.__bodycordSetTheme(this.theme); } catch (e) { console.warn('[Bodycord] 推主题失败', e); }
+        try {
+            w.__bodycordSetTheme(this.theme);
+            this._themePushed = true;
+        } catch (e) { this._themePushed = false; console.warn('[Bodycord] 推主题失败', e); }
     }
 
     /**

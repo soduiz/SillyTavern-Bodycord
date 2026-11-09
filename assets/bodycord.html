@@ -575,6 +575,9 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
    ⚠️ 有日程那天本来就有红圈 ⇒ 绿圈只加在"没有红圈"的格子上，不然两个 box-shadow 打架 ✗ */
 .bc-cal-due{font-size:calc(9.5px * var(--bc-fs-scale, 1));color:var(--green);font-weight:700;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bc-cal-cell.bc-cal-hasdue:not(.bc-cal-mark){box-shadow:inset 0 0 0 2px var(--green)}
+/* ★ 2026-11-08（发情期第 0 批）：日历上标发情日（跟预产期那种绿色分开：发情用红色） */
+.bc-cal-heat{font-size:calc(9.5px * var(--bc-fs-scale, 1));color:var(--red);font-weight:700;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-cal-cell.bc-cal-hasheat:not(.bc-cal-mark){box-shadow:inset 0 0 0 2px var(--red)}
 /* 下半部分那行"谁的预产期、还有几天 / 已过几天"（只读，不是日程 ✓） */
 .bc-cal-duenote{padding:7px 0 0;font-size:calc(12px * var(--bc-fs-scale, 1));line-height:1.75;color:var(--green);font-weight:600}
 /* 头部那颗「跳到预产期」（跟「今天」同款，用绿色区分 ✓） */
@@ -704,6 +707,23 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
   padding:4px 9px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);
   color:var(--tx-2);font-family:inherit;font-size:calc(12px * var(--bc-fs-scale, 1));cursor:pointer}
 .child-name-btn:hover{border-color:var(--gold);color:var(--tx-1)}
+/* 「发送 / 不发送」那颗：默认是开着的（实心一点），关掉之后变灰 */
+.child-mute-btn{display:inline-flex;align-items:center;justify-content:center;line-height:1;
+  padding:4px 9px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);
+  color:var(--cyan);font-family:inherit;font-size:calc(12px * var(--bc-fs-scale, 1));cursor:pointer}
+.child-mute-btn.off{color:var(--tx-3);border-style:dashed}
+.child-mute-btn:hover{border-color:var(--cyan)}
+/* 孩子多的时候下面那颗「显示更多」 */
+.child-more-btn{display:block;width:100%;margin-top:10px;padding:9px 12px;border-radius:8px;
+  border:1px dashed var(--line);background:var(--surface-2);color:var(--tx-2);
+  font-family:inherit;font-size:calc(12.5px * var(--bc-fs-scale, 1));cursor:pointer}
+.child-more-btn:hover{border-color:var(--gold);color:var(--tx-1)}
+/* 一窝很多的那种：外面一张汇总卡，点开才是里面（2026-11-07） */
+.child-group-card{border-left:3px solid var(--cyan)}
+.child-group-head{display:flex;align-items:center;gap:10px;margin:14px 0 8px;padding:8px 12px;
+  border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.child-group-name{font-size:calc(12.5px * var(--bc-fs-scale, 1));font-weight:650;color:var(--tx-1)}
+.child-group-shown{margin-left:auto;font-size:calc(11.5px * var(--bc-fs-scale, 1));color:var(--tx-3)}
 .player-card{padding:16px 18px;background:linear-gradient(135deg,var(--surface-2),var(--main));border:1px solid var(--line);border-radius:12px;border-left:4px solid var(--cyan);margin-top:4px}
 /* 番茄钟那张卡**不要左边那条绿条** ——
    它上面就是圆盘 + 环，那条竖线纯属多余 ✗ */
@@ -1631,7 +1651,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
          就是单纯没进聊天；别再把这两个概念混在一起 ✗ */
 
   // 面板自己的构建标记：用来确认到底加载了哪一版文件（拿到缓存的旧文件时一眼能看出来）
-  var PANEL_BUILD = '2026-11-04-3';
+  var PANEL_BUILD = '2026-11-09-29';
   // 界面上不显示它，但留个查询口 —— 报 BUG 时能确认加载的是哪一版 ✓
   try{ window.__bodycordPanelBuild = PANEL_BUILD; }catch(e){}
 
@@ -2718,6 +2738,69 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     }catch(e){}
   };
 
+  /* ★ 2026-11-07：「这个孩子要不要发给主 API」——
+     跟改名同一条规矩：面板只报 id，写库在外壳。
+     账本照留，关掉只是不写进那一段（不删数据 ✓）。 */
+  window.__childMute = function(i){
+    var d = (typeof window.__bodycordGetChildren === 'function') ? window.__bodycordGetChildren() : null;
+    if(d && d.readonly) return;
+    var list = (d && Array.isArray(d.list)) ? d.list : [];
+    var c = list[Number(i)];
+    if(!c) return;
+    try{
+      window.parent.postMessage({ __bodycord: true, type: 'childMute', id: String(c.id || '') }, '*');
+    }catch(e){}
+  };
+
+  /* 孩子一多的时候：**按窝折叠 + 分页**（2026-11-07）
+     一窝超过 20 个 ⇒ 先给一张汇总卡（外面只写「一窝 N 个」），点进去才是这一窝的孩子；
+     进去之后照样分页，一次 20 个。数量少的窝照旧一张一张列出来。
+     ⚠️ 这只是显示层折叠：账本里一条都不少，也不改数据 ✓ */
+  var childShown = 20;       // 顶上这个列表一次显示几条（汇总卡也算一条）
+  var childOpen = {};        // 已经展开的窝（按分组下标）
+  var childGroupShown = {};  // 这一窝里已经显示多少个
+
+  function repaintChildren(){
+    try{
+      if(currentView !== 'children') return;
+      var cp = getPanel('children');
+      if(cp) cp.innerHTML = renderChildren();
+    }catch(e){}
+  }
+
+  window.__childMore = function(){ childShown += 20; repaintChildren(); };
+  window.__childOpen = function(gi){ childOpen = {}; childOpen[Number(gi)] = true; childGroupShown[Number(gi)] = 20; repaintChildren(); };
+  window.__childClose = function(gi){ delete childOpen[Number(gi)]; repaintChildren(); };
+  window.__childMoreGroup = function(gi){
+    var k = Number(gi);
+    childGroupShown[k] = (Number(childGroupShown[k]) || 20) + 20;
+    repaintChildren();
+  };
+
+  /** 一张孩子卡（下标 i 是他在整份列表里第几个，改名 / 发送那两颗按它取数据 ✓） */
+  function childCardHtml(c, i, ro){
+    var facts = [];
+    if(c.sex) facts.push(safe(c.sex));
+    if(c.race) facts.push(safe(c.race));
+    var dateLine = [];
+    // ★ 2026-10-31（她圈出来的）—— 这一行只写「哪一天出生」；
+    //   「现在多大」在右上角那颗 `child-age` 里，两个都写就是同一个数印两遍 ✗
+    if(c.birthDate) dateLine.push('出生 ' + safe(c.birthDate));
+    return '<div class="child-card">' +
+        '<div class="ach-top">' +
+          '<span class="ach-name">' + safe(c.title || '孩子') + '</span>' +
+          (ro ? '' : '<button class="child-mute-btn' + (c.mute ? ' off' : '') + '" onclick="event.stopPropagation();window.__childMute(' + i + ')" title="这个孩子要不要写进发给主 API 的那一段（账本照留）">' + (c.mute ? '不发送' : '发送') + '</button>') +
+          (ro ? '' : '<button class="child-name-btn" onclick="event.stopPropagation();window.__childRename(' + i + ')" title="改这个名字">' + (c.named ? '改名' : '起名') + '</button>') +
+          (c.age ? '<span class="child-age">' + safe(c.age) + '</span>' : '') +
+        '</div>' +
+        (facts.length ? '<div class="child-facts">' + facts.join(' · ') + '</div>' : '') +
+        (dateLine.length ? '<div class="child-date">' + dateLine.join('　·　') + '</div>' : '') +
+        (c.other ? '<div class="child-other">另一个亲代：' + safe(c.other) + '</div>' : '') +
+        (c.heritage ? '<div class="child-heritage">' + safe(c.heritage) + '</div>' : '') +
+        (c.talent ? '<div class="child-talent">天赋：' + safe(c.talent) + (c.strength ? '（强度：' + safe(c.strength) + '）' : '') + '</div>' : '') +
+      '</div>';
+  }
+
   function renderChildren(){
     var d = (typeof window.__bodycordGetChildren === 'function') ? window.__bodycordGetChildren() : null;
     var list = (d && Array.isArray(d.list)) ? d.list : [];
@@ -2732,30 +2815,66 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     if(!list.length){
       return head + '<div class="empty-state">还没有孩子。<br>分娩那一轮会自己记下来</div>';
     }
-    var rows = '';
+    // 按「哪一次出生」分窝（batch 一样就是同一窝；老数据没有 batch 就按出生日 + 另一个亲代凑 ✓）
+    var groups = [], at = {};
     for(var i = 0; i < list.length; i++){
-      var c = list[i] || {};
-      var facts = [];
-      if(c.sex) facts.push(safe(c.sex));
-      if(c.race) facts.push(safe(c.race));
-      var dateLine = [];
-      // ★ 2026-10-31（她圈出来的）—— 这一行只写「哪一天出生」；
-      //   「现在多大」在右上角那颗 `child-age` 里，两个都写就是同一个数印两遍 ✗
-      if(c.birthDate) dateLine.push('出生 ' + safe(c.birthDate));
-      rows += '<div class="child-card">' +
-          '<div class="ach-top">' +
-            '<span class="ach-name">' + safe(c.title || '孩子') + '</span>' +
-            (ro ? '' : '<button class="child-name-btn" onclick="event.stopPropagation();window.__childRename(' + i + ')" title="改这个名字">' + (c.named ? '改名' : '起名') + '</button>') +
-            (c.age ? '<span class="child-age">' + safe(c.age) + '</span>' : '') +
-          '</div>' +
-          (facts.length ? '<div class="child-facts">' + facts.join(' · ') + '</div>' : '') +
-          (dateLine.length ? '<div class="child-date">' + dateLine.join('　·　') + '</div>' : '') +
-          (c.other ? '<div class="child-other">另一个亲代：' + safe(c.other) + '</div>' : '') +
-          (c.heritage ? '<div class="child-heritage">' + safe(c.heritage) + '</div>' : '') +
-          (c.talent ? '<div class="child-talent">天赋：' + safe(c.talent) + (c.strength ? '（强度：' + safe(c.strength) + '）' : '') + '</div>' : '') +
-        '</div>';
+      var c0 = list[i] || {};
+      var gk = String(c0.batch || '') || ('b|' + String(c0.birthDate || '') + '|' + String(c0.other || ''));
+      var g = at[gk];
+      if(!g){ g = { items: [], head: c0 }; at[gk] = g; groups.push(g); }
+      g.items.push({ c: c0, i: i });
     }
-    return head + '<div class="ach-list">' + rows + '</div>';
+    var FOLD_AT = 20;
+    // ① 已经点进某一窝：这一页只看那一窝（里面自己分页，顶上给一颗返回）
+    var openGi = -1;
+    Object.keys(childOpen).forEach(function(k){
+      var n = Number(k);
+      if(childOpen[k] && groups[n] && openGi < 0) openGi = n;
+    });
+    if(openGi >= 0){
+      var og = groups[openGi];
+      var shownN = Math.min(Number(childGroupShown[openGi]) || FOLD_AT, og.items.length);
+      var inside = '<button class="child-name-btn" style="margin-bottom:10px" onclick="window.__childClose(' + openGi + ')">返回全部孩子</button>' +
+        '<div class="child-group-head">' +
+          '<span class="child-group-name">' + safe((og.head.race ? og.head.race + ' · ' : '') + '这一窝 ' + og.items.length + ' 个') + '</span>' +
+          '<span class="child-group-shown">已显示 ' + shownN + ' 个</span>' +
+        '</div>';
+      for(var t = 0; t < shownN; t++) inside += childCardHtml(og.items[t].c, og.items[t].i, ro);
+      if(shownN < og.items.length){
+        inside += '<button class="child-more-btn" onclick="window.__childMoreGroup(' + openGi + ')">再显示 20 个（还有 ' + (og.items.length - shownN) + ' 个）</button>';
+      }
+      return head + '<div class="ach-list">' + inside + '</div>';
+    }
+    // ② 列表：一窝很多的折成一张汇总卡，少的照旧一张一张列；整体还是分页
+    var units = [];
+    for(var gi = 0; gi < groups.length; gi++){
+      var gg = groups[gi];
+      if(gg.items.length <= FOLD_AT){
+        for(var a = 0; a < gg.items.length; a++) units.push({ kind: 'child', it: gg.items[a] });
+        continue;
+      }
+      units.push({ kind: 'fold', g: gg, gi: gi });
+    }
+    var showN = Math.min(units.length, childShown);
+    var rows = '';
+    for(var u = 0; u < showN; u++){
+      var unit = units[u];
+      if(unit.kind === 'fold'){
+        var gh = unit.g.head || {};
+        rows += '<div class="child-card child-group-card">' +
+            '<div class="ach-top">' +
+              '<span class="ach-name">' + safe((gh.race ? gh.race + ' · ' : '') + '一窝 ' + unit.g.items.length + ' 个') + '</span>' +
+              '<span class="child-age">' + (gh.birthDate ? safe(gh.birthDate) : '') + '</span>' +
+            '</div>' +
+            '<div class="child-facts">一次生了 ' + unit.g.items.length + ' 个，折起来放着，账本里一条不少</div>' +
+            '<button class="child-more-btn" onclick="window.__childOpen(' + unit.gi + ')">展开看这一窝</button>' +
+          '</div>';
+        continue;
+      }
+      rows += childCardHtml(unit.it.c, unit.it.i, ro);
+    }
+    return head + '<div class="ach-list">' + rows + '</div>' +
+      (units.length > showN ? '<button class="child-more-btn" onclick="window.__childMore()">显示更多（还有 ' + (units.length - showN) + ' 条）</button>' : '');
   }
 
   /* 「受孕记录」频道
@@ -3459,8 +3578,16 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     var al = Array.isArray(data.alerts) ? data.alerts : [];
     if(al.length){
       var alRows = al.map(function(a){
-        var kind = a.kind === 'conceive' ? '已着床完成' : ('预产期' + (a.sub ? ('（' + a.sub + '）') : ''));
-        return '<div class="bc-hint" style="margin:3px 0 0">' + kind + '：' + (a.date || '—')
+        var kind;
+        if(a.kind === 'conceive') kind = '已着床完成';
+        else if(a.kind === 'lay') kind = '已产卵';
+        else if(a.kind === 'hatch') kind = '破壳';
+        else kind = (a.egg ? '破壳日' : '预产期') + (a.sub ? ('（' + a.sub + '）') : '');
+        /* 产卵 / 破壳这两条本身把"一窝几只、离破壳几天"写在 note 里 ⇒ 直接读它 */
+        var body = ((a.kind === 'lay' || a.kind === 'hatch') && a.note)
+          ? a.note
+          : (kind + '：' + (a.date || '—'));
+        return '<div class="bc-hint" style="margin:3px 0 0">' + safe(body)
           + (a.seen ? '（提醒过了）' : '') + '</div>';
       }).join('');
       parts.push(
@@ -3471,6 +3598,45 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
             '<span class="block-tag">BOT</span>' +
           '</div>' +
           alRows +
+        '</div>'
+      );
+    }
+
+    // ── 卵生：三个日子（起点 / 产卵日 / 破壳日）＋ 每一窝 ──
+    // ★ 2026-11-06（第五批）：她验这一批就看这里 —— 怀着的时候两个日子都要提前看得到，
+    //   产卵之后这里换成"在孵"的窝 ＋ 离破壳还有几天 ✓
+    var eg = data.eggs || null;
+    if(eg && (eg.pregnant || (Array.isArray(eg.clutches) && eg.clutches.length))){
+      var relTxt = function(n){
+        if(n === null || n === undefined) return '';
+        n = Number(n);
+        if(!isFinite(n)) return '';
+        return n > 0 ? ('还有 ' + n + ' 天') : (n === 0 ? '就是今天' : ('已过 ' + (-n) + ' 天'));
+      };
+      var eggRows = '';
+      if(eg.pregnant){
+        var pe = eg.pregnant;
+        eggRows += '<div class="bc-hint" style="margin:2px 0 6px">这一胎是卵生（' + (pe.mode === 'in' ? '体内孵化' : '体外孵化') + '）</div>';
+        eggRows += '<div class="attr-row"><span class="attr-key">起点</span><span class="attr-val">' + safe(pe.startDate || '—') + '</span></div>';
+        eggRows += '<div class="attr-row"><span class="attr-key">产卵日' + (pe.mode === 'in' ? '（出生）' : '') + '</span><span class="attr-val">' + safe(pe.layDate || '—') + (relTxt(pe.layLeft) ? '（' + relTxt(pe.layLeft) + '）' : '') + '</span></div>';
+        eggRows += '<div class="attr-row"><span class="attr-key">破壳日</span><span class="attr-val">' + safe(pe.hatchDate || '—') + (relTxt(pe.hatchLeft) ? '（' + relTxt(pe.hatchLeft) + '）' : '') + '</span></div>';
+      }
+      var cl = Array.isArray(eg.clutches) ? eg.clutches : [];
+      cl.forEach(function(c, i){
+        var line = '一窝 ' + (c.count || 0) + ' ' + (c.unit || '枚') + ' · 产卵日 ' + (c.laidDate || '—') + ' · 破壳日 ' + (c.hatchDate || '—');
+        var st = c.hatched
+          ? ('已破壳（' + (c.hatchedDate || c.hatchDate || '—') + '）')
+          : ('在孵 · ' + (relTxt(c.hatchLeft) || ''));
+        eggRows += '<div class="attr-row"><span class="attr-key">第 ' + (i + 1) + ' 窝</span><span class="attr-val">' + safe(line) + '<br>' + safe(st) + '</span></div>';
+      });
+      parts.push(
+        '<div class="msg-block">' +
+          '<div class="block-head">' +
+            '<div class="block-avatar bot">' + ICO.sparkle + '</div>' +
+            '<span class="block-author">卵生</span>' +
+            '<span class="block-tag">BOT</span>' +
+          '</div>' +
+          eggRows +
         '</div>'
       );
     }
@@ -4166,8 +4332,34 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
   function renderFetus(p){
     var parts = [];
     var fi = parseFetusInfo(p.d6[1]);
-    var hasAnything = (p.d5[1] && p.d5[1] !== '无') || (fi && (fi.summary || fi.children.length));
+    // ★ 2026-11-06（第五批）：待孵不算怀孕，d6 是「无」，但这一页不能显示"暂无胎儿数据" ——
+    //   名下还挂着一窝蛋 ⇒ 用蛋卡顶上 ✓
+    var conData = (typeof window.__bodycordGetConception === 'function' ? window.__bodycordGetConception() : null) || {};
+    var inc = (conData.eggs && conData.eggs.incubating) ? conData.eggs.incubating : null;
+    var hasAnything = (p.d5[1] && p.d5[1] !== '无') || (fi && (fi.summary || fi.children.length)) || !!inc;
     if(!hasAnything) return '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>暂无胎儿数据</div>';
+    if(inc){
+      var incTxt = '一窝 ' + (inc.count || 0) + ' ' + (inc.unit || '枚');
+      if(inc.hatchLeft !== null && inc.hatchLeft !== undefined){
+        var n = Number(inc.hatchLeft);
+        if(isFinite(n)) incTxt += (n > 0 ? ('，离破壳还有 ' + n + ' 天') : (n === 0 ? '，今天破壳' : ('，已经过了破壳日 ' + (-n) + ' 天')));
+      }
+      if(inc.hatchDate) incTxt += '（破壳日 ' + inc.hatchDate + '）';
+      if(inc.clutches > 1) incTxt += '，共 ' + inc.clutches + ' 窝';
+      parts.push(
+        '<div class="msg-block">' +
+          '<div class="block-head">' +
+            '<div class="block-avatar fetus">' + ICO.fetus + '</div>' +
+            '<span class="block-author">待孵</span>' +
+            '<span class="block-tag fetus">BOT</span>' +
+          '</div>' +
+          '<div class="embed-panel pink">' +
+            '<div class="field-label">这一窝</div>' +
+            '<div class="field-value" style="font-weight:500">' + safe(incTxt) + '</div>' +
+          '</div>' +
+        '</div>'
+      );
+    }
     if(p.d5[1] && p.d5[1] !== '无'){
       parts.push(
         '<div class="msg-block">' +
@@ -4416,6 +4608,24 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
         ? '<div class="body-trace">' + items + '</div>'
         : '<div class="empty-state">' + ICO.body + '暂无身体痕迹</div>') +
     '</div>');
+
+    // ---- 发情期（外壳算好那份；面板只负责摆）----
+    //   ★ 2026-11-08（发情期第 0 批）：这一族没有发情期 / 总开关关着 ⇒ 外壳给 null ⇒ 整块不出现 ✓
+    var es = (bs && bs.estrus) ? bs.estrus : null;
+    if(es){
+      var eText = es.inHeat
+        ? ('第 ' + safe(es.dayNo) + ' 天' + (es.days ? (' ／ 共 ' + safe(es.days) + ' 天') : '') + (es.end ? ('，到 ' + safe(es.end)) : ''))
+        : ('不在发情期' + (es.next ? ('，下次 ' + safe(es.next)) : ''));
+      parts.push('<div class="msg-block">' +
+        '<div class="block-head">' +
+          '<div class="block-avatar pin">' + ICO.period + '</div>' +
+          '<span class="block-author">发情期</span>' +
+          '<span class="block-tag">' + (es.inHeat ? '正在发情' : '不在发情期') + '</span>' +
+        '</div>' +
+        '<div class="embed-panel"><div class="body-text">' + eText + '</div></div>' +
+      '</div>');
+      shown++;
+    }
 
     if(!shown && !traces.length){
       return '<div class="empty-state">' + ICO.body + '暂无身体状态</div>';

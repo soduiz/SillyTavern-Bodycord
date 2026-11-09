@@ -15,6 +15,7 @@ import { getExtensionSettings, saveSettings } from './st.js';
 //          ⇒ 现在顶层只剩 import，其它一律放到函数里 ✓）
 //      ⇒ 真违反了会被测试当场抓到（自测脚本的第一个 import 链就走到这里 ✓）
 import { isUserKey, targetPatchText, targetPatchBag, setTargetPatchText, state, USER_KEY, periodModeOf, traceOnOf, timeUnitNow, MAX_CAL_EVENTS_PER_DAY } from './store.js';
+import { cycleHooks } from './cycle-hooks.js';
 // ★ 日程那一套纯逻辑（排序 / 那行字 / 空壳子判定 / 改一格的校验）——
 //   现实日历这份跟**聊天里那份**共用一份 ✓（两份迟早走样 ✗）
 //   ⚠️ 这个文件是**叶子** ⇒ 放在 import 链上不会造环 ✓
@@ -991,6 +992,45 @@ export const DEFAULT_SETTINGS = {
     //   那一档没有"第几天"可落段 ⇒ 每次内射都按这一格算基础率，
     //   别去借五段里的某一段（借了会随天数漂：1% / 8% / 25% / 0% 乱跳 ✗）
     cycleRateAmenorrhea: 10,
+    // ★★ 产后恢复（2026-11-08）—— 全局默认，三档：
+    //   easy（轻松，默认）＝ 42 天；real（现实）＝ 42 到 180 天；
+    //   custom（自定义）＝ 读下面那两个数。
+    //   ⚠️ 这**只是全局兜底**：图鉴条目里写了「产后恢复」范围的族按条目走，
+    //     个人还能单独调（三层：个人 > 条目 > 这里）✓
+    //   ⚠️ 现实那一档 42 是下限（不哺乳 6 到 12 周恢复），宽的那头是哺乳期
+    //     （常到 3 到 6 个月）—— 不做"哺乳顺延"这条机制，就把哺乳的影响并进范围里 ✓
+    postpartumPreset: 'easy',
+    postpartumMin: 42,
+    postpartumMax: 42,
+    // ★ 2026-11-08：产后恢复的总开关。
+    //   为什么要有：**有人不想要**这一段（她原话「因为有人不想要」）⇒
+    //   关掉之后分娩那轮照旧直接拨回周期第 1 天，跟加这个功能之前一模一样 ✓
+    //   ⚠️ 默认**关**（她 2026-11-08 定的「产后恢复默认改成关闭」）：
+    //     谁要这一段自己去那张卡上打开，插件不擅自改别人的周期表现 ✓
+    postpartumOn: false,
+    // ★ 2026-11-08（她指出的现实）：**排卵往往比第一次月经先恢复** ——
+    //   产后那一段，月经还没回来的人已经可能排卵、也可能怀上。
+    //   这里填「恢复日之前几天就算排卵已恢复」：
+    //   · 0（默认）＝ 简化：把排卵和月经绑在同一天（恢复期全程按无月经那一档的基础率）
+    //   · 填 14 这类 ＝ 恢复期最后这十来天算排卵已恢复（受孕率抬到受孕窗口那一档）
+    //   ⚠️ 不影响"恢复期能不能怀"（那一直是能的），只影响最后那几天按多高的基础率算 ✓
+    postpartumOvulationDays: 0,
+    // ★ 2026-11-09：图鉴的「介绍（外貌）」这一段发不发主 API。
+    //   默认**关**：角色卡自己写了外貌，图鉴再发一份两处会打架；
+    //   关着只影响「介绍」那一段，生理 / 生育 / 补充照发 ✓
+    codexIntroOn: false,
+    // ★ 2026-11-08（第 0 批）：图鉴「性特征」的总开关。
+    //   她定的口径：**不能强制开启**，要能关；默认关，谁要谁自己打开 ✓
+    //   关着时：提示词一个字都不发、图鉴里那栏也不显示 ✓
+    //   开着时：跟正文一样**常驻发送**（她 2026-11-08 看过字数后定的，不另设门控）
+    sexTraitsOn: false,
+    // ★ 2026-11-08（发情期第 0 批）：发情期的总开关。
+    //   口径：默认**关**（新模块一律默认关；而且数据还在按原型一批批填，
+    //   开着会让没填季节的族满屏发情 ✓）。关着时整条不发，档位也不可选 ✓
+    estrusOn: false,
+    // ★ 自动把「仅致孕、不能被受孕、这一族有发情期」的对象提到「发情记录」档。
+    //   默认**关**（不替玩家决定谁值得追）✓
+    autoTrackEstrus: false,
     // ★ 成就那三个字数上限（规则句按它们渲染 ✓）
     achNameMax: 8,
     achWhyMax: 20,
@@ -1049,6 +1089,21 @@ export const DEFAULT_SETTINGS = {
     //   ★ 默认空 = 所有卡都启用（不改变任何人现在的用法 ✓）
     excludedCards: {},
 
+    // ---- 种族图鉴（2026-11-06 第一批）----
+    //   ★ 条目本身是**世界观级**的（跟模块开关同一层，不是某个人的东西 ✓）
+    //   · overrides：改过的内置条目（整条快照；删掉这个键 = 恢复默认 ✓）
+    //   · custom：玩家自建的条目
+    //   ⚠️ 这一批只存不用：判定与提示词还一个字没读它（第三批才接）✓
+    codex: { overrides: {}, custom: [] },
+    //   ★ 第二批：本人绑到哪一条（穿所有聊天）＋ 本人单独调过的数值
+    //     其他对象的绑定与覆盖按聊天存（`targets[key].codexId / codexOverride` ✓）
+    userCodexId: '',
+    userCodexOverride: {},
+    //   ★ 第七批：本人绑了哪几条世界书条目（「设定来源」）——
+    //     只存绑定关系、不存内容，每次现读（见 src/wi-bind.js ✓）
+    //     其他对象存 `targets[key].wiBind`（跟 codexId 同一个口径 ✓）
+    userWiBind: [],
+
     // ---- 插件自己的 API（**多套**） ----
     //   ★ 可多套：存多个 API、编辑备注（取代原来那套扁平字段），
     //     但**不照抄别人的样子，因为我们有自己的风格** ✓
@@ -1100,9 +1155,11 @@ export const DEFAULT_SETTINGS = {
         //   · notifyConceive：着床完成（怀孕）那一刻提示一次
         //   · notifyDue：每胎的预产期到那天提示（日期由插件掷定：引擎只报「孕期」区间，
         //     插件掷天数并算日期，只掷一次就锁住 ✓ 见 judge.js 的 ensureGestationDates ✓）
-        //   ⚠️ 判据一律写 `!== false`（老存档没有这两格 ⇒ 按"开"处理 ✓ 不用写迁移）
+        //   · notifyEgg：卵生那几族的「产卵 / 破壳」两个日子到了提示一次 ✓
+        //   ⚠️ 判据一律写 `!== false`（老存档没有这几格 ⇒ 按"开"处理 ✓ 不用写迁移）
         notifyConceive: true,
-        notifyDue: true,    },
+        notifyDue: true,
+        notifyEgg: true,    },
 
     // ---- ★ 给推演看的世界书（细节见 src/wi.js 顶上那段说明）----
     //   一句话：插件 API 照酒馆的读法读世界书（常驻 + 关键词命中的那批），
@@ -1123,12 +1180,19 @@ export const DEFAULT_SETTINGS = {
         desc: false,        // 角色卡的角色描述要不要一起带（有人会往描述里塞状态栏格式 ⇒ 本来就该关）
         // ★ 2026-10-23（她提的）：用户自己那份人设描述要不要也带给推演。
         //   之前推演只看得到「角色卡描述」和世界书，玩家自己写的体质/血脉/天赋根本进不去，
-        //   于是"受孕方"那一半在遗传检查里永远是「无」。默认关（那是玩家私密设定 + 每轮吃 token）✓
+        //   于是"受孕方"那一半在遗传检查里永远是「无」。
+        //   默认关（那是玩家私密设定 + 每轮吃 token）；遗传判定那一轮另有「编辑…」来源，
+        //   那边默认勾的是用户角色设定（2026-11-06 晚她定）✓
         persona: false,
         // ★ 2026-10-23：「血脉遗传特质」判定那一轮，**临时**把世界书与用户角色设定带一次
         //   （只看这一轮，不改上面那两颗开关的存值）。默认开：
         //   不开的话，开关都关着的人那一轮照样只能判「无」，这个模块等于白做 ✓
         heritageAuto: true,
+        // ★ 2026-11-06 第七批：把「角色绑定的世界书条目」也带给推演。
+        //   跟上面那几颗**各管各的**：它只管对象自己绑的条目，不看关键词有没有命中。
+        //   ★ 2026-11-06 晚她定：**默认开**（绑的是玩家亲手挑的条目，不是整本，
+        //     每轮带上；不想带就自己关）✓
+        bindOn: true,
         offBooks: {},       // 书名 -> true：整本不给推演看（＝排除）
         offEntries: {},     // 书名 -> { uid: true }：单条不给推演看
     },
@@ -1230,10 +1294,9 @@ export const DEFAULT_SETTINGS = {
     userAwarenessTier: '',           // 玩家自己那份察觉档位（空＝交给 AI 判一次）
     userAwarenessTierManual: false,  // 玩家手选过 ⇒ 锁住，AI 再报也不覆盖
 
-    // ---- ★ 用户本人「属于哪个大类」----
-    //   选人外的时候要填种族，还要有一个**选属于哪个大类**的选项 ✓
-    //   值 = [异种扩展包 · 西方与通用] 表里那一行的名字（选项表在 modules.js 的 XENO_CLASSES ✓）
-    //   空 = 没选 ⇒ 按推演每轮判 ✓；NPC 那份存本聊天档案（`targets[key].xenoClass` ✓）
+    // ---- 已退休：用户本人「属于哪个大类」----
+    //   2026-11-06 大类那一格退休（判定只看种族）；2026-11-08 两张异种表也退场了 ⇒
+    //   这个键已经没有任何地方读它，只是为了老存档的字段不被 normalize 掉才留着，别再用 ✗
     userXenoClass: '',
 
     // ---- ★ 用户本人「新存档的周期起始」----
@@ -2249,11 +2312,87 @@ function countOfWord(w) {
     return 0;
 }
 
-/**
- * [怀孕判定模块] 里那张胎数表 ⇒ `[{from, to, n}]`（认不出 / 表被改烂 ⇒ `[]` ✓）。
- * 形态：`D100：1-78 单胎，79-94 双胎，95-98 三胎，99-100 四胎或以上`
- */
-export function fetusCountTableOf(targetKey = null) {
+// ---------------------------------------------------------------------------
+// ★ 2026-11-08（规则剥离第二步）：这几张概率表的**真相源搬到设置**（settings().fetus）
+//
+// 以前它们住在 [怀孕判定模块] 正文里：面板改的是那几行，判定也从正文解析。
+//   可是插件自己已经会按图鉴掷了，正文里再留一张人类 D100 只会让模型照着人类的数抄 ✗
+//   ⇒ 数字搬到设置（面板照样能改、判定与面板读同一份），正文只留"由系统判" ✓
+//   ⚠️ 老存档：设置里还没有这一块时，仍然从正文读（玩家手改过的那几行不丢）✓
+// ---------------------------------------------------------------------------
+export const FETUS_P_DEF = { count1: 78, count2: 94, count3: 98, ovum: 33, mix: 5, implant: 80, sex: 50 };
+
+const FETUS_P_RANGE = {
+    count1: [1, 99], count2: [1, 99], count3: [1, 99],
+    ovum: [1, 99], mix: [0, 99], implant: [1, 100], sex: [1, 99],
+};
+
+/** 设置里存的那一块（没有 ⇒ null = 还没搬过，走正文那条老路） */
+function fetusStoredOf() {
+    const raw = settings().fetus;
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
+}
+
+/** 现在生效的那七个分界（面板读数与判定共用这一份 ✓） */
+export function fetusParamsOf() {
+    const stored = fetusStoredOf();
+    const out = {};
+    for (const [k, def] of Object.entries(FETUS_P_DEF)) {
+        if (!stored) { out[k] = def; continue; }
+        const [lo, hi] = FETUS_P_RANGE[k] || [0, 999];
+        const n = Math.round(Number(stored[k]));
+        out[k] = (Number.isFinite(n) && n >= lo && n <= hi) ? n : def;
+    }
+    if (!(out.count1 < out.count2 && out.count2 < out.count3)) {
+        out.count1 = FETUS_P_DEF.count1;
+        out.count2 = FETUS_P_DEF.count2;
+        out.count3 = FETUS_P_DEF.count3;
+    }
+    return out;
+}
+
+/** 面板写设置（有一格不合法 / 上下限倒挂 ⇒ 一个字都不动 ✓；返回有没有真的变） */
+export function setFetusParams(values) {
+    const numOf = (k) => {
+        const s = String(values?.[k] ?? '').trim();
+        if (s === '') return null;
+        const v = Number(s);
+        if (!Number.isFinite(v)) return null;
+        const [lo, hi] = FETUS_P_RANGE[k] || [0, 999];
+        const r = Math.round(v);
+        return (r >= lo && r <= hi) ? r : null;
+    };
+    const next = {};
+    for (const k of Object.keys(FETUS_P_DEF)) {
+        const v = numOf(k);
+        if (v === null) return false;
+        next[k] = v;
+    }
+    if (!(next.count1 < next.count2 && next.count2 < next.count3)) return false;
+    const cur = fetusStoredOf();
+    let changed = !cur;
+    if (cur) {
+        for (const k of Object.keys(next)) {
+            if (Number(cur[k]) !== next[k]) { changed = true; break; }
+        }
+    }
+    settings().fetus = next;
+    save();
+    return changed;
+}
+
+/** 七个分界 ⇒ 胎数四档（四胎或以上按 4 算 ✓） */
+function fetusTiersFromParams(p) {
+    return [
+        { from: 1, to: p.count1, n: 1 },
+        { from: p.count1 + 1, to: p.count2, n: 2 },
+        { from: p.count2 + 1, to: p.count3, n: 3 },
+        { from: p.count3 + 1, to: 100, n: 4 },
+    ];
+}
+
+/** 老路：从正文那张表读（老存档 / 玩家手改过的那几行 ✓） */
+function fetusTiersFromText(targetKey = null) {
     try {
         const t = String(moduleText('pregnancy_module', targetKey) || '');
         const line = (t.match(/D100\s*[：:]\s*([^\n]+)/) || [])[1] || '';
@@ -2272,6 +2411,16 @@ export function fetusCountTableOf(targetKey = null) {
 }
 
 /**
+ * [怀孕判定模块] 里那张胎数表 ⇒ `[{from, to, n}]`（认不出 / 表被改烂 ⇒ 用出厂七个分界 ✓）。
+ * 形态：`D100：1-78 单胎，79-94 双胎，95-98 三胎，99-100 四胎或以上`
+ */
+export function fetusCountTableOf(targetKey = null) {
+    if (fetusStoredOf()) return fetusTiersFromParams(fetusParamsOf());
+    const legacy = fetusTiersFromText(targetKey);
+    return legacy.length ? legacy : fetusTiersFromParams(FETUS_P_DEF);
+}
+
+/**
  * 池里那个数 ⇒ 这一胎几个孩子（认不出 ⇒ 0 ✓）。
  * 上限那条（「四胎或以上」）按 4 算 —— 正文写着具体数量"由推演者决定" ✓
  */
@@ -2287,16 +2436,22 @@ export function fetusCountOf(targetKey = null, value = null) {
  * 形态：`1-50 判为男，51-100 判为女`（老正文写的是「为雄性 / 为雌性」⇒ 两种都认 ✓）
  */
 export function fetusSexRangeOf(targetKey = null) {
+    if (fetusStoredOf()) {
+        const p = fetusParamsOf();
+        return { male: [1, p.sex], female: [p.sex + 1, 100] };
+    }
     try {
         const t = String(moduleText('pregnancy_module', targetKey) || '');
         // ★ 三种写法都要认：为新版「判为男」、老版「为雄性」、手改过的「为男性」
         const m = t.match(/(\d+)\s*-\s*(\d+)\s*判?为(?:雄性|男性|男)\s*[，,]\s*(\d+)\s*-\s*(\d+)\s*判?为(?:雌性|女性|女)/);
-        if (!m) return null;
+        if (!m) return { male: [1, FETUS_P_DEF.sex], female: [FETUS_P_DEF.sex + 1, 100] };
         const male = [Number(m[1]), Number(m[2])];
         const female = [Number(m[3]), Number(m[4])];
-        if (!male.every(Number.isFinite) || !female.every(Number.isFinite)) return null;
+        if (!male.every(Number.isFinite) || !female.every(Number.isFinite)) {
+            return { male: [1, FETUS_P_DEF.sex], female: [FETUS_P_DEF.sex + 1, 100] };
+        }
         return { male, female };
-    } catch { return null; }
+    } catch { return { male: [1, FETUS_P_DEF.sex], female: [FETUS_P_DEF.sex + 1, 100] }; }
 }
 
 /**
@@ -2308,15 +2463,21 @@ export function fetusSexRangeOf(targetKey = null) {
  *    调用方**照旧各自独立判性别**，老行为一字不变 ✓（宁可退回老行为，也不瞎猜）
  */
 export function fetusOvumRangeOf(targetKey = null) {
+    if (fetusStoredOf()) {
+        const p = fetusParamsOf();
+        return { same: [1, p.ovum], diff: [p.ovum + 1, 100] };
+    }
     try {
         const t = String(moduleText('pregnancy_module', targetKey) || '');
         const m = t.match(/(\d+)\s*-\s*(\d+)\s*同卵\s*[，,]\s*(\d+)\s*-\s*(\d+)\s*异卵/);
-        if (!m) return null;
+        if (!m) return { same: [1, FETUS_P_DEF.ovum], diff: [FETUS_P_DEF.ovum + 1, 100] };
         const same = [Number(m[1]), Number(m[2])];
         const diff = [Number(m[3]), Number(m[4])];
-        if (!same.every(Number.isFinite) || !diff.every(Number.isFinite)) return null;
+        if (!same.every(Number.isFinite) || !diff.every(Number.isFinite)) {
+            return { same: [1, FETUS_P_DEF.ovum], diff: [FETUS_P_DEF.ovum + 1, 100] };
+        }
         return { same, diff };
-    } catch { return null; }
+    } catch { return { same: [1, FETUS_P_DEF.ovum], diff: [FETUS_P_DEF.ovum + 1, 100] }; }
 }
 
 /**
@@ -2327,10 +2488,19 @@ export function fetusOvumRangeOf(targetKey = null) {
  * ⚠️ 老正文没有这一行 ⇒ null ⇒ **完全不混合**，老行为一字不变 ✓
  */
 export function fetusMixRangeOf(targetKey = null) {
+    if (fetusStoredOf()) {
+        const p = fetusParamsOf();
+        if (p.mix <= 0) return null;                       // 0 = 这一档关掉
+        const safe = 100 - p.mix;
+        return { none: [1, safe], mixed: [safe + 1, 100] };
+    }
     try {
         const t = String(moduleText('pregnancy_module', targetKey) || '');
         const m = t.match(/(\d+)\s*-\s*(\d+)\s*不混合\s*[，,]\s*(\d+)\s*-\s*(\d+)\s*混合/);
-        if (!m) return null;
+        if (!m) {
+            const safe = 100 - FETUS_P_DEF.mix;
+            return { none: [1, safe], mixed: [safe + 1, 100] };
+        }
         const none = [Number(m[1]), Number(m[2])];
         const mixed = [Number(m[3]), Number(m[4])];
         if (!none.every(Number.isFinite) || !mixed.every(Number.isFinite)) return null;
@@ -2519,39 +2689,47 @@ export function applyTalentPreset(kind = 'normal', targetKey = null) {
  *   ⚠️ 认不出（玩家把这段删了）⇒ 返回 null ⇒ 不做这道判定，老行为一字不变 ✓
  */
 export function implantRangeOf(targetKey = null) {
+    if (fetusStoredOf()) {
+        const p = fetusParamsOf();
+        return { ok: [1, p.implant], fail: p.implant >= 100 ? null : [p.implant + 1, 100] };
+    }
     try {
         const t = String(moduleText('pregnancy_module', targetKey) || '');
         const m = t.match(/着床判定（D100）\s*[：:]\s*(\d+)\s*-\s*(\d+)\s*着床成功/);
-        if (!m) return null;
+        if (!m) return { ok: [1, FETUS_P_DEF.implant], fail: [FETUS_P_DEF.implant + 1, 100] };
         const ok = [Number(m[1]), Number(m[2])];
-        if (!ok.every(Number.isFinite)) return null;
+        if (!ok.every(Number.isFinite)) return { ok: [1, FETUS_P_DEF.implant], fail: [FETUS_P_DEF.implant + 1, 100] };
         // 失败那半：`81 及以上着床失败` 和老的 `81-100 着床失败` 都认（认不出就留 null ✓）
         const f = t.match(/着床成功\s*[，,]\s*(\d+)\s*(?:-\s*(\d+))?\s*(?:及以上\s*)?着床失败/);
         const fail = f && Number.isFinite(Number(f[1]))
             ? [Number(f[1]), f[2] === undefined ? 100 : Number(f[2])]
             : null;
         return { ok, fail };
-    } catch { return null; }
-}
-
-/**
- * 这一周该写哪句发育描述（正文那张孕周表里的一句话；认不出 ⇒ 空串 ✓）。
- * 形态：`- 孕 4-6 周：胚胎已着床，器官开始分化。／孕 7-10 周：心跳可检测，四肢芽出现。`
- *   ⇒ 同一行里可能有好几句，按「／」切开逐句认 ✓
- */
-export function fetusDevLineOf(targetKey = null, week = null) {
-    try {
-        const w = Number(week);
-        if (!Number.isFinite(w)) return '';
-        const hit = fetusDevAllLines(targetKey).find((x) => w >= x.from && w <= x.to);
-        return hit ? hit.desc : '';
-    } catch { return ''; }
+    } catch { return { ok: [1, FETUS_P_DEF.implant], fail: [FETUS_P_DEF.implant + 1, 100] }; }
 }
 
 /**
  * ★ 2026-10-24（构建 -107）：那张表的**全部**条目（`{from,to,desc}`）——
  *   「概述里的生长情况跟着孕周走」时要靠它把**旧的那句**从概述里认出来换掉 ✓
  */
+/**
+ * 人类那 8 句孕周发育描述（出厂默认）。
+ *
+ * ★ 2026-11-08（规则剥离第二步）：正文里那张表删了（模型照着抄人类的孕周 ✗），
+ *   可"把概述里**旧的**生长句换掉"这件事还要认得这几句 ⇒ 留一份在代码里当兜底 ✓
+ *   条目写了发育段时以条目为准（judge / codex-values 那条路先读图鉴）✓
+ */
+const FETUS_DEV_DEF = [
+    { from: 4, to: 6, desc: '胚胎已着床，器官开始分化' },
+    { from: 7, to: 10, desc: '心跳可检测，四肢芽出现' },
+    { from: 11, to: 14, desc: '性别分化，开始有轻微动作' },
+    { from: 15, to: 20, desc: '胎动明显，可感知外界声音' },
+    { from: 21, to: 26, desc: '胎动规律，肺部开始发育' },
+    { from: 27, to: 32, desc: '脂肪积累，眼睛可开合' },
+    { from: 33, to: 36, desc: '胎位固定，体重快速增长' },
+    { from: 37, to: 40, desc: '足月，随时准备出生' },
+];
+
 export function fetusDevAllLines(targetKey = null) {
     try {
         const t = String(moduleText('pregnancy_module', targetKey) || '');
@@ -2564,8 +2742,9 @@ export function fetusDevAllLines(targetKey = null) {
             // ⚠️ 性别那几句里没有「周」⇒ 天然不会被这条认进来 ✓
             if (desc && Number.isFinite(from) && Number.isFinite(to)) hits.push({ from, to, desc });
         }
-        return hits;
-    } catch { return []; }
+        // 老存档 / 玩家自己写的那份还在 ⇒ 以它为准；正文删干净了 ⇒ 用代码里这份 ✓
+        return hits.length ? hits : FETUS_DEV_DEF.map((x) => ({ ...x }));
+    } catch { return FETUS_DEV_DEF.map((x) => ({ ...x })); }
 }
 
 export function applyAwarenessTierLines(text, id) {
@@ -2974,7 +3153,9 @@ export function moduleText(id, targetName = null, mode = null, xeno = false) {
     // ★★ 2026-10-15（这条模块的提示词是废的，只填数据就能用 ✓）：
     //   老存档的「敏感带自定义」里还留着那两块规则（它们已经各有各的家）
     //   ⇒ 发出去之前剔掉，正文只剩名单 ✓（面板读写那条路自己也清，见 params.js ✓）
-    return id === 'zones_custom' ? stripLegacyTailBlocks(base) : base;
+    const out = id === 'zones_custom' ? stripLegacyTailBlocks(base) : base;
+    // ★ 2026-11-08：身体补丁里「种族」那行按图鉴条目名输出（见 applyBodyRaceName 顶上）
+    return id === 'body_base' ? applyBodyRaceName(out, targetName) : out;
 }
 
 /**
@@ -3084,6 +3265,24 @@ export function traceNightsForLevel(level, targetKey = null) {
  * ★ 用 `moduleTextRaw`（不替换 @@ 占位符）：这两个锚点在设计上就是**字面数字** ✓
  */
 export function parseBodyCycleParams(text) {
+    const r = parseBodyCycleRaw(text);
+    return { cycle: r.cycle ?? 28, ovu: r.ovu ?? 14 };
+}
+
+/**
+ * ★ 2026-11-08（规则剥离第一步）：正文里这两项现在**可以空着** ——
+ *   出厂正文写的是 @@CYCLE_LEN@@ / @@CYCLE_OVU@@ 两个占位符（发送时按这个对象填），
+ *   玩家在参数面板里填了数字才算个人值。
+ *
+ * 三层取值（她 2026-11-08 定的）：
+ *   ① 正文里的字面数字 = 这个人单独填的（参数面板改过）
+ *   ② 图鉴条目里这一族的平均值（个人单独调 > 条目 > 借用链，见 codex-values.js）
+ *   ③ 都读不到 ⇒ 28 / 14（全局默认）
+ *
+ * ⚠️ 读不到**不等于**"这一族没有周期"：有没有周期由「周期模式」三档管，
+ *   跟这两项填没填无关（她专门纠过这一点 ✓）。
+ */
+function parseBodyCycleRaw(text) {
     const t = String(text || '');
     // 新排版：两行分开 —— `周期长度：28天` / `排卵日：14`
     const nc = t.match(/周期长度：\s*(\d+(?:\.\d+)?)\s*天/);
@@ -3093,14 +3292,118 @@ export function parseBodyCycleParams(text) {
     const c = Number(nc ? nc[1] : (old ? old[1] : NaN));
     const o = Number(no ? no[1] : (old ? old[2] : NaN));
     return {
-        cycle: Number.isFinite(c) && c > 0 ? Math.round(c) : 28,
-        ovu: Number.isFinite(o) && o >= 1 ? Math.round(o) : 14,
+        cycle: Number.isFinite(c) && c > 0 ? Math.round(c) : null,
+        ovu: Number.isFinite(o) && o >= 1 ? Math.round(o) : null,
     };
 }
 
-/** 某个对象的周期长度 / 排卵日（读不出来就是默认 28 / 14 ✓） */
+/**
+ * 图鉴那边注册进来的读取器（settings 不能 import codex 一族，会成环 ⇒ 由 codex-values.js 注册 ✓）
+ * 返回 `{ cycle, ovu }`（可能只有一半），没有值返回 null。
+ */
+let codexCycleReader = null;
+export function setCodexCycleReader(fn) {
+    codexCycleReader = typeof fn === 'function' ? fn : null;
+}
+
+// ★ 2026-11-08：诱导排卵（兔 / 猫这类）—— 三个读取器挂在 `cycle-hooks.js` 上，
+//   由 codex-values / store 各自填（不在这儿 import 它们：settings 与 store 是环 ✓）
+/** 这个对象的排卵方式：'induced'（交配后排卵）/ 'cyclic'（按周期） */
+export function ovuModeOf(targetKey = null) {
+    try { return cycleHooks.ovuMode && cycleHooks.ovuMode(targetKey) === 'induced' ? 'induced' : 'cyclic'; } catch { return 'cyclic'; }
+}
+
+/** 诱导排卵的两个区间（读不到 ⇒ 默认 80 到 90%、10 到 13 小时 ✓） */
+export function inducedParamsOf(targetKey = null) {
+    let v = null;
+    try { v = cycleHooks.inducedParams ? cycleHooks.inducedParams(targetKey) : null; } catch { v = null; }
+    const rate = Array.isArray(v?.rate) ? v.rate.map(Number) : [];
+    const delay = Array.isArray(v?.delay) ? v.delay.map(Number) : [];
+    const pick = (arr, d0, d1) => {
+        const a = Number.isFinite(arr[0]) ? arr[0] : d0;
+        const b = Number.isFinite(arr[1]) ? arr[1] : d1;
+        return [Math.min(a, b), Math.max(a, b)];
+    };
+    return { rate: pick(rate, 80, 90), delay: pick(delay, 10, 13) };
+}
+function codexCycleParamsOf(targetKey = null) {
+    if (!codexCycleReader) return null;
+    try {
+        const v = codexCycleReader(targetKey);
+        return v && typeof v === 'object' ? v : null;
+    } catch { return null; }
+}
+
+/**
+ * ★ 2026-11-08（发情期第 0 批）：图鉴「发情期 / 发情周期 / 发情持续 / 发情季节」的读取器。
+ *   settings 不能 import 图鉴那一族（会成环）⇒ 由 codex-values.js 注册进来 ✓
+ *   返回 `{ on, cycle, days, season }`；没有值 / 没填 ⇒ null ✓
+ */
+let codexEstrusReader = null;
+export function setCodexEstrusReader(fn) {
+    codexEstrusReader = typeof fn === 'function' ? fn : null;
+}
+export function estrusParamsOf(targetKey = null) {
+    if (!codexEstrusReader) return null;
+    try {
+        const v = codexEstrusReader(targetKey);
+        return v && typeof v === 'object' ? v : null;
+    } catch { return null; }
+}
+
+/**
+ * ★ 2026-11-08（按她的判断：那行跟图鉴重复，留着迟早对不上）：
+ *   身体补丁正文里那行「种族：X」**不再是事实源** —— 发送时一律换成当时有效的名字：
+ *     图鉴条目名（绑定的 / 按名字对上的）> 推演报的种族 > 正文里那行 > 出厂「人类」。
+ *
+ * 为什么不在渲染前就把正文那行删掉：那行还是**参数面板那一格的锚点**（玩家手打图鉴里没有的族、
+ *   以及老存档里那份正文都靠它）；真正要防的是"图鉴改了、这里还写着旧名字"，所以输出前覆盖 ✓
+ * ⚠️ settings 不能 import 图鉴那一族（会成环）⇒ 由 codex-values.js 注册进来 ✓
+ */
+let bodyRaceReader = null;
+export function setBodyRaceReader(fn) {
+    bodyRaceReader = typeof fn === 'function' ? fn : null;
+}
+function effectiveRaceNameOf(targetKey = null) {
+    if (!bodyRaceReader) return '';
+    try { return String(bodyRaceReader(targetKey) || '').trim(); } catch { return ''; }
+}
+/** 把正文里那行「种族：X」换成有效的名字（没有有效名字就一个字不动 ✓） */
+function applyBodyRaceName(text, targetKey) {
+    const name = effectiveRaceNameOf(targetKey);
+    if (!name) return text;
+    return String(text).replace(/(^|\n)([ \t]*种族[：:][ \t]*)([^\s，,。]+)/, (m, lead, label) => lead + label + name);
+}
+
+/**
+ * 这个对象的周期长度 / 排卵日（正文个人值 > 图鉴这一族 > 全局 28 / 14 ✓）
+ */
 export function bodyCycleParamsOf(targetKey = null) {
-    return parseBodyCycleParams(moduleTextRaw('body_base', targetKey));
+    // ⚠️ 用「存着的那份原文」（rebase:false）：判断"这个人有没有单独填数字"必须看原文，
+    //   套回内置正文的那份会把数字换成内置值 ⇒ 永远看不出谁单独调过 ✗
+    const own = parseBodyCycleRaw(moduleTextRaw('body_base', targetKey, { rebase: false }));
+    const cx = codexCycleParamsOf(targetKey) || {};
+    const cNum = Number(cx.cycle);
+    const oNum = Number(cx.ovu);
+    const cycle = own.cycle ?? (Number.isFinite(cNum) && cNum >= 5 ? Math.round(cNum) : 28);
+    // ★ 2026-11-08：交配后排卵（兔 / 猫这类）⇒ 排卵日不是固定天数，
+    //   看本周期有没有**已经触发过**（插件在内射时掷出来，存在对象身上）。
+    //   没触发 ⇒ ovu 给 null（各消费方都要认这个"还没排卵"，不是 0 也不是 14）
+    if (ovuModeOf(targetKey) === 'induced') {
+        let ind = null;
+        try { ind = cycleHooks.inducedDay ? cycleHooks.inducedDay(targetKey) : null; } catch { ind = null; }
+        const day = Math.round(Number(ind?.day));
+        if (Number.isFinite(day) && day >= 1) {
+            return { cycle, ovu: Math.min(day, Math.max(1, cycle - 2)), induced: true };
+        }
+        return { cycle, ovu: null, induced: true, pending: true };
+    }
+    if (own.cycle && own.ovu) return { cycle: own.cycle, ovu: own.ovu };
+    let ovu = own.ovu ?? (Number.isFinite(oNum) && oNum >= 1 ? Math.round(oNum) : 14);
+    // 和参数面板同一道夹：排卵日不能顶到周期尾（否则窗口永不出现 ⇒ 受精判定永不触发 ✗）
+    const hi = Math.max(1, Math.min(cycle - 2, cycle));
+    ovu = Math.max(1, Math.min(ovu, hi));
+    return { cycle, ovu };
 }
 
 // ---------------------------------------------------------------------------
@@ -3179,12 +3482,6 @@ export function bodyRaceOf(targetKey = null) {
     return raceFromText(t);
 }
 
-/** 出厂正文里那行「种族：X」（用来判断"玩家自己改过没有" ✓） */
-export function factoryRaceOf() {
-    const t = (() => { try { return defaultModuleText('body_base'); } catch { return ''; } })();
-    return raceFromText(t);
-}
-
 // ---------------------------------------------------------------------------
 // ★ 产后泌乳三段的时间线 ＋ 奶量参考（**真相源＝正文** ✓）
 //
@@ -3254,6 +3551,53 @@ export function amenorrheaRateOf() {
     return cycleRateOf('amenorrhea');
 }
 
+/** 受孕窗口那一档的基础率（产后恢复期最后几天"排卵已恢复"时用它 ✓） */
+export function windowRateOf() {
+    return cycleRateOf('window');
+}
+
+/**
+ * 产后恢复期里「排卵提前恢复」的天数（0 ＝ 跟月经绑在同一天，默认）。
+ * 夹 0 到 400：填负数/乱填退回 0（＝不提前），别让一个怪值把整段算歪 ✓
+ */
+export function postpartumOvulationDaysOf() {
+    const raw = (() => { try { return settings().postpartumOvulationDays; } catch { return 0; } })();
+    const n = Math.round(Number(raw));
+    return (Number.isFinite(n) && n >= 0 && n <= 400) ? n : 0;
+}
+
+/**
+ * ★ 产后恢复的**全局默认**区间（2026-11-08）。
+ *
+ * 三档（`postpartumPreset`）：
+ *   · `easy`   轻松（默认）：42 到 42 天
+ *   · `real`   现实：42 到 180 天（42 是不哺乳的下限，往上那截是哺乳期常有的长度）
+ *   · `custom` 自定义：直接读 `postpartumMin` / `postpartumMax`
+ * ⚠️ 这里只是**兜底**：图鉴条目填了「产后恢复」范围的族按条目走，个人还能单独调 ✓
+ * ⚠️ 夹 0 到 730 天：0 合法（＝生完立刻接上周期），乱填就退回轻松档 ✓
+ * @returns {{min:number, max:number}}
+ */
+export const POSTPARTUM_PRESETS = {
+    easy: { min: 42, max: 42 },
+    real: { min: 42, max: 180 },
+};
+
+export function postpartumDefaultRange() {
+    const s = (() => { try { return settings(); } catch { return {}; } })();
+    const preset = String(s.postpartumPreset || 'easy');
+    if (preset === 'custom') {
+        const clamp = (raw, def) => {
+            const n = Math.round(Number(raw));
+            return (Number.isFinite(n) && n >= 0 && n <= 730) ? n : def;
+        };
+        const a = clamp(s.postpartumMin, POSTPARTUM_PRESETS.easy.min);
+        const b = clamp(s.postpartumMax, a);
+        return { min: Math.min(a, b), max: Math.max(a, b) };
+    }
+    const p = POSTPARTUM_PRESETS[preset] || POSTPARTUM_PRESETS.easy;
+    return { min: p.min, max: p.max };
+}
+
 function cycleRateOf(key) {
     const def = CYCLE_RATE_DEF[key];
     const raw = settings()['cycleRate' + key.charAt(0).toUpperCase() + key.slice(1)];
@@ -3264,12 +3608,20 @@ function cycleRateOf(key) {
 
 /** 第 N 天属于哪一期 + 那一期的基础率（`derive.js` 与本文件的区间扫描**共用这一处** ✓） */
 export function cycleDayInfoOf(day, ovu, pdays) {
+    // ★ 2026-11-08：交配后排卵的族**本周期还没排卵** ⇒ 没有窗口、没有黄体，
+    //   经期之后一律按卵泡期算（基础率用它自己那一档）。ovu 是 null（不是 0）✓
+    const oNum = Number(ovu);
+    if (ovu === null || ovu === undefined || !Number.isFinite(oNum) || oNum <= 0) {
+        if (day <= pdays) return { phaseId: 'menstrual', d1: cycleRateOf('menstrual') + '%' };
+        return { phaseId: 'follicular', d1: cycleRateOf('follicular') + '%' };
+    }
+    const ovuDay = oNum;
     // ⚠️ 分支顺序＝`derive.js` 那条 if 链，一个字都别换位 ✓
     if (day <= pdays) return { phaseId: 'menstrual', d1: cycleRateOf('menstrual') + '%' };
-    if (day === ovu) return { phaseId: 'ovulationDay', d1: cycleRateOf('window') + '%' };
-    if (day === ovu - 1 || day === ovu + 1) return { phaseId: 'ovulation', d1: cycleRateOf('window') + '%' };
-    if (day < ovu - 1) return { phaseId: 'follicular', d1: cycleRateOf('follicular') + '%' };
-    if (day === ovu + 2) return { phaseId: 'transition', d1: cycleRateOf('transition') + '%' };
+    if (day === ovuDay) return { phaseId: 'ovulationDay', d1: cycleRateOf('window') + '%' };
+    if (day === ovuDay - 1 || day === ovuDay + 1) return { phaseId: 'ovulation', d1: cycleRateOf('window') + '%' };
+    if (day < ovuDay - 1) return { phaseId: 'follicular', d1: cycleRateOf('follicular') + '%' };
+    if (day === ovuDay + 2) return { phaseId: 'transition', d1: cycleRateOf('transition') + '%' };
     return { phaseId: 'luteal', d1: '不适用' };
 }
 
@@ -3306,8 +3658,20 @@ function fmtDayRange(from, to) {
  */
 export function cycleDayRanges(cycle, ovu, periodDays) {
     const c = Math.max(5, Math.min(90, Math.round(Number(cycle) || 28)));
-    const o = Math.max(1, Math.min(Math.round(Number(ovu) || 14), Math.max(1, c - 2)));
-    // ⚠️ 经期最晚在排卵窗口前一天结束（和 derive.js 同一道夹 ✓）
+    // ★ 2026-11-08：交配后排卵的族本周期还没排卵 ⇒ 没有固定日号可说，
+    //   窗口那几段给一句描述（不是编一个"第13到15天"出来 ✗）
+    const oRaw = (ovu === null || ovu === undefined || ovu === '') ? NaN : Number(ovu);
+    if (!Number.isFinite(oRaw) || oRaw <= 0) {
+        const p = Math.max(1, Math.min(Math.round(Number(periodDays) || 5), Math.max(1, c - 1)));
+        const out = {};
+        out.menstrual = fmtDayRange(1, p);
+        out.follicular = p < c ? fmtDayRange(p + 1, c) : '本周期没有这一段';
+        out.window = '交配后排卵那天起三天';
+        out.transition = '排卵后第 2 天';
+        out.luteal = '排卵后第 3 天到周期结束';
+        return out;
+    }
+    const o = Math.max(1, Math.min(Math.round(oRaw), Math.max(1, c - 2)));
     const p = Math.max(1, Math.min(Math.round(Number(periodDays) || 5), Math.max(1, o - 2)));
     /** 「排卵日」和「窗口」在正文里算一段 ⇒ 归到同一个键 ✓ */
     const bucketOf = (info) => (info.phaseId === 'ovulation' || info.phaseId === 'ovulationDay')
@@ -3322,15 +3686,19 @@ export function cycleDayRanges(cycle, ovu, periodDays) {
     return out;
 }
 
-/** 把正文里的 `@@DAYS:xxx@@` 换成实际日号（按**这个对象**的参数 ✓） */
+/** 把正文里的 `@@DAYS:xxx@@` 换成实际日号（按**这个对象**的参数 ✓）
+ *  ★ 2026-11-08：`@@CYCLE_LEN@@` / `@@CYCLE_OVU@@` 也在这里填 ——
+ *    出厂正文不再写死 28 / 14，发出去之前按「个人值 > 图鉴这一族 > 全局」换成数字 ✓ */
 function applyDayRanges(text, targetKey) {
-    if (text.indexOf('@@DAYS:') < 0) return text;
-    let cycle = 28, ovu = 14, pdays = 5;
-    try { const c = bodyCycleParamsOf(targetKey); cycle = c.cycle; ovu = c.ovu; } catch { /* 读不到就用默认 */ }
+    if (text.indexOf('@@DAYS:') < 0 && text.indexOf('@@CYCLE_LEN@@') < 0 && text.indexOf('@@CYCLE_OVU@@') < 0) return text;
+    let cycle = 28, ovu = 14, pdays = 5, induced = false;
+    try { const c = bodyCycleParamsOf(targetKey); cycle = c.cycle; ovu = c.ovu; induced = !!c.induced; } catch { /* 读不到就用默认 */ }
     try { pdays = periodDaysOf(targetKey); } catch { /* 读不到就用默认 */ }
     const ranges = cycleDayRanges(cycle, ovu, pdays);
     let out = text;
     for (const k of CYCLE_DAY_KEYS) out = out.split(`@@DAYS:${k}@@`).join(ranges[k]);
+    out = out.replace(/@@CYCLE_LEN@@/g, String(cycle));
+    out = out.replace(/@@CYCLE_OVU@@/g, induced ? '不固定（交配后排卵）' : String(ovu));
     return out;
 }
 
@@ -3860,6 +4228,10 @@ function skelOf(t) {
         //   （先「种族为XX」、后把数值句改成一行一格。
         //     摆放方式不同，但点点都是**数值面板里那几格** ⇒ 不该算改正文 ✗）
         .replace(/周期：\s*[\d.]+\s*天[，,]\s*排卵日第\s*[\d.]+\s*天/g, '周期长度：#天\n排卵日：#')
+        // ★ 2026-11-08：周期长度 / 排卵日现在是占位符（出厂"跟种族"）——
+        //   换成 # 之后，"填了数字"才算数值改动，不会被误判成改了正文而冻结 ✓
+        .replace(/@@CYCLE_LEN@@/g, '#')
+        .replace(/@@CYCLE_OVU@@/g, '#')
         .replace(/日常体质系数[：:]?\s*[\d.]+\s*[（(]?\s*[，,]?\s*排卵日当天临时提升至\s*[\d.]+\s*[）)]?/g,
             '日常体质系数：#（排卵日当天临时提升至 #）')
         // ② 种族名的三种写法统一成「种族：#」
@@ -3981,6 +4353,19 @@ export function frozenPatchCount() {
 //   · 列**全部**世界书、不写死数量（不是只有 185 本）
 // ---------------------------------------------------------------------------
 
+/**
+ * 遗传判定「编辑…」里六类来源的默认值（2026-11-06 晚她定，2026-11-09 加了第六类）：
+ * 只勾用户角色设定 ＋ 角色绑定的条目 ＋ 角色绑定的角色描述，其余三类不勾 ✓
+ */
+export const WI_HERITAGE_SOURCES_DEF = {
+    charBook: false,
+    globalBook: false,
+    desc: false,
+    bindDesc: true,
+    persona: true,
+    bind: true,
+};
+
 /** 这一个区块（老存档缺字段时自动补齐 ✓） */
 export function wiCfg() {
     const s = settings();
@@ -3994,16 +4379,19 @@ export function wiCfg() {
     if (typeof w.globalBooks !== 'boolean') w.globalBooks = w.enabled;
     if (w.mode !== 'manual') w.mode = 'follow';
     if (typeof w.desc !== 'boolean') w.desc = false;
-    // ★ 2026-10-23 新增两颗开关（老存档没有 ⇒ 按出厂默认补上 ✓）
+    // ★ 2026-10-23 新增两颗开关（老存档没有 ⇒ 按当前默认补上 ✓）
     if (typeof w.persona !== 'boolean') w.persona = false;
     if (typeof w.heritageAuto !== 'boolean') w.heritageAuto = true;
+    // ★ 2026-11-06 第七批：角色绑定的世界书条目（老存档没有 ⇒ 按当前默认开 ✓）
+    if (typeof w.bindOn !== 'boolean') w.bindOn = true;
     // ★ 2026-10-24（她：遗传判定自动带一次，发送什么要能编辑）——
-    //   四类来源各自可选；只在遗传那一轮按这份发（正常 / 当场重判共用）✓
+    //   五类来源各自可选；只在遗传那一轮按这份发（正常 / 当场重判共用）✓
+    //   ★ 2026-11-06 晚她定默认：只勾用户角色设定 + 角色绑定的条目 ✓
     if (!w.heritageSources || typeof w.heritageSources !== 'object' || Array.isArray(w.heritageSources)) {
-        w.heritageSources = { charBook: true, globalBook: true, desc: true, persona: true };
+        w.heritageSources = { ...WI_HERITAGE_SOURCES_DEF };
     } else {
-        for (const hk of ['charBook', 'globalBook', 'desc', 'persona']) {
-            if (typeof w.heritageSources[hk] !== 'boolean') w.heritageSources[hk] = true;
+        for (const hk of ['charBook', 'globalBook', 'desc', 'bindDesc', 'persona', 'bind']) {
+            if (typeof w.heritageSources[hk] !== 'boolean') w.heritageSources[hk] = WI_HERITAGE_SOURCES_DEF[hk];
         }
     }
     if (!w.offBooks || typeof w.offBooks !== 'object' || Array.isArray(w.offBooks)) w.offBooks = {};
@@ -4033,20 +4421,33 @@ export function setWiDescOn(v) { wiCfg().desc = !!v; save(); }
 /** 用户自己那份人设描述要不要带给推演 */
 export function wiPersonaOn() { return wiCfg().persona === true; }
 export function setWiPersonaOn(v) { wiCfg().persona = !!v; save(); }
-/** 遗传判定时自动带的内容（四类来源，各自可选；正常 / 当场重判共用） */
+/** ★ 第七批：角色自己绑的世界书条目要不要带给推演（跟上面几颗各管各的 ✓） */
+export function wiBindOn() { return wiCfg().bindOn === true; }
+export function setWiBindOn(v) { wiCfg().bindOn = !!v; save(); }
+/** 遗传判定时自动带的内容（六类来源：角色卡书 / 全局书 / 角色描述 / 角色绑定的角色描述 / 用户角色设定 / 角色绑定条目） */
 export function wiHeritageSources() {
     const s = wiCfg().heritageSources || {};
     return {
-        charBook: s.charBook !== false,
-        globalBook: s.globalBook !== false,
-        desc: s.desc !== false,
+        charBook: s.charBook === true,
+        globalBook: s.globalBook === true,
+        desc: s.desc === true,
+        // ★ 2026-11-09：这个跟「角色卡描述」是两件事 —— 只看对象自己绑的那张卡 ✓
+        bindDesc: s.bindDesc !== false,
         persona: s.persona !== false,
+        bind: s.bind !== false,
     };
 }
 export function setWiHeritageSource(k, v) {
-    const s = wiCfg().heritageSources;
-    if (!s || !(k in s)) return;
-    s[k] = !!v;
+    if (!(k in WI_HERITAGE_SOURCES_DEF)) return;
+    const c = wiCfg();
+    if (!c.heritageSources || typeof c.heritageSources !== 'object') c.heritageSources = { ...WI_HERITAGE_SOURCES_DEF };
+    c.heritageSources[k] = !!v;
+    save();
+}
+
+/** 遗传判定「编辑…」里的六类来源恢复默认（只勾用户角色设定 + 角色绑定的条目 + 角色绑定的角色描述 ✓） */
+export function resetWiHeritageSources() {
+    wiCfg().heritageSources = { ...WI_HERITAGE_SOURCES_DEF };
     save();
 }
 

@@ -1427,7 +1427,7 @@ function targetSection(container, onChange) {
 
         if (targets.length > TARGET_SEARCH_AT) {
             const input = textInput('', (v) => { kw = v; paint(); }, { placeholder: '搜索对象名…' });
-            b.appendChild(h('div', { class: 'bc-row' }, input));
+            b.appendChild(h('div', { class: 'bc-row bc-search-row' }, input));
         }
         paint();
         b.appendChild(listHost);

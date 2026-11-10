@@ -259,7 +259,8 @@ export function renderArchiveTab(container, ctx = {}) {
             class: 'bc-input', value: archiveQuery, placeholder: '搜索档案名或备注…',
         });
         searchInput.addEventListener('input', (e) => { archiveQuery = e.target.value; paint(); });
-        container.appendChild(h('div', { class: 'bc-row' }, searchInput));
+        // ★ 这一行下面紧跟「世界观档案（N）」分区标题 ⇒ 带 `bc-search-row`（CSS 里给 12px 下边距）✓
+        container.appendChild(h('div', { class: 'bc-row bc-search-row' }, searchInput));
 
         const host = h('div', {});
         container.appendChild(host);

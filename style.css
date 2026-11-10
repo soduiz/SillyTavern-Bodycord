@@ -937,6 +937,41 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: nowrap; }
 .bc-row-wrap { flex-wrap: wrap; }
 /* 模型名那一行：输入框占满、按钮留在右边（「拉取模型列表」那颗 ✓） */
+/* ★ 2026-11-10（她截图报的「角色描述（来自角色卡）」那一行）——
+   小灰字 / 参数小字挤进 flex 行跟标签并排时，它们自带的 `margin-top: 4px`
+   会把文字往下推，跟旁边的标签差半个行距 ⇒ 看着就是没对齐 ✗
+   行里的间距一律交给 `gap`，这两种小字在行内不再带自己的上边距 ✓
+   （只作用于**直接挂在 `.bc-row` 上**的，挂在 `.bc-field` / 分区里的照旧保留上边距 ✓） */
+.bc-row > .bc-hint,
+.bc-row > .bc-param-sub { margin-top: 0; }
+
+/* 搜索框单独占一行、下面紧跟列表 / 分区标题时，原来底下是贴着的
+   （她 2026-11-10 截图报的记录档案那一页）⇒ 统一留一行呼吸，跟 `.bc-field` 同一档 12px ✓ */
+.bc-search-row { margin-bottom: 12px; }
+.bc-search-row > .bc-input { flex: 1 1 auto; min-width: 0; }
+
+/* 一行里并排摆了几格表单（比如「年 / 月 / 日 的数字」），这一行后面紧跟下一格时原来贴在一起（0px）——
+   因为 `.bc-row > .bc-field` 把那几格自己的下边距归零了 ⇒ 给**后面那一格**补回同一档 12px ✓ */
+.bc-row + .bc-field { margin-top: 12px; }
+
+/* ★ 2026-11-10（她截图报的「角色描述（来自角色卡）」那一行）——
+   一行里字号不同的两块字（标签 13px ＋ 小灰字 12.5px）各自按行盒居中时，
+   行盒高不一样 ⇒ 基线差 1px 多，看着就是一高一低 ✗
+   ⚠️ 不能给整行改 `align-items: baseline`：那样按钮 / 开关也会跟着基线走、被拽下来 ✓
+   ⚠️ 也不能只给这两块字加 `align-self: baseline`：整组会被顶到行顶（量出来差 5~7px）✗
+   ⇒ 把「标签 ＋ 小灰字」包进 `.bc-textpair`：组内按基线对齐，整组再跟按钮一起居中 ✓
+   （实测：基线差 0px，按钮居中偏移 0px） */
+.bc-textpair {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+}
+.bc-textpair > .bc-hint,
+.bc-textpair > .bc-param-sub { margin-top: 0; }
+
 .bc-model-row { margin-top: 0; }
 .bc-model-row > .bc-input { flex: 1 1 auto; width: auto; min-width: 0; }
 .bc-model-row > .bc-btn { flex: 0 0 auto; }

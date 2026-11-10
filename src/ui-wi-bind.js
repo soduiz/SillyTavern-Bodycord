@@ -62,7 +62,8 @@ function browser({ selected, mode, onToggle, scrollEl, suspect }) {
         class: 'bc-input', value: q, placeholder: '搜索世界书名字…',
         oninput: (e) => { q = e.target.value; page = 1; paintBooks(); },
     });
-    wrap.appendChild(h('div', { class: 'bc-row' }, searchEl));
+    // ★ 下面紧跟书单 ⇒ 带 `bc-search-row`（统一 12px 下边距，别贴着）✓
+    wrap.appendChild(h('div', { class: 'bc-row bc-search-row' }, searchEl));
     wrap.appendChild(bookHost);
     const keep = (fn) => {
         const el = scrollEl || wrap;
@@ -105,9 +106,11 @@ function browser({ selected, mode, onToggle, scrollEl, suspect }) {
             const isOpen = open === name;
             const row = h('div', { class: 'bc-wi-book' },
                 h('div', { class: 'bc-row' },
-                    h('span', { class: 'bc-label', text: name }),
-                    pinned.includes(name) ? h('span', { class: 'bc-badge', text: '当前角色卡' })
-                        : (inUse.includes(name) ? h('span', { class: 'bc-badge', text: '在用' }) : null),
+                    h('span', { class: 'bc-textpair' },
+                        h('span', { class: 'bc-label', text: name }),
+                        pinned.includes(name) ? h('span', { class: 'bc-badge', text: '当前角色卡' })
+                            : (inUse.includes(name) ? h('span', { class: 'bc-badge', text: '在用' }) : null),
+                    ),
                     h('div', { class: 'bc-spacer' }),
                     button(isOpen ? '收起' : '展开条目', () => {
                         open = isOpen ? '' : name;
@@ -154,7 +157,7 @@ function browser({ selected, mode, onToggle, scrollEl, suspect }) {
             return;
         }
         const rows = h('div');
-        host.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+        host.appendChild(h('div', { class: 'bc-row bc-row-wrap bc-search-row' },
             h('input', {
                 class: 'bc-input', value: qe, placeholder: '搜索条目名…',
                 oninput: (e) => { qe = e.target.value; pageE = 1; paintRows(); },
@@ -182,8 +185,10 @@ function browser({ selected, mode, onToggle, scrollEl, suspect }) {
                         onclick: () => { onToggle(item); paintRows(); },
                         title: on ? '点一下取消选择' : '点一下选中这一条',
                     },
-                        h('span', { class: 'bc-label', text: item.title }),
-                        h('span', { class: 'bc-hint', text: e.disable ? '酒馆里关着' : `${e.chars} 字` }),
+                        h('span', { class: 'bc-textpair' },
+                            h('span', { class: 'bc-label', text: item.title }),
+                            h('span', { class: 'bc-hint', text: e.disable ? '酒馆里关着' : `${e.chars} 字` }),
+                        ),
                         h('div', { class: 'bc-spacer' }),
                         // 文字 ＋ 勾选框两样都给：颜色万一被她主题改掉，字也还在 ✓
                         on ? h('span', { class: 'bc-wi-tick', text: '已选' }) : null,
@@ -192,10 +197,12 @@ function browser({ selected, mode, onToggle, scrollEl, suspect }) {
                     continue;
                 }
                 rows.appendChild(h('div', { class: 'bc-row bc-wi-pick' },
-                    h('span', { class: 'bc-label', text: item.title }),
-                    sus ? h('span', { class: 'bc-badge', text: '疑似设定' }) : null,
-                    on ? h('span', { class: 'bc-badge', text: '已绑' }) : null,
-                    h('span', { class: 'bc-hint', text: e.disable ? '酒馆里关着' : `${e.chars} 字` }),
+                    h('span', { class: 'bc-textpair' },
+                        h('span', { class: 'bc-label', text: item.title }),
+                        sus ? h('span', { class: 'bc-badge', text: '疑似设定' }) : null,
+                        on ? h('span', { class: 'bc-badge', text: '已绑' }) : null,
+                        h('span', { class: 'bc-hint', text: e.disable ? '酒馆里关着' : `${e.chars} 字` }),
+                    ),
                     h('div', { class: 'bc-spacer' }),
                     button(on ? '解除' : '绑定', () => { onToggle(item); paintRows(); }),
                 ));
@@ -295,8 +302,10 @@ export function openCardPicker(key, onDone) {
                 }
                 for (const c of hit) {
                     host.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
-                        h('span', { class: 'bc-label', text: c.name }),
-                        h('span', { class: 'bc-hint', text: c.chars ? `角色描述 ${c.chars} 字` : '这张卡没有角色描述' }),
+                        h('span', { class: 'bc-textpair' },
+                            h('span', { class: 'bc-label', text: c.name }),
+                            h('span', { class: 'bc-hint', text: c.chars ? `角色描述 ${c.chars} 字` : '这张卡没有角色描述' }),
+                        ),
                         h('div', { class: 'bc-spacer' }),
                         button('用这张', () => {
                             setCardDescOf(key, c.name);
@@ -307,7 +316,7 @@ export function openCardPicker(key, onDone) {
                 }
             };
             q.addEventListener('input', paintList);
-            body.appendChild(h('div', { class: 'bc-row' }, q));
+            body.appendChild(h('div', { class: 'bc-row bc-search-row' }, q));
             body.appendChild(host);
             paintList();
         },
@@ -376,14 +385,16 @@ export function openCardBuildTargets(onDone) {
                             paintList();
                         },
                     },
-                        h('span', { class: 'bc-label', text: c.name }),
-                        exists ? h('span', { class: 'bc-badge', text: '已经有这个对象' }) : null,
-                        h('span', { class: 'bc-hint', text: c.chars ? `角色描述 ${c.chars} 字` : '这张卡没有角色描述' }),
+                        h('span', { class: 'bc-textpair' },
+                            h('span', { class: 'bc-label', text: c.name }),
+                            exists ? h('span', { class: 'bc-badge', text: '已经有这个对象' }) : null,
+                            h('span', { class: 'bc-hint', text: c.chars ? `角色描述 ${c.chars} 字` : '这张卡没有角色描述' }),
+                        ),
                     ));
                 }
             };
             q.addEventListener('input', paintList);
-            body.appendChild(h('div', { class: 'bc-row' }, q));
+            body.appendChild(h('div', { class: 'bc-row bc-search-row' }, q));
             body.appendChild(host);
             paintStatus();
             paintList();
@@ -490,8 +501,11 @@ export function wiBindRows(key, onChange = () => {}) {
         }
     };
     box.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
-        h('span', { class: 'bc-label', text: '角色描述（来自角色卡）' }),
-        cardLine,
+        // ★ 标签和小灰字字号不同 ⇒ 包一组按基线对齐（不然灰字会比标签低 1px 多，她 2026-11-10 截图报过）
+        h('span', { class: 'bc-textpair' },
+            h('span', { class: 'bc-label', text: '角色描述（来自角色卡）' }),
+            cardLine,
+        ),
         h('div', { class: 'bc-spacer' }),
         button('选…', () => openCardPicker(key, () => {
             paintCard();
@@ -551,9 +565,11 @@ export function openWiBindPicker(key, onDone) {
                 boundHost.appendChild(h('div', { class: 'bc-section-title', text: '已绑的条目' }));
                 for (const b of cur) {
                     boundHost.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
-                        h('span', { class: 'bc-label', text: b.title || `（第 ${b.uid} 条）` }),
-                        h('span', { class: 'bc-hint', text: b.book }),
-                        missing.has(wiBindKey(b)) ? h('span', { class: 'bc-badge', text: '找不到' }) : null,
+                        h('span', { class: 'bc-textpair' },
+                            h('span', { class: 'bc-label', text: b.title || `（第 ${b.uid} 条）` }),
+                            h('span', { class: 'bc-hint', text: b.book }),
+                            missing.has(wiBindKey(b)) ? h('span', { class: 'bc-badge', text: '找不到' }) : null,
+                        ),
                         h('div', { class: 'bc-spacer' }),
                         button('解除', () => {
                             removeWiBindOf(key, b.book, b.uid);

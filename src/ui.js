@@ -1578,7 +1578,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '2.3';
-export const BUILD_STAMP = '2026-11-10-4';
+export const BUILD_STAMP = '2026-11-11-2';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -4289,8 +4289,10 @@ function buildKnownFactsBox(t) {
         for (const [who, list] of groups) {
             const box = h('div', { class: 'bc-insem-group' },
                 h('div', { class: 'bc-insem-group-head' },
-                    h('span', { class: 'bc-label', text: who }),
-                    h('span', { class: 'bc-hint', text: ' · ' + list.length + ' 笔' }),
+                    h('span', { class: 'bc-textpair' },
+                        h('span', { class: 'bc-label', text: who }),
+                        h('span', { class: 'bc-hint', text: ' · ' + list.length + ' 笔' }),
+                    ),
                     h('div', { class: 'bc-spacer' }),
                 ),
             );

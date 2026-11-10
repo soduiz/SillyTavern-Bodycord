@@ -518,18 +518,22 @@ export function openWiEditor(onDone) {
                                 },
                                 title: sel ? '点一下取消选择' : '点一下选中这一条',
                             },
-                                h('span', { class: 'bc-label', text: e.title }),
-                                on ? null : h('span', { class: 'bc-badge', text: '已排除' }),
-                                h('span', { class: 'bc-hint', text: e.disable ? '酒馆里也是关着的' : `${e.chars} 字` }),
+                                h('span', { class: 'bc-textpair' },
+                                    h('span', { class: 'bc-label', text: e.title }),
+                                    on ? null : h('span', { class: 'bc-badge', text: '已排除' }),
+                                    h('span', { class: 'bc-hint', text: e.disable ? '酒馆里也是关着的' : `${e.chars} 字` }),
+                                ),
                                 h('div', { class: 'bc-spacer' }),
                                 h('span', { class: 'bc-wi-tick', text: sel ? '✓ 已选' : '' }),
                             ));
                             continue;
                         }
                         rows.appendChild(h('div', { class: 'bc-row' + (on ? '' : ' bc-wi-off') },
-                            h('span', { class: 'bc-label', text: e.title }),
-                            on ? null : h('span', { class: 'bc-badge', text: '已排除' }),
-                            h('span', { class: 'bc-hint', text: e.disable ? '酒馆里也是关着的' : `${e.chars} 字` }),
+                            h('span', { class: 'bc-textpair' },
+                                h('span', { class: 'bc-label', text: e.title }),
+                                on ? null : h('span', { class: 'bc-badge', text: '已排除' }),
+                                h('span', { class: 'bc-hint', text: e.disable ? '酒馆里也是关着的' : `${e.chars} 字` }),
+                            ),
                             h('div', { class: 'bc-spacer' }),
                             on
                                 ? button('排除', () => { setWiEntry(name, e.uid, false); paintRows(); changed(); },

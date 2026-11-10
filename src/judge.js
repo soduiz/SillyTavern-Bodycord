@@ -1043,7 +1043,8 @@ export function storyDateUpdate(cur, reported, days, allowBack = false, canBack 
     return out;
 }
 
-function prevStateBlock(roster) {
+// ★ 导出给自测用（_tests/lactation.mjs 锁「模块关着就不发这一栏」✓）
+export function prevStateBlock(roster) {
     const arr = roster.map(t => {
         const has = !!(t.profile || Object.keys(t.vars || {}).length);
         // 被「字段开关」关掉的字段，连上一轮状态里也不带 ——
@@ -1288,8 +1289,14 @@ function prevStateBlock(roster) {
             // ★ **泌乳阶段 ＋ 参考产奶量**也由插件算好 ——
             //   d7 那三样里只有"阶段与量"是算得出来的（状态描述与乳汁特征归剧情/设定 ✓）
             //   没生过 / 没日期 ⇒ 空串（整栏不发 ✓）
+            // ★★ 2026-11-11（她报的：关了泌乳模块，推演照样收到这一栏）——
+            //   这一栏以前只看"账本里有没有出生记录"，不理模块开关 ⇒
+            //   泌乳系统 / 泌乳体质补丁关着、这个人又生过，推演照样拿到
+            //   「产后第 N 天 · 参考产奶量」，等于规则关了、数据还在喂 ✗
+            //   ⇒ 与主 API 那边（prompt.js 的 milkOn）同一个判据：两个开关有一个开着才发 ✓
             泌乳进度: (() => {
                 try {
+                    if (!isModuleOn('lactation_system') && !isModuleOn('lactation_patch')) return undefined;
                     const ref = lactationRefForPrompt(t.key);
                     if (!ref) return undefined;                     // 没生过 / 没日期 ⇒ 整栏不发 ✓
                     // ★★ 2026-11-08（她问的：鸽子、帝企鹅怎么算）——

@@ -1264,8 +1264,10 @@ function openBulkStatus(repaint) {
                     paintList(); paintInfo();
                 },
             },
-                h('span', { class: 'bc-label', text: x.l }),
-                h('span', { class: 'bc-hint', text: `共 ${x.rows.length} 条，在用 ${inUse} 条` }),
+                h('span', { class: 'bc-textpair' },
+                    h('span', { class: 'bc-label', text: x.l }),
+                    h('span', { class: 'bc-hint', text: `共 ${x.rows.length} 条，在用 ${inUse} 条` }),
+                ),
                 h('div', { class: 'bc-spacer' }),
                 // 选中不靠整行变色（她那边会深蓝底、字看不见 ✗）⇒ 右边勾选框 + 文字两样都给 ✓
                 on ? h('span', { class: 'bc-wi-tick', text: '已选' }) : null,
@@ -1370,8 +1372,10 @@ function openBulkReset(repaint) {
                     paintList(); paintInfo();
                 },
             },
-                h('span', { class: 'bc-label', text: x.l }),
-                h('span', { class: 'bc-hint', text: `共 ${x.rows.length} 条，改过 ${edited} 条` }),
+                h('span', { class: 'bc-textpair' },
+                    h('span', { class: 'bc-label', text: x.l }),
+                    h('span', { class: 'bc-hint', text: `共 ${x.rows.length} 条，改过 ${edited} 条` }),
+                ),
                 h('div', { class: 'bc-spacer' }),
                 on ? h('span', { class: 'bc-wi-tick', text: '已选' }) : null,
                 h('span', { class: 'bc-check' + (on ? ' on' : '') }),
@@ -1963,13 +1967,15 @@ function sendCard(repaint) {
             save();
             repaint?.();
         }),
-        h('span', { class: 'bc-label', text: '发「介绍（外貌）」' }),
-        h('span', {
-            class: 'bc-hint',
-            text: introOn
-                ? '开：这一族的长相也会发给主 API。角色卡里已经写了外貌的话，两处说法容易打架'
-                : '关：外貌交给角色卡，只发生理（生育、补充照发）。想让人形族之外的族也由图鉴管长相再打开',
-        }),
+        h('span', { class: 'bc-textpair' },
+            h('span', { class: 'bc-label', text: '发「介绍（外貌）」' }),
+            h('span', {
+                class: 'bc-hint',
+                text: introOn
+                    ? '开：这一族的长相也会发给主 API。角色卡里已经写了外貌的话，两处说法容易打架'
+                    : '关：外貌交给角色卡，只发生理（生育、补充照发）。想让人形族之外的族也由图鉴管长相再打开',
+            }),
+        ),
     ));
     let plan = null;
     try { plan = buildCodexPlan(codexTargets(), { needRepro: codexNeedRepro, introOn: settings().codexIntroOn === true }); } catch { plan = null; }

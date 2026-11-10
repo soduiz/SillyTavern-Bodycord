@@ -19,7 +19,7 @@ import {
 import { defaultCycleStartDay } from './derive.js';
 import { templates, previewInjection, moduleActive, unknownTemplatePlaceholders } from './prompt.js';
 import { estimateTokens, formatTokens, tokenLevel, sumTokens } from './tokens.js';
-import { targetList, displayName, hasConceptionData, USER_KEY, userLabel, userSelfLabel, anyTargetHasCycle, isUserKey, state, setPeriodModeOf, awarenessTierIdOf, setAwarenessTierIdOf, traceOnOf, setTraceOnOf, cycleStartRuleOf, setCycleStartRuleOf, cycleDayNow, periodModeOf, applyAutoEstrusToLightTargets } from './store.js';
+import { targetList, displayName, hasConceptionData, USER_KEY, userLabel, userSelfLabel, anyTargetHasCycle, isUserKey, state, setPeriodModeOf, cycleModeBadgeOf, awarenessTierIdOf, setAwarenessTierIdOf, traceOnOf, setTraceOnOf, cycleStartRuleOf, setCycleStartRuleOf, cycleDayNow, periodModeOf, applyAutoEstrusToLightTargets } from './store.js';
 import { h, clear, button, modal, textArea, textInput, numberInput, select, dropdown, toggle, askConfirm, cardHead, helpButton } from './dom.js';
 import { renderParamFields } from './ui-params.js';
 // ★ 角色基础信息那四格 + 别名备注：**三处共用一份实现**（设置页 / 悬浮球弹窗 / 这里 ✓）
@@ -1698,7 +1698,7 @@ function personBasicInfoCard(targetKey, rerender) {
     return h('div', { class: 'bc-card bc-basicinfo-card' },
         cardHead('角色基础信息', [
             '这四项是「插件自己不可能知道、只能由你告诉它」的事。留空就一直按推演每轮报的走',
-            '能不能怀孕：填「不能」⇒ 插件不再给这个人算受精 / 周期那几套；想照常记录月经，在它下面打开「照常记录月经」',
+            '能不能怀孕：填「不能」⇒ 插件不再给这个人算受精 / 周期那几套。怀不上但想看月经的，把「周期模式」选成月经就行（这是两件事）',
             '能不能让别人怀孕：填「不能」⇒ 这个人不会被算进「致孕方候选」',
             '能不能怀上异种：填「不能」⇒ 这个人不会因为异种族致的致孕方而受孕',
             '是不是异种：填「是」⇒ 异种那套规则第一轮就发，不用等推演报回来',
@@ -1847,9 +1847,11 @@ function personCycleModeRow(targetKey, rerender) {
         if (isUserKey(targetKey)) return String(settings().userCycleMode || '');
         return String(state().targets?.[targetKey]?.cycleMode || '');
     };
-    const globalDefault = cycleModeLabel();
+    // ★★ 2026-11-10（她定的）：三层显示（锁定 / 推演判 / 跟随默认），
+    //   跟设置页、悬浮球弹窗共用 `cycleModeBadgeOf` 这一份，别各写一份 ✓
+    const badgeInfo = cycleModeBadgeOf(targetKey);
     const opts = [
-        ['', `跟随默认（${globalDefault}）`],
+        ['', badgeInfo.firstOption],
         ['normal', '月经'],
         ['none', '非月经'],
         ['amenorrhea', '无月经'],
@@ -1875,8 +1877,10 @@ function personCycleModeRow(targetKey, rerender) {
     // ★ 后果不能只挂在 hover 的 title 上 ⇒ 按项目规矩（说明走「？」）补一个 ✓
     return h('div', { class: 'bc-toolbar' },
         h('div', { class: 'bc-toolbar-label', text: '周期模式' }),
+        h('span', { class: 'bc-badge' + (badgeInfo.on ? ' on' : ''), text: badgeInfo.text }),
         helpButton('周期模式', [
-            '这个人的周期模式（只影响 ta 一个；选「跟随默认」就按设置里那档走）',
+            '这个人的周期模式（只影响 ta 一个）。三层：你选的（锁定）、推演报的（推演判）、跟随默认',
+            '推演会报一次「这个人有没有月经」，男的它会报没有 ⇒ 自动按无月经走；你在这排里点一下就以你为准',
             '月经 / 非月经只差名字与描写：受孕率、受精判定、周期结算完全一样',
             '无月经 = 没有周期、没有阶段，那一批周期相关的条目也会给 ta 藏起来',
         ]),
@@ -2114,14 +2118,18 @@ export function renderModulesTab(container, handlers = {}) {
     ));
     if (!isWorld) {
         personTargetSelector(viewBody, rerender);
-        // ★ 这些面板在规则补丁这里也要有一份
-        //   （角色基础信息不只是用户角色用的）⇒ 四态锁定 + 别名备注在这儿也来一份 ✓
-        viewBody.appendChild(personBasicInfoCard(targetKey, rerender));
         // ★ 这个人的「周期模式」（有月经 / 无月经）—— **按人** ✓
         //   ⚠️ 只放进「角色基础信息」（悬浮球弹窗 + 设置页）的话，人物里面看不到 ✗
         //     ⇒ 补在人待着的地方（补丁页 · 人物视图的对象选择器旁边 ✓
         //        原则：入口要放在"那一刻人在哪" ✓）
+        // ★★ 2026-11-10（她截图说「要不把周期模式挪动到上面」）——
+        //   三个页面（设置页 / 悬浮球弹窗 / 这里）统一：**周期模式排在最前面**，
+        //   四项锁定跟在它后面。周期模式是这个人的顶层事实（有没有周期），
+        //   摆在下面要滚下去才看得到 ✓
         viewBody.appendChild(personCycleModeRow(targetKey, rerender));
+        // ★ 这些面板在规则补丁这里也要有一份
+        //   （角色基础信息不只是用户角色用的）⇒ 四态锁定 + 别名备注在这儿也来一份 ✓
+        viewBody.appendChild(personBasicInfoCard(targetKey, rerender));
         // ★ 这个人的「周期起始」（本人指定 / NPC 默认随机 ✓）
         //   ⚠️ 放进世界观视图会找不到 ⇒ 放在"人物"里、紧挨着周期模式 ✓
         viewBody.appendChild(personCycleStartRow(targetKey, rerender));

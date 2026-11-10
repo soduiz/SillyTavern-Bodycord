@@ -22,7 +22,7 @@ import { parseFictionDate, formatFictionDate, calendarSummary, diffDays, addDays
 import {
     targetList, displayName, state, setActive, commit, createTarget, inRealChat, MAX_SNAPSHOTS,
     measureSnapshots,
-    bodyLockOf, canBePregnantTarget, cycleWhileInfertileOf, isUserKey, USER_KEY, userSelfLabel, userLabel,
+    bodyLockOf, canBePregnantTarget, cycleModeBadgeOf, isUserKey, USER_KEY, userSelfLabel, userLabel,
     identOf, trackingRoster, candidateInfo, filterTargets, targetPatchCount,
     periodModeOf, setPeriodModeOf, achievementCount,
     childrenOf, addChildren, updateChild, removeChild, childAgeText, storyDateNow, childCount,
@@ -1578,7 +1578,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '2.3';
-export const BUILD_STAMP = '2026-11-10-1';
+export const BUILD_STAMP = '2026-11-10-4';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -4767,6 +4767,43 @@ function openBodyInfo() {
                     host.appendChild(h('div', { class: 'bc-hint', text: '这一份跟着【这个聊天】走：换聊天就是另一套' }));
                 }
 
+                // ★★ 2026-11-10（她截图说「要不把周期模式挪动到上面」）——
+                //   周期模式是这一页最顶层的一件事（这个人有没有周期），所以摆在四项前面，
+                //   跟「补丁页 · 人物视图」那边「周期模式在最上面」排法一致 ✓
+                //   ⚠️ 只动位置，一个字的数据都不改 ✓
+                {
+                    // ★★ 2026-11-10（她定的）：三层显示 —— 你选的 / 推演判的 / 跟随默认 ✓
+                    const badge = cycleModeBadgeOf(key);
+                    const explicit = (() => {
+                        if (isUserKey(key)) return String(settings().userCycleMode || '');
+                        return String(st.targets?.[key]?.cycleMode || '');
+                    })();
+                    const modeOpts = [
+                        ['', badge.firstOption],
+                        ['normal', '月经'],
+                        ['none', '非月经'],
+                        ['amenorrhea', '无月经'],
+                    ];
+                    const box = h('div', { class: 'bc-field' },
+                        h('div', { class: 'bc-label', text: '周期模式' }));
+                    // ⚠️ 徽章要**立刻跟着改**，不能只写数据——老规矩：
+                    //   改了状态的控件必须当场可见 ✓（不然选完还显示旧档，得关掉重开才对 ✗）
+                    const modeTag = h('span', {
+                        class: 'bc-badge' + (badge.on ? ' on' : ''),
+                        text: badge.text,
+                    });
+                    box.appendChild(select(explicit, modeOpts, (v) => {
+                        setPeriodModeOf(key, v);
+                        // ★ 改完之后按"现在的来源与档位"重画徽章（'' = 交回自动 ⇒ 走推演/兜底 ✓）
+                        const nb = cycleModeBadgeOf(key);
+                        modeTag.textContent = nb.text;
+                        modeTag.classList.toggle('on', nb.on);
+                        try { refreshAll(); } catch { /* 忽略 */ }
+                    }));
+                    box.appendChild(h('div', { class: 'bc-row' }, modeTag));
+                    host.appendChild(box);
+                }
+
                 // ★ 这四格抽成**共用实现**（设置页 / 本弹窗 / 补丁页·人物视图 三处共用 ✓）
                 bodyLockRows(host, key, {
                     onChange: (st) => {
@@ -4800,46 +4837,6 @@ function openBodyInfo() {
                         class: 'bc-hint',
                         text: '决定这个角色大概什么时候开始起疑；留空＝由推演按角色设定判一次。选了就锁定，AI 不再改；它只做参考，确认仍要看剧情事件',
                     }));
-                }
-
-                // ★ 周期模式（有月经 / 无月经）—— **按人**（一个世界观里可以同时
-                //   存在月经怀孕和非月经怀孕 ✓）
-                //   设计上钉死了：规则可以只留一份、那些排卵期什么的交给插件替换，
-                //   剩下的只是模式开关的感觉 ✓ ⇒ 规则一份（术语走占位符 ✓），档位按人 ✓
-                //   ⚠️ 只影响**名字与描写**：受孕率、判定、结算两档完全一样 ✓
-                {
-                    const cur = periodModeOf(key);
-                    // ★ 档位名统一走 `cycleModeLabel`（三档：月经 / 非月经 / 无月经 ✓）
-                    const globalDefault = cycleModeLabel();
-                    const modeOpts = [
-                        ['', `跟随默认（${globalDefault}）`],
-                        ['normal', '月经'],
-                        ['none', '非月经'],
-                        ['amenorrhea', '无月经'],
-                    ];
-                    const explicit = (() => {
-                        if (isUserKey(key)) return String(settings().userCycleMode || '');
-                        return String(st.targets?.[key]?.cycleMode || '');
-                    })();
-                    const box = h('div', { class: 'bc-field' },
-                        h('div', { class: 'bc-label', text: '周期模式' }));
-                    // ⚠️ 徽章要**立刻跟着改**，不能只写数据——老规矩：
-                    //   改了状态的控件必须当场可见 ✓（不然选完还显示旧档，得关掉重开才对 ✗）
-                    const modeTag = h('span', {
-                        class: 'bc-badge' + (explicit ? ' on' : ''),
-                        text: explicit ? `锁定：${cycleModeLabel(cur)}` : `跟随默认：${globalDefault}`,
-                    });
-                    box.appendChild(select(explicit, modeOpts, (v) => {
-                        setPeriodModeOf(key, v);
-                        const locked = !!v;                       // '' = 跟随默认 ⇒ 不锁
-                        modeTag.textContent = locked
-                            ? `锁定：${cycleModeLabel(v)}`
-                            : `跟随默认：${globalDefault}`;
-                        modeTag.classList.toggle('on', locked);
-                        try { refreshAll(); } catch { /* 忽略 */ }
-                    }));
-                    box.appendChild(h('div', { class: 'bc-row' }, modeTag));
-                    host.appendChild(box);
                 }
 
                 // ★★ 补救：迟填设定之后「按新设定重判」——
@@ -5252,14 +5249,8 @@ function cycleDayBox(t) {
             return h('div', { class: 'bc-hint', text: '这个人选的是「无月经」，没有周期、没有阶段，这一格不用填' });
         }
     } catch { /* 读不到就照旧 ✓ */ }
-    // ★ 2026-11-03：锁了「不能怀孕」的人**不算周期**（阶段 / 进度 / 基础率一律不适用）
-    //   ⇒ 这一格也不给填，跟无月经那一档同一个说法 ✓（周期日的数据不动，改回「能」就回来）
-    //   ⚠️ 开了「照常记录月经」的人不受影响（那一档照样能填第几天 ✓）
-    try {
-        if (!canBePregnantTarget(t.key) && !cycleWhileInfertileOf(t.key)) {
-            return h('div', { class: 'bc-hint', text: '这个人填的是「不能怀孕」，插件不算周期、也不显示阶段，这一格不用填（想照常记录月经，去角色基础信息里打开「照常记录月经」）' });
-        }
-    } catch { /* 读不到就照旧 ✓ */ }
+    // ★ 2026-11-10：「能不能怀孕」不再决定这一格存不存在（怀不上 ≠ 没有周期）——
+    //   现在只有「无月经」那一档不给填，上面那条已经管了 ✓
     const hint = h('div', { class: 'bc-hint' });
     // ★ 2026-11-08 产后恢复：这一格照样能改 —— 改了就等于「以玩家为准」，
     //   当场结束恢复期（跟剧情明说月经来了是同一条规矩 ✓）

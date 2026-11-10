@@ -17,7 +17,7 @@
 import { MODULES, parseImpregnatorXeno } from './modules.js';
 import { settings, isModuleOn, isGateEnabled, moduleText, moduleRole, moduleScope, isFieldOn, zonesFeatureOn, isCycleDependent, patchSendGroups, patchGroupSuffix, patchBlockTitle, childrenToMain, isNeutralMode, zoneLevelDescOf } from './settings.js';
 import { setPrompt, substitute, isMyExtensionDisabled, PROMPT_ROLE, getChat } from './st.js';
-import { targetList, displayName, state, bodyLockOf, periodModeOf, cycleWhileInfertileOf, childrenOf, childAgeText, fetusPlanOf, fetusBriefText, hasRealHeritage, storyDateNow, storyDateTimeNow, BODY_FLAG_VARS, reportedBool, reportedBodyFlagOf, tracesForPrompt, traceOnOf, awarenessReferenceForPrompt, stripDateText, dueMarksOf, mergeDueByDate, nextPeriodFactOf, pregnantNowTarget, activeClutchesOf, eggStateForPrompt, eggDatesForPrompt, isTargetLoose, isTargetLight, estrusTargets, estrusInfoOf, ensureEstrusAnchor, trackModeOf } from './store.js';
+import { targetList, displayName, state, bodyLockOf, periodModeOf, childrenOf, childAgeText, fetusPlanOf, fetusBriefText, hasRealHeritage, storyDateNow, storyDateTimeNow, BODY_FLAG_VARS, reportedBool, reportedBodyFlagOf, tracesForPrompt, traceOnOf, awarenessReferenceForPrompt, stripDateText, dueMarksOf, mergeDueByDate, nextPeriodFactOf, pregnantNowTarget, activeClutchesOf, eggStateForPrompt, eggDatesForPrompt, isTargetLoose, isTargetLight, estrusTargets, estrusInfoOf, ensureEstrusAnchor, trackModeOf } from './store.js';
 // ★ 被排除的角色卡：这一段**一个字都不发**（判断只写这一处，所有调用点自动失效 ✓）
 import { isCardExcluded } from './cardexclude.js';
 // ★ 第六批：这一轮在场种族的条目正文（只发在场 ＋ 按阶段筛，见 codex-send.js）
@@ -843,11 +843,11 @@ function targetVars(t) {
     //   这里以前自己重算一遍、不看锁 ⇒ 同一个 prompt 里主 API 收到「已孕」、
     //   而 pregnancy / conception / not_pregnant 那几道门控却按「未孕」走（自相矛盾 ✗）
     const pregnant = isPregnant(t);
-    // ★★ 2026-11-03：锁了「不能怀孕」⇒ 这个人**没有可发的周期状态**（阶段 / 进度 / 下次月经都不给）——
-    //   不然主 API 收到「月经状态：非经期」，就还有词去写经期 / 排卵（她报的那个男 user 就是这样 ✗）
-    const canConceive = canBePregnantPerson(t);
-    // ★ 例外：锁了不能怀孕、但开了「照常记录月经」⇒ 经期那行照发（不然正文写不出经期 ✓）
-    const showCycle = canConceive || cycleWhileInfertileOf(t.key);
+    // ★★ 2026-11-10（她定的）：有没有周期只看周期模式那一档，不再拿能不能怀孕代劳 ——
+    //   怀不上 ≠ 没有月经（不孕症的女性照样有，主 API 该收到经期那行 ✓）；
+    //   男的会走「无月经」档（推演报"有没有月经"那一格，见 store 的 periodModeOf）⇒
+    //   老问题（男 user 收到「月经状态」就还有词去写经期 / 排卵）照样防住 ✓
+    const showCycle = periodModeOf(t.key) !== 'amenorrhea';
 
     const vars = {};
     vars.name = displayName(t) || t.key;

@@ -6,7 +6,7 @@
  */
 
 import { getChatMetadata, saveChatMetadata, getChatKey, getPersonaName, substitute, getCtx } from './st.js';
-import { settings, save, amenorrheaRateOf, periodDaysOf, periodMode, isNeutralMode, termNameOf, traceNightsMapOf, traceNightsForLevel, getCalendarPreset, CAL_PRESET_BUILTIN, bodyCycleParamsOf, postpartumOvulationDaysOf, windowRateOf, achLenOf, parseZoneRows, serializeZoneRows, zoneParamsOf, bodyCoefOf, peakCoefOf, protCoefOf, cycleDayInfoOf, cycleSettleDayOf, bodyRaceOf, postpartumParamsOf, stageResidueMode, stageCleanMode, contactsHideDead, spermBellyOn, spermBellyTextIn, spermBellyTextOut, spermBellyTextVaginaIn, isModuleOn, awarenessWindowsOf, awarenessUpperOf, fetusCountOf, fetusSexRangeOf, fetusOvumRangeOf, fetusMixRangeOf, fetusDevAllLines, judgeBasisOf, talentTierLabelOf, talentTierTableOf, dominantSourceRangeOf, dominantSourceOf, ovuModeOf, inducedParamsOf, estrusParamsOf } from './settings.js';
+import { settings, save, amenorrheaRateOf, periodDaysOf, periodMode, isNeutralMode, termNameOf, cycleModeLabel, traceNightsMapOf, traceNightsForLevel, getCalendarPreset, CAL_PRESET_BUILTIN, bodyCycleParamsOf, postpartumOvulationDaysOf, windowRateOf, achLenOf, parseZoneRows, serializeZoneRows, zoneParamsOf, bodyCoefOf, peakCoefOf, protCoefOf, cycleDayInfoOf, cycleSettleDayOf, bodyRaceOf, postpartumParamsOf, stageResidueMode, stageCleanMode, contactsHideDead, spermBellyOn, spermBellyTextIn, spermBellyTextOut, spermBellyTextVaginaIn, isModuleOn, awarenessWindowsOf, awarenessUpperOf, fetusCountOf, fetusSexRangeOf, fetusOvumRangeOf, fetusMixRangeOf, fetusDevAllLines, judgeBasisOf, talentTierLabelOf, talentTierTableOf, dominantSourceRangeOf, dominantSourceOf, ovuModeOf, inducedParamsOf, estrusParamsOf } from './settings.js';
 import { cycleHooks } from './cycle-hooks.js';
 import { deriveCycleFields, defaultCycleStartDay, randomCycleStartDay, DIAPAUSE_IMPLANT_DAYS } from './derive.js';
 // ★ 后半段那几个是「自定义历法」：换算都在 fiction-date.js 里，
@@ -453,6 +453,11 @@ export const BODY_FLAG_VARS = {
     canImpregnate: 'can_impregnate',
     isXeno: 'is_xeno',
     canBearXeno: 'can_bear_xeno',
+    // ★★ 2026-11-10（她定的）：一个人有没有月经，是一格**独立的事实**，
+    //   不再塞在「能不能怀孕」里 —— 怀不上 ≠ 没有周期（不孕症的女性照样有月经）。
+    //   ⚠️ 它**不在** BODY_LOCK_FIELDS 里：玩家的手选走「周期模式」那三档，
+    //     不另开一个三态锁（两个入口答同一件事，迟早打架 ✓）
+    hasCycle: 'has_cycle',
 };
 
 /** AI 报的值 → true / false / null（null = 没报，或者报了认不出来的话） */
@@ -543,6 +548,10 @@ export function needsRaceCaps(key) {
     try { lock = bodyLockOf(key); } catch { /* 忽略 */ }
     for (const field of Object.keys(BODY_FLAG_VARS)) {
         if (lock && typeof lock[field] === 'boolean') continue;          // 玩家锁了 ⇒ 不用问 ✓
+        // ★ 2026-11-10：「有没有月经」这一格玩家自己选了档 ⇒ 也不用问（他答过了 ✓）
+        //   ⚠️ 它没有三态锁（玩家的入口是周期模式那三档）⇒ 这条不写的话，
+        //     模型只要一直漏报，那五格就会**每轮都被重问一遍**（永久多花 token）✗
+        if (field === 'hasCycle' && hasManualPeriodMode(key)) continue;
         if (reportedBodyFlagOf(key, field) !== null) continue;            // 推演报过 ⇒ 不用问 ✓
         return true;                                                     // 有一格没定 ⇒ 要问
     }
@@ -1961,7 +1970,8 @@ export function upsertTargetResult(res, opts = {}) {
             // ★ 经期天数也跟着「生理期参数」面板走（以前 derive 里写死 5 ✗）
             //   ★ 第 5 个参数＝植入孕的孕周基准（不是植入孕 ⇒ null ⇒ 照旧用周期日 ✓）
             const dv = deriveCycleFields(t.vars || {}, periodModeOf(t.key), periodDaysOf(t.key), cycleDayNum(t.key), pregDaysOf(t.key), {
-                noConception: !cycleShownOf(t.key),
+                // ★ 2026-11-10：不再传 `noConception` —— "有没有周期"只由周期模式回答；
+                //   「能不能怀孕」只影响基础率（下面那句「不适用」）✓
                 // ★ 2026-11-07：孕早/中/晚按这一族的总孕期切；滞育等待期写「滞育」✓
                 totalDays: pregTotalDaysOf(t.key),
                 diapauseWait: diapauseWaitOf(t.key),
@@ -1969,7 +1979,7 @@ export function upsertTargetResult(res, opts = {}) {
                 postpartum: (() => { try { return postpartumOf(t.key); } catch { return null; } })(),
             });
             if (dv) {
-                // ★ 不能怀孕但选了「照常记录月经」⇒ 阶段照算，但基础率没有意义 ⇒ 不适用 ✓
+                // ★ 2026-11-10：怀不上只让基础率写「不适用」；阶段有没有看周期模式 ✓
                 if (!canBePregnantTarget(t.key)) dv.d1 = '不适用';
                 if (!t.profile) t.profile = {};
                 t.profile.phase = dv.phase;
@@ -6163,10 +6173,9 @@ export function refreshCycleFieldsOf(key) {
                 t.vars.Cycle_Length = String(cp.cycle);
             }
         } catch { /* 读不到就按旧的 vars 算 */ }
-        // ★ 不能怀孕 ⇒ 阶段 / 进度 / 基础率一律「不适用」；但选了「照常记录月经」⇒ 阶段照算、
-        //   基础率仍不适用（周期日照旧保留 ✓ 见 derive.js 那段）
+        // ★ 2026-11-10：「能不能怀孕」不再管阶段显不显示，只让基础率写「不适用」
+        //   （阶段有没有，看周期模式那一档 ✓）
         const dv = deriveCycleFields(t.vars || {}, periodModeOf(t.key), periodDaysOf(t.key), cycleDayNum(t.key), pregDaysOf(t.key), {
-            noConception: !cycleShownOf(t.key),
             totalDays: pregTotalDaysOf(t.key),
             diapauseWait: diapauseWaitOf(t.key),
             // ★ 2026-11-08：产后恢复（日期一动完，这一段也要跟着重算 ✓）
@@ -6561,57 +6570,95 @@ export function tracesForPrompt(key) {
 /** ★ 三档的合法值（第三档 `amenorrhea` =「无月经」：**没有周期、没有阶段** ✓） */
 export const CYCLE_MODES = ['normal', 'none', 'amenorrhea'];
 
-/** 这个对象是「有月经 / 非月经 / 无月经」（没定过 ⇒ 跟全局默认 ✓） */
-export function periodModeOf(key) {
-    const fallback = periodMode();          // ★ 全局默认档（三档都认 ✓）
-    if (!key) return fallback;
-    if (isUserKey(key)) {
-        const v = settings().userCycleMode;
-        return CYCLE_MODES.includes(v) ? v : fallback;
-    }
-    const v = state().targets?.[key]?.cycleMode;
-    return CYCLE_MODES.includes(v) ? v : fallback;
-}
-
-/**
- * ★★ 2026-11-03（她定的）：锁了「不能怀孕」，这个人还要不要**照常记录月经**？
- *
- * 形态：只在「能不能怀孕」选成「不能」之后才出现的那一个开关（默认关）。
- *   · 关（默认）⇒ 阶段 / 进度 / 基础率一律「不适用」（男角色不会冒出排卵期 ✓）
- *   · 开 ⇒ 阶段照月经档算、插图照画；但**阶段基础率与累计受孕率仍写「不适用」**
- *     （人确实怀不上，那两个数没有意义 —— 这是"记录月经"，不是"能怀"）
- * ⚠️ 存法跟周期模式一样：本人 ⇒ 全局设置；NPC ⇒ 本聊天档案 ✓
- */
-export function cycleWhileInfertileOf(key) {
+/** 玩家自己选过周期档吗？（'' = 没选 ⇒ 走推演报的 / 全局默认 ✓） */
+export function hasManualPeriodMode(key) {
     if (!key) return false;
     try {
-        if (isUserKey(key)) return settings().userCycleWhileInfertile === true;
-        return state().targets?.[key]?.cycleWhileInfertile === true;
+        const v = isUserKey(key) ? settings().userCycleMode : state().targets?.[key]?.cycleMode;
+        return CYCLE_MODES.includes(v);
     } catch { return false; }
 }
 
-/** 设「不能怀孕也照常记录月经」（false ＝ 清掉 ✓） */
-export function setCycleWhileInfertileOf(key, on) {
-    if (!key) return false;
-    const v = on === true;
-    if (isUserKey(key)) {
-        settings().userCycleWhileInfertile = v;
-        save();
-        return true;
+/**
+ * 这个对象的周期档是**从哪来的** —— `{ mode, source }`
+ *
+ * source 四态（界面靠它显示「锁定 / 推演判 / 自动 / 跟随默认」✓）：
+ *   · `manual`  玩家在「周期模式」里手选的（最高，谁也不覆盖）
+ *   · `ai`      推演报的「有没有月经」那一格（只问一次 ✓）
+ *   · `auto`    玩家没选、推演也没报 ⇒ 按「能不能怀孕」兜底（怀不上的按没有周期）
+ *   · `default` 全局默认档
+ */
+export function cycleModeSourceOf(key) {
+    const fallback = periodMode();          // ★ 全局默认档（三档都认 ✓）
+    if (!key) return { mode: fallback, source: 'default' };
+    // ① **玩家手选**的档最高——它答的就是"这个人有没有周期"这个问题 ✓
+    const manual = (() => {
+        try {
+            if (isUserKey(key)) return settings().userCycleMode;
+            return state().targets?.[key]?.cycleMode;
+        } catch { return ''; }
+    })();
+    if (CYCLE_MODES.includes(manual)) return { mode: manual, source: 'manual' };
+    // ② 玩家没选 ⇒ 看推演报的「有没有月经」（跟那几格能力一起、只问一次 ✓）
+    //   ★★ 2026-11-10（她定的）：这一格从「能不能怀孕」里拆出来 ——
+    //     怀不上 ≠ 没有周期（不孕的女性照样有月经，男性才是真的没有）。
+    //     以前只能拿「不能怀孕」当刹车，把两件事绑在一起，才有了「照常记录月经」那个补丁 ✗
+    let rep = null;
+    try { rep = reportedBodyFlagOf(key, 'hasCycle'); } catch { rep = null; }
+    if (rep === false) return { mode: 'amenorrhea', source: 'ai' };
+    if (rep === true) return { mode: fallback === 'amenorrhea' ? 'normal' : fallback, source: 'ai' };
+    // ③ 玩家没选、推演也没报 ⇒ 兜底：怀不上的按"没有周期"走
+    //   （保住以前"锁了不能怀孕就不会冒出排卵期"那个行为，等推演报出真值就覆盖它 ✓）
+    try {
+        if (canBePregnantTarget(key) === false) return { mode: 'amenorrhea', source: 'auto' };
+    } catch { /* 忽略 */ }
+    return { mode: fallback, source: 'default' };
+}
+
+/** 这个对象是「有月经 / 非月经 / 无月经」（没定过 ⇒ 跟全局默认 ✓） */
+export function periodModeOf(key) {
+    return cycleModeSourceOf(key).mode;
+}
+
+/**
+ * 「周期模式」那一格的**徽章文字 ＋ 第一项文案** —— 三个页面（设置页 / 悬浮球弹窗 /
+ *   补丁页·人物视图）共用这一份，别各写一遍（写一遍就会各长各的 ✗）
+ *
+ * 徽章四态，跟她定的三层显示一一对应：
+ *   · 锁定：X          玩家自己选的
+ *   · 推演判：有/没有月经   推演报的那一格（她没选时才轮到它）
+ *   · 自动：怀不上，按没有周期   两样都没有 ⇒ 按「能不能怀孕」兜底
+ *   · 跟随默认：X      什么都没定
+ * @returns {{text: string, on: boolean, firstOption: string}}
+ */
+export function cycleModeBadgeOf(key) {
+    const st = cycleModeSourceOf(key);
+    const firstOption = '自动（现在按：' + cycleModeLabel(st.mode) + '）';
+    if (st.source === 'manual') {
+        return { text: '锁定：' + cycleModeLabel(st.mode), on: true, firstOption };
     }
-    const t = state().targets?.[key];
-    if (!t) return false;
-    if (v) t.cycleWhileInfertile = true; else delete t.cycleWhileInfertile;
-    commit();
-    return true;
+    if (st.source === 'ai') {
+        const word = st.mode === 'amenorrhea' ? '没有月经' : '有月经';
+        return { text: '推演判：' + word, on: false, firstOption };
+    }
+    if (st.source === 'auto') {
+        return { text: '自动：怀不上，按没有周期', on: false, firstOption };
+    }
+    return { text: '跟随默认：' + cycleModeLabel(st.mode), on: false, firstOption };
 }
 
 /**
  * 这个人现在要不要**算 / 显示周期那套**（阶段、进度、插图）。
- * ＝ 能怀孕（或者没锁） **或** 锁了不能但要求照常记录月经 ✓
+ *
+ * ★★ 2026-11-10（她定的）：**只看周期模式**，不再看「能不能怀孕」——
+ *   "怀不上"和"有没有月经"是两件事（不孕症的女性照样有月经）。
+ *   把两件事绑在一起，才生出了那个现在已删掉的子开关。
+ *
+ * ⚠️ 2026-11-10 之后**没有消费方再调它**（各处直接问 `periodModeOf`）——
+ *   留着是给"整套周期显示开关"留一个现成口径，不是忘了删的死代码。
  */
 export function cycleShownOf(key) {
-    return canBePregnantTarget(key) || cycleWhileInfertileOf(key);
+    return periodModeOf(key) !== 'amenorrhea';
 }
 
 /** 设某个对象的档位（'' = 清掉、回到跟随默认 ✓） */

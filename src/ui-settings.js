@@ -40,9 +40,8 @@ import {
     setTrackMode, trackModeOf, estrusTargets, estrusInfoOf, isTargetLoose,
     resetAllKeepUser, commit, userLabel, filterTargets,
     bodyLockOf, setBodyLockField, USER_KEY, reportedBodyFlagOf, raceJudgeOf, setRaceManualOf,
-    cycleWhileInfertileOf, setCycleWhileInfertileOf,
     awarenessTierIdOf, setAwarenessTierIdOf,
-    identOf, setIdentField, mergeTargets, setPeriodModeOf, periodModeOf, parseAliases,
+    identOf, setIdentField, mergeTargets, setPeriodModeOf, periodModeOf, cycleModeBadgeOf, parseAliases,
     childrenOf, trackingRoster,
     activeCalendarNow, setCalendar, applyCalendarPreset, timeUnitNow,
     storyDateTimeNow, dateMode, shiftDateForward, shiftDateBackward, shiftDateBackwardFull, exportOnlyStateDates, applyRelDates, setPendingRelDates, FICTION_DATE_START,
@@ -4378,22 +4377,11 @@ export function bodyLockRows(host, key, opts = {}) {
     };
 
     row('能不能怀孕', 'canBePregnant', opts3);
-    // ★★ 2026-11-03（她定的形态）：**选了「不能」之后才出现**的子选项 ——
-    //   「照常记录月经」：人怀不上，但周期还是想看（绝育 / 不孕的设定）。
-    //   默认关 ⇒ 阶段 / 进度 / 基础率一律「不适用」（男角色不会冒出排卵期 ✓）
-    //   开 ⇒ 阶段与插图照月经档走，但基础率 / 受孕率仍写不适用（怀不上就是怀不上 ✓）
-    if (bodyLockOf(key).canBePregnant === false) {
-        host.appendChild(h('div', { class: 'bc-switch-row' },
-            h('div', {},
-                h('div', { class: 'bc-label', text: '照常记录月经' }),
-                h('div', { class: 'bc-hint', text: '开：阶段与插图照月经档走，基础率与受孕率仍写「不适用」' }),
-            ),
-            toggle(cycleWhileInfertileOf(key), (v) => {
-                setCycleWhileInfertileOf(key, v);
-                onChange(true);          // 整页重建 ⇒ 面板文字跟着重算 ✓
-            }),
-        ));
-    }
+    // ★★ 2026-11-10（她定的）：那个「怀不上也想要月经」的子开关**删掉**——
+    //   它是 2026-11-03 为了补「锁了不能怀孕还显示排卵期」加的口子，
+    //   而那个补丁的根子是"把怀不上当成没有周期"，两件事本来不该绑在一起 ✗
+    //   ⇒ 现在「有没有月经」由周期模式那三档回答（推演会报「有没有月经」这一格）。
+    //     不孕症的角色想看月经：把周期模式选成「月经」就行，不需要第二个开关 ✓
     row('能不能让别人怀孕', 'canImpregnate', opts3);
     // 第四项：能不能跟非人类生 ✓
     row('能不能怀上异种', 'canBearXeno', opts3);
@@ -4660,7 +4648,7 @@ function userBodyInfoSection(container, onChange) {
     const box = section('⚧ 用户角色基础信息', {
         help: [
             '这四项是「插件自己不可能知道、只能由你告诉它」的事。留空就一直按推演每轮报的走',
-            '能不能怀孕：填「不能」⇒ 插件不再给该角色算受精 / 周期那几套；想照常记录月经，在它下面打开「照常记录月经」',
+            '能不能怀孕：填「不能」⇒ 插件不再给该角色算受精 / 周期那几套。怀不上但想看月经的，把「周期模式」选成月经就行（这是两件事）',
             '能不能让别人怀孕：填「不能」⇒ 你不会被算进「致孕方候选」',
             '能不能怀上异种：填「不能」就不会怀上异种',
             '是不是异种：填「是」就从第一轮起按异种那套规则判，不用等推演报回来',
@@ -4687,6 +4675,38 @@ function userBodyInfoSection(container, onChange) {
         // ★ 明面留**最短的那句后果**，细节进上面那个「？」✓
         h('div', { class: 'bc-hint', text: '换人设不会跟着变，要跟着换就自己存一份档案' }),
     ));
+
+    // ★★ 2026-11-10（她截图说「要不把周期模式挪动到上面」）——
+    //   周期模式是这一页最顶层的一件事（这个人有没有周期），所以摆在四项前面，
+    //   跟「补丁页 · 人物视图」那边「周期模式在最上面」排法一致 ✓
+    //   ⚠️ 只动位置，一个字的数据都不改 ✓
+    {
+        // ★ 档位名统一走 `cycleModeLabel`（三档，三个页面共一份 ✓）——
+        //   和「阶段插图」那页里那两档的叫法一致（那边走 periodTierName ✓）
+        // ★★ 2026-11-10（她定的）：三层显示 —— 你选的 / 推演判的 / 跟随默认。
+        //   以前只有"锁定 / 跟随默认"两层，推演报的「有没有月经」生效了却看不见，
+        //   下拉上还写着「跟随默认（月经）」⇒ 看到的和实际生效的是两回事 ✗
+        const explicit = String(settings().userCycleMode || '');
+        const badge = cycleModeBadgeOf(USER_KEY);
+        const modeOpts = [
+            ['', badge.firstOption],
+            ['normal', '月经'],
+            ['none', '非月经'],
+            ['amenorrhea', '无月经'],
+        ];
+        const b2 = h('div', { class: 'bc-field' },
+            h('div', { class: 'bc-label', text: '周期模式' }));
+        b2.appendChild(select(explicit, modeOpts, (v) => {
+            setPeriodModeOf(USER_KEY, v);
+            // ★ 这里要的是**整页重建**（`onChange(true)`）—— 上面那颗胶囊写的就是"锁定：有/无月经"，
+            //   只轻量刷新的话它会一直停在旧值上（原来靠 select() 的第 4 个参数 `{rebuild:true}`，
+            //   而 dom.js 的 select 根本没有那个参数 ⇒ 被丢掉，等于没重建 ✗）
+            try { onChange?.(true); } catch { /* 忽略 */ }
+        }));
+        b2.appendChild(h('div', { class: 'bc-row' },
+            h('span', { class: 'bc-badge' + (badge.on ? ' on' : ''), text: badge.text })));
+        b.appendChild(b2);
+    }
 
     // ★ 这四格**抽成共用实现**（设置页 / 悬浮球弹窗 / 补丁页·人物视图 三处共用 ✓）
     //   —— 这些面板在规则补丁那里也要有一份，因为角色基础信息只是用户角色用的 ✓
@@ -4715,35 +4735,6 @@ function userBodyInfoSection(container, onChange) {
             class: 'bc-hint',
             text: '决定你自己大概什么时候开始起疑；留空＝由推演按角色设定判一次。选了就锁定，AI 不再改；它只做参考，确认仍要看剧情事件',
         }));
-    }
-
-    // ★ 周期模式（有月经 / 无月经）—— **按人**（一个世界观里两套要能并存 ✓）
-    //   规则只有一份（术语走 @@ 占位符、插件替换 ✓），这里存的是"你自己属于哪一档" ✓
-    //   ⚠️ 只改名字与描写；受孕率、判定、结算两档完全一样 ✓
-    {
-        // ★ 档位名统一走 `cycleModeLabel`（三档，三个页面共一份 ✓）——
-        //   和「阶段插图」那页里那两档的叫法一致（那边走 periodTierName ✓）
-        const globalDefault = cycleModeLabel();
-        const explicit = String(settings().userCycleMode || '');
-        const modeOpts = [
-            ['', `跟随默认（${globalDefault}）`],
-            ['normal', '月经'],
-            ['none', '非月经'],
-            ['amenorrhea', '无月经'],
-        ];
-        const b2 = h('div', { class: 'bc-field' },
-            h('div', { class: 'bc-label', text: '周期模式' }));
-        b2.appendChild(select(explicit, modeOpts, (v) => {
-            setPeriodModeOf(USER_KEY, v);
-            // ★ 这里要的是**整页重建**（`onChange(true)`）—— 上面那颗胶囊写的就是"锁定：有/无月经"，
-            //   只轻量刷新的话它会一直停在旧值上（原来靠 select() 的第 4 个参数 `{rebuild:true}`，
-            //   而 dom.js 的 select 根本没有那个参数 ⇒ 被丢掉，等于没重建 ✗）
-            try { onChange?.(true); } catch { /* 忽略 */ }
-        }));
-        b2.appendChild(h('div', { class: 'bc-row' },
-            h('span', { class: 'bc-badge' + (explicit ? ' on' : ''),
-                text: explicit ? `锁定：${cycleModeLabel(explicit)}` : `跟随默认：${globalDefault}` })));
-        b.appendChild(b2);
     }
 
     // ---- 别名与备注 ----

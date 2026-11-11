@@ -426,7 +426,7 @@ export function setStageFetusOn(v) { stagesCfg().fetus = !!v; save(); }
  * 孕期阶段**按比例分**（不再按绝对周数），而且分界**可自定义**
  *   （高自定义插件不支持自定义显示很可笑）
  *   · 默认 20 / 40 / 60 / 80（%）⇒ 人类 40 周时正好是 8 / 16 / 24 / 32 周（跟以前一样 ✓）
- *   · 异种孕期更长 ⇒ 自动按比例走，不会一直卡在第 5 张 ✓
+ *   · 人外孕期更长 ⇒ 自动按比例走，不会一直卡在第 5 张 ✓
  */
 export function stageCuts() {
     const v = stagesCfg().cuts;
@@ -1003,7 +1003,7 @@ export const DEFAULT_SETTINGS = {
     postpartumMin: 42,
     postpartumMax: 42,
     // ★ 2026-11-08：产后恢复的总开关。
-    //   为什么要有：**有人不想要**这一段（她原话「因为有人不想要」）⇒
+    //   为什么要有：**有人不想要**这一段（因为有人不想要）⇒
     //   关掉之后分娩那轮照旧直接拨回周期第 1 天，跟加这个功能之前一模一样 ✓
     //   ⚠️ 默认**关**（她 2026-11-08 定的「产后恢复默认改成关闭」）：
     //     谁要这一段自己去那张卡上打开，插件不擅自改别人的周期表现 ✓
@@ -1226,7 +1226,7 @@ export const DEFAULT_SETTINGS = {
     trackUser: true,
     // ★ 新面孔识别范围：
     //   关（默认）＝ 只有**真的发生了身体相关的事**才登记新面孔；
-    //   开 ＝ 剧情里只是明确交代了某个人的种族也登记（异种世界可以提前知道种族）。
+    //   开 ＝ 剧情里只是明确交代了某个人的种族也登记（人外世界可以提前知道种族）。
     //   为什么默认关：开着会把"只是被提到种族的宠物 / 路人"也建进来，玩家觉得恶心 ✓
     raceScan: false,
     autoHints: '',               // 自动模式的额外提示（例如「只算上场角色」）
@@ -1246,15 +1246,15 @@ export const DEFAULT_SETTINGS = {
     // 为什么用户本人要单独放全局（用户角色那里一定是要全局的，
     //   用户角色别删、存全局 ✓）：
     //   **{{user}} 是同一个人，穿过所有聊天** ✓ —— 而其他追踪对象是"这个故事里的角色"，
-    //   跟着聊天走才对 ✓。所以用户本人这份"我能不能怀孕 / 算不算异种"不该在每个聊天里重填 ✗。
+    //   跟着聊天走才对 ✓。所以用户本人这份"我能不能怀孕 / 算不算人外"不该在每个聊天里重填 ✗。
     // ⚠️ 这里的值**任何清理逻辑都不许删** ✓。
     userBodyLock: {
         canBePregnant: null,     // null=未填（按 AI 判）/ true / false
         canImpregnate: null,     // 同上
         isXeno: null,            // 同上
-        // ★ 第四项：能不能怀上异种 ——
+        // ★ 第四项：能不能怀上人外 ——
         //   每个角色的"能不能和非人类种族生"是世界观设定，插件不可能知道 ⇒ 让玩家填 ✓
-        //   填「不能」⇒ 名单里写明设定，异种族致的致孕方不算进候选、也不判受精 ✓
+        //   填「不能」⇒ 名单里写明设定，人外族致的致孕方不算进候选、也不判受精 ✓
         canBearXeno: null,       // 同上
     },
 
@@ -1296,7 +1296,7 @@ export const DEFAULT_SETTINGS = {
     userAwarenessTierManual: false,  // 玩家手选过 ⇒ 锁住，AI 再报也不覆盖
 
     // ---- 已退休：用户本人「属于哪个大类」----
-    //   2026-11-06 大类那一格退休（判定只看种族）；2026-11-08 两张异种表也退场了 ⇒
+    //   2026-11-06 大类那一格退休（判定只看种族）；2026-11-08 两张人外表也退场了 ⇒
     //   这个键已经没有任何地方读它，只是为了老存档的字段不被 normalize 掉才留着，别再用 ✗
     userXenoClass: '',
 
@@ -1439,7 +1439,7 @@ export const DEFAULT_SETTINGS = {
     // ---- 自动门控 ----
     // 打开时，带 gate 的模块只在条件满足时才发出去（省 token、也少干扰）
     gates: {
-        xeno: true,           // 异种的额外规则，只在对象种族不是人类时发送
+        xeno: true,           // 人外的额外规则，只在对象种族不是人类时发送
         menstruation: true,   // 经期相关的补丁只在来月经时发送
         pregnancy: true,      // 孕期相关的补丁只在怀孕时发送
     },
@@ -1852,7 +1852,7 @@ export function setModuleOn(id, on, _seen = null) {
     }
 
     // ★ 互斥组：同一个 exclusive 组里的模块只能开一个。
-    //   这些是「现实向 / 二次元向」「人类 / 异种版」这类**变体** ——
+    //   这些是「现实向 / 二次元向」「人类 / 人外版」这类**变体** ——
     //   门控只管「怀没怀孕」时两个能同时开，于是两套几乎一样的文案
     //   一起发出去，**风格指令还互相矛盾**（"要现实向" + "要二次元轻松向"）。
     if (on && mod?.exclusive) {
@@ -2460,7 +2460,7 @@ export function fetusSexRangeOf(targetKey = null) {
  * 形态：`同卵判定（D100）：1-33 同卵，34-100 异卵`
  *
  * ⚠️ 只有**多胎**才用得着它（单胎没什么同卵异卵之分）⇒ 单胎根本不掷。
- * ⚠️ 认不出（玩家把这段删了 / 同卵就对上异种表那一路）⇒ 返回 null ⇒
+ * ⚠️ 认不出（玩家把这段删了 / 同卵就对上人外表那一路）⇒ 返回 null ⇒
  *    调用方**照旧各自独立判性别**，老行为一字不变 ✓（宁可退回老行为，也不瞎猜）
  */
 export function fetusOvumRangeOf(targetKey = null) {
@@ -2814,7 +2814,7 @@ export function applyCycleRateLines(text, id) {
 }
 
 /** 把周期模式相关的占位符换掉（`mode` 不传 = 用全局默认档 ✓）
- *  ★ `xeno`：名单里有没有异种 —— 决定 `@@IF_XENO:…|…@@` 走哪半边 */
+ *  ★ `xeno`：名单里有没有人外 —— 决定 `@@IF_XENO:…|…@@` 走哪半边 */
 export function applyPeriodPlaceholders(text, mode, xeno, targetKey = null) {
     if (!text || text.indexOf('@@') < 0) return text;
     const use = mode || periodMode();
@@ -2893,13 +2893,13 @@ export function applyPeriodPlaceholders(text, mode, xeno, targetKey = null) {
     //   ⚠️ 和 @@IF_BLEED@@ / @@IF_XENO@@ 同一个形状（半边里不许出现 @ 或 |）
     //     ⇒ 半边里**不许再套别的占位符**；要整段换/整段扣就用上面的 NOCYCLE 段落块 ✓
     out = out.replace(/@@IF_CYCLE:([^|@]*)\|([^@]*)@@/g, (m, a, b) => (noCycle ? b : a));
-    // ---- 内联：异种口径 vs 人类口径 ----
-    //   @@IF_XENO:名单里有异种时写的话|没有异种时写的话@@
-    //   为什么需要它：同一条规则要同时服务"纯人类世界"和"有异种的世界"，
+    // ---- 内联：人外口径 vs 人类口径 ----
+    //   @@IF_XENO:名单里有人外时写的话|没有人外时写的话@@
+    //   为什么需要它：同一条规则要同时服务"纯人类世界"和"有人外的世界"，
     //     而两套口径（显性外貌写人类特征、还是写毛色/鳞片）**必须物理上不能同时出现** ✓
     //     —— 这是项目里"提示词层的隔离要用占位符 + 构建时替换"那条教训的延续 ✓
     //   ⚠️ 和 @@IF_BLEED@@ 同一个形状（两边都拒绝 @）⇒ 内联里不许再套别的占位符 ✓
-    //   ⚠️ 判据是**名单级**（这批对象里有没有异种），不是逐人 —— 这条模块是全局模块、只发一份 ✓
+    //   ⚠️ 判据是**名单级**（这批对象里有没有人外），不是逐人 —— 这条模块是全局模块、只发一份 ✓
     out = out.replace(/@@IF_XENO:([^|@]*)\|([^@]*)@@/g, (m, a, b) => (xeno ? a : b));
     // ---- ★ 把「第几天到第几天」按**这个对象**的参数填进去 ----
     //   最后一步做：它只填数字，不参与上面那些词级 / 段落级的替换 ✓
@@ -2994,7 +2994,7 @@ export function applyModePlaceholders(text, mode, xeno, targetKey = null) {    c
         (m, body) => (settle === 'sperm' ? '' : body + '\n'));
     out = out.replace(/@@SPERM_BLOCK_START@@\n?([\s\S]*?)\n?@@SPERM_BLOCK_END@@\n?/g,
         (m, body) => (settle === 'sperm' ? body + '\n' : ''));
-    // ★ 周期模式（月经 / 非月经）+ 异种口径 + 日号区间 —— 都按那个人 / 那份名单 ✓
+    // ★ 周期模式（月经 / 非月经）+ 人外口径 + 日号区间 —— 都按那个人 / 那份名单 ✓
     return applyPeriodPlaceholders(out, mode, xeno, targetKey);
 }
 
@@ -3131,7 +3131,7 @@ export function serializeZoneRows(rows) {
 
 /** 某条模块的最终文案（对象级覆盖 > 全局覆盖 > 内置默认）
  *  ★ `mode`：周期模式按人取（`store.periodModeOf(key)` ✓）；不传 = 全局默认档 ✓
- *  ★ `xeno`：名单里有没有异种（决定 `@@IF_XENO@@` 走哪半边 ✓）；不传 = 按"没有异种"渲染
+ *  ★ `xeno`：名单里有没有人外（决定 `@@IF_XENO@@` 走哪半边 ✓）；不传 = 按"没有人外"渲染
  *    ⚠️ UI 那边（token 估算 / 只读预览）不传 ⇒ 看到的是**人类口径** —— 这是有意的：
  *       界面里编辑的是**原文**（带占位符），发送时才按名单渲染 ✓ */
 export function moduleText(id, targetName = null, mode = null, xeno = false) {
@@ -3160,7 +3160,48 @@ export function moduleText(id, targetName = null, mode = null, xeno = false) {
 }
 
 /**
- * ★ 从【生理期体质补丁】的正文里读出「经期天数」（读不到就 5 天）。
+ * 正文里写着的那个「经期天数」，**不夹**（读不到 ⇒ NaN）。
+ *
+ * 为什么要单独留一个不夹的：面板要能发现"正文写的是 7、实际按 6 算"这件事，
+ *   光给夹完的数就看不出来了（那会变成悄悄改数 ✗）。
+ */
+export function periodDaysRawOf(targetKey = null) {
+    const text = String(moduleText('period_patch', targetKey) || '');
+    const m = text.match(/- 经期天数：\s*(\d+(?:\.\d+)?)/);
+    return m ? Number(m[1]) : NaN;
+}
+
+/**
+ * ★ 经期天数最多能到几天。
+ *
+ * 为什么要有它：经期最晚得在**排卵窗口前一天**结束 ——
+ *   不然经期会把排卵日吞掉，30% 的高危日会被算成 2%（比写死 5 天还糟 ✗）。
+ *   这道夹以前只写在 `derive.js` 和 `cycleDayInfoOf` 里，**参数面板不夹**
+ *   ⇒ 面板写 7、实际按 6 算，两边对不上。
+ *   ⇒ 现在夹取只在**这一处**，面板读写与推演共用同一个数 ✓
+ *
+ * 口径：按周期排卵的 ⇒ 排卵日减 2；交配后排卵（还没掷出排卵日）⇒ 周期长度减 2。
+ *   ⚠️ 这两条和 `derive.js` / `cycleDayInfoOf` 里那两句是同一个口径，改一处要顺带看那边 ✓
+ */
+export function periodDaysCapOf(targetKey = null) {
+    let cycle = 28;
+    // null = 交配后排卵、这个周期还没掷出排卵日（**不是 0、也不是 14** ✓）
+    let ovu = 14;
+    try {
+        const p = bodyCycleParamsOf(targetKey);
+        const c0 = Math.round(Number(p.cycle));
+        if (Number.isFinite(c0) && c0 > 0) cycle = c0;
+        const o0 = (p.ovu === null || p.ovu === undefined) ? NaN : Math.round(Number(p.ovu));
+        ovu = (Number.isFinite(o0) && o0 > 0) ? o0 : null;
+    } catch { /* 读不到就用默认参数 */ }
+    // 周期长度那一道边界跟 `cycleDayRanges` 一致（5 ~ 90 天）
+    const c = Math.max(5, Math.min(90, cycle));
+    if (ovu === null) return Math.max(1, c - 2);
+    return Math.max(1, ovu - 2);
+}
+
+/**
+ * ★ 这个人的「经期天数」（已经是**实际生效**的那个数）。
  *
  * 为什么要它：`derive.js` 以前把经期写死成 `day <= 5`，可这个数字**玩家能改**
  *   （「生理期参数」面板 → 经期天数，改成 7 / 3 都行）✗ ⇒ 阶段口径、2% 基础率、
@@ -3169,12 +3210,34 @@ export function moduleText(id, targetName = null, mode = null, xeno = false) {
  *
  * ⚠️ 锚点 `- 经期天数：N 天` 和 `params.js` 里那个 spec 读的是同一句
  *   （那边是给表单用的字符串，这里是给逻辑用的数字，两边别改歪 ✓）
+ * ★ 2026-11-11：读出来先过 `periodDaysCapOf` 那道夹 —— 面板读的也是这个函数，
+ *   所以面板上的数和推演用的数永远是同一个（以前面板不夹、推演夹，两处对不上 ✗）
  */
+/**
+ * ★ 2026-11-11：经期设置（天数 / 档位那一套）住在 store.js 的 `periodPrefsOf` 里。
+ *   settings 不能 import store（会成环）⇒ 由 store 启动时把读取器注册进来 ✓
+ *   ⚠️ 用 `var` 而不是 `let`：store 与 settings 是环，注册可能发生在 settings 还没执行到
+ *     这一行的时候（`let` 会撞 TDZ）⇒ `var` 在模块实例化时就存在，赋值不会被后面的声明覆盖 ✓
+ */
+var periodPrefsReader;
+export function setPeriodPrefsReader(fn) {
+    periodPrefsReader = typeof fn === 'function' ? fn : null;
+}
+
 export function periodDaysOf(targetKey = null) {
-    const text = String(moduleText('period_patch', targetKey) || '');
-    const m = text.match(/- 经期天数：\s*(\d+(?:\.\d+)?)/);
-    const n = m ? Number(m[1]) : NaN;
-    return Number.isFinite(n) && n > 0 ? n : 5;
+    // ★ 2026-11-11：真相源先看**设置**（「经期表现」卡里点的天数）——
+    //   以前只有补丁正文那一行，同一个数写两处必然打架 ✓
+    let n = NaN;
+    try {
+        const p = periodPrefsReader ? periodPrefsReader(targetKey) : null;
+        const d = Number(p?.days);
+        if (Number.isFinite(d) && d > 0) n = Math.round(d);
+    } catch { /* 读不到设置就走正文兜底 */ }
+    if (!Number.isFinite(n)) {
+        const raw = periodDaysRawOf(targetKey);
+        n = (Number.isFinite(raw) && raw > 0) ? Math.round(raw) : 5;
+    }
+    return Math.max(1, Math.min(n, periodDaysCapOf(targetKey)));
 }
 
 /**

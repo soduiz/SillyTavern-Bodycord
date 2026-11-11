@@ -946,7 +946,7 @@ export function readCountOf(key, value) {
 /**
  * 发育段（第四批）：条目里那几段「起始刻度 + 一句话」⇒ 按孕周取的那张表。
  *
- * 只认写得出「孕 X 到 Y 周」的段；写月的（异种那 12 到 15 个月）这一批读不出 ⇒ 空，
+ * 只认写得出「孕 X 到 Y 周」的段；写月的（人外那 12 到 15 个月）这一批读不出 ⇒ 空，
  * 调用方照旧让模型按自己的规则写（宁可不接管，也不瞎猜 ✓）。
  * @returns {{stages:Array<{from:number,to:number,desc:string}>, entry:object|null}}
  */
@@ -998,7 +998,7 @@ function oldTiersOf(key) {
 /**
  * 一个对象的影子比对。
  * @param {string} key
- * @param {{judged?:boolean}} opt judged=false ⇒ 这条走异种表，第三批不接管（只比孕期）
+ * @param {{judged?:boolean}} opt judged=false ⇒ 这条走人外表，第三批不接管（只比孕期）
  */
 export function shadowOf(key, opt = {}) {
     const judged = opt.judged !== false;

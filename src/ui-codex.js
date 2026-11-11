@@ -301,7 +301,7 @@ function tierRowEl(row, i, list, build, commit) {
 function tierEditor(tiers, onChange, repaint) {
     const box = h('div', {});
     const list = tiers.map((x) => ({ n: x.n, pct: x.pct }));
-    const sumLine = h('div', { class: 'bc-hint bc-inline-tip' });
+    const sumLine = h('div', { class: 'bc-hint bc-inline-tip bc-tier-sum' });
     const refreshSum = () => {
         const s = list.reduce((a, b) => a + (Number(b.pct) || 0), 0);
         sumLine.textContent = '合计 ' + s + '%' + (s === 100 ? '' : '（不用凑满：最后一档自动补到 100）');
@@ -316,7 +316,8 @@ function tierEditor(tiers, onChange, repaint) {
                 list.push({ n: lastN + 1, pct: 10 });
                 build(); commit();
             }),
-            h('div', { class: 'bc-spacer' }),
+            // ★ 2026-11-12（她截图：合计被推到最右边，离上面的数字太远）——
+            //   拿掉中间那个 spacer，合计直接跟在按钮后面 ✓
             sumLine,
         ));
         refreshSum();
@@ -527,7 +528,7 @@ function valueRow(entry, row, repaint) {
     } else if (row.key === 'breed') {
         control = breedPicker(entry, row, repaint);
     } else if (row.kind === 'select') {
-        // ★ 2026-11-09：下拉里**不许出现没字的选项**（她截图问「为什么有一个这个」✗）
+        // ★ 2026-11-09：下拉里**不许出现没字的选项**（她截图问过为什么有一个没字的 ✗）
         //   · 空着本身有专门含义的（泌乳：留空 = 按设定）⇒ 给这个空选项一个名字
         //   · 空着就等于某个选项的（发情期：空着 = 无）⇒ 干脆不列空选项，直接显示成那个 ✓
         const opts = (row.options || [])
@@ -821,7 +822,7 @@ function paintDetail(container, entry, repaint, onBack) {
     let resetBtn = null;
     const touchEdited = () => {
         if (!resetBtn) return;
-        // ★ 2026-11-08：点完恢复默认它**不许消失**（她报了「按钮就消失了」）——
+        // ★ 2026-11-08：点完恢复默认它**不许消失**（她报过按钮会消失）——
         //   没改过时灰掉但留在原地，让人看得见这条路存在 ✓
         const on = codexIsEdited(entry.id);
         resetBtn.disabled = !on;
@@ -1019,7 +1020,7 @@ function shadowCard() {
                 h('div', { class: 'bc-codex-name', text: name }),
                 h('div', { class: 'bc-codex-meta', text: rep.judged
                     ? '插件自己判这一条（条目会生效）'
-                    : '异种：这一批不接管，只比孕期' },
+                    : '人外：这一批不接管，只比孕期' },
                 ),
             ),
             h('span', { class: 'bc-hint', text: rep.diffs ? ('不一致 ' + rep.diffs + ' 项') : '零差异' }),

@@ -193,7 +193,7 @@ export function pregnantStageOf(weekDays, totalDays = null) {
     if (!Number.isFinite(d)) return 3;
     // 按：已孕天数 ÷ 这一胎总孕期的百分比分档（分界可自定义 ✓）
     //   人类 40 周 + 默认 20/40/60/80 ⇒ 正好是 8 / 16 / 24 / 32 周（跟以前一致 ✓）
-    //   异种孕期更长 ⇒ 自动铺开，不会过了 32 周就一直停在第 5 张 ✓
+    //   人外孕期更长 ⇒ 自动铺开，不会过了 32 周就一直停在第 5 张 ✓
     const total = Number(totalDays);
     if (Number.isFinite(total) && total > 0) {
         const cuts = stageCuts();

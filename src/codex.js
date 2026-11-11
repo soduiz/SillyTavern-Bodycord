@@ -159,7 +159,7 @@ function snapshotOf(e) {
 
 /**
  * ★ 2026-11-08：「改过」只看**内容**，不看启停。
- *   她报：只是停用了一下，列表就标成「改过」，可她确实没改过内容。
+ *   她报：只是停用了一下，列表就标成改过，可她确实没改过内容。
  *   ⇒ 覆盖快照里除 status 以外的字段跟内置一样 ⇒ 不算改过（停用有它自己的角标 ✓）
  */
 const EDIT_FIELDS = ['name', 'aliases', 'cat', 'species', 'source', 'intro', 'physio', 'repro', 'extra', 'borrowFrom', 'sexTrait', 'rows', 'stages', 'notes'];

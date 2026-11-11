@@ -13,7 +13,7 @@
  * 这里也照样显示——你填过的东西不该因为开关而看不见。
  */
 
-import { moduleText, moduleTextRaw, setModuleText, settings, save, CYCLE_RATE_DEF, ACH_LEN_DEF, PROT_COEF_DEF, AWARENESS_TIER_DEF, ZONE_LV_DEF, zoneParamsOf, parseZoneRows, serializeZoneRows, stripLegacyTailBlocks, BODY_COEF_RE, BODY_COEF_OLD_RE, RACE_LINE_RE, RACE_READ_NEW_RE, RACE_READ_OLD_RE, postpartumParamsOf, talentTierTableOf, dominantSourceRangeOf, parseBodyCycleParams, fetusParamsOf, setFetusParams } from './settings.js';
+import { moduleText, moduleTextRaw, setModuleText, settings, save, CYCLE_RATE_DEF, ACH_LEN_DEF, PROT_COEF_DEF, AWARENESS_TIER_DEF, ZONE_LV_DEF, zoneParamsOf, parseZoneRows, serializeZoneRows, stripLegacyTailBlocks, BODY_COEF_RE, BODY_COEF_OLD_RE, RACE_LINE_RE, RACE_READ_NEW_RE, RACE_READ_OLD_RE, postpartumParamsOf, talentTierTableOf, dominantSourceRangeOf, parseBodyCycleParams, fetusParamsOf, setFetusParams, periodDaysOf, periodDaysCapOf } from './settings.js';
 import {
     zoneTextOf, setZoneTextOf, setZonePresetOf,
     isUserKey, fertilityTierOf, setFertilityTierOf, fertilityManualOf, setRaceManualOf,
@@ -164,16 +164,19 @@ export const PARAM_SPECS = [
     },
     {
         moduleId: 'period_patch',
-        title: '生理期参数（本模块独有的）',
-        desc: '周期长度与排卵日由「身体补丁」统一管，这里只管经期自己的参数，不再重复',
-        fields: [
-            { key: 'days', label: '经期天数', suffix: '天', type: 'number' },
-            { key: 'start', label: '经期起算', type: 'text', wide: true },
-        ],
-        read: (t) => {
+        title: '经期参数',
+        // ★ 2026-11-11：把「上限」写在卡上 —— 经期最晚得在排卵窗口前一天结束，
+        //   所以天数最多到排卵日减 2 天。以前这条只写在代码里，面板填 7 会静默按 6 算 ✗
+        desc: '经期天数、经量、痛经、PMS、体温、表现清单都在上面设；这里只留经期起算与描写参考',
+        // ★ 2026-11-11：「经期起算」那格也撤了（算第几天是插件的事，模型不该看到这条指令）；
+        //   这一条模块的参数只剩上面那块设置区，通用字段为空 ✓
+        fields: [],
+        read: (t, targetKey) => {
             const g = (re) => { const m = t.match(re); return m ? m[1].trim() : ''; };
             return {
-                days: g(/- 经期天数：\s*([\d.]+)/),
+                // ★ 读的是**夹过之后**的数（跟推演用的同一个函数）——
+                //   不然正文写 7、面板也显示 7，而阶段却按 6 天翻，三处对不上 ✗
+                days: String(periodDaysOf(targetKey)),
                 start: g(/- 经期起算：\s*(.+)/),
             };
         },
@@ -1294,8 +1297,19 @@ export function writeParams(spec, targetKey, values) {
     if (spec?.fromSettings) {
         try { return spec.write('', values) === true; } catch { return false; }
     }
+    // ★ 2026-11-11：经期天数写进去之前先夹到上限（见 `periodDaysCapOf`）——
+    //   让"面板读的 / 推演用的 / 正文里写的"永远是同一个数；
+    //   以前面板不夹 ⇒ 填 7、正文写 7，可阶段已经按 6 天翻了（三处对不上 ✗）
+    let vals = values;
+    if (spec?.moduleId === 'period_patch' && values && typeof values === 'object' && ('days' in values)) {
+        try {
+            const cap = periodDaysCapOf(targetKey || null);
+            const n = Math.round(Number(values.days));
+            if (Number.isFinite(n) && n >= 1) vals = { ...values, days: String(Math.min(n, cap)) };
+        } catch { /* 读不到上限就按原样写 */ }
+    }
     const before = writeSourceOf(spec, targetKey);
-    const after = spec.write(before, values);
+    const after = spec.write(before, vals);
     // ★ 2026-11-08：种族那格搬到档案里了（正文那行删了）——
     //   写档案要单独算"变没变"，因为正文一个字节都没动 ✓
     let sideChanged = false;

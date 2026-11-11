@@ -17,7 +17,7 @@
 import { MODULES, parseImpregnatorXeno } from './modules.js';
 import { settings, isModuleOn, isGateEnabled, moduleText, moduleRole, moduleScope, isFieldOn, zonesFeatureOn, isCycleDependent, patchSendGroups, patchGroupSuffix, patchBlockTitle, childrenToMain, isNeutralMode, zoneLevelDescOf } from './settings.js';
 import { setPrompt, substitute, isMyExtensionDisabled, PROMPT_ROLE, getChat } from './st.js';
-import { targetList, displayName, state, bodyLockOf, periodModeOf, childrenOf, childAgeText, fetusPlanOf, fetusBriefText, hasRealHeritage, storyDateNow, storyDateTimeNow, BODY_FLAG_VARS, reportedBool, reportedBodyFlagOf, tracesForPrompt, traceOnOf, awarenessReferenceForPrompt, stripDateText, dueMarksOf, mergeDueByDate, nextPeriodFactOf, pregnantNowTarget, activeClutchesOf, eggStateForPrompt, eggDatesForPrompt, isTargetLoose, isTargetLight, estrusTargets, estrusInfoOf, ensureEstrusAnchor, trackModeOf } from './store.js';
+import { targetList, displayName, state, bodyLockOf, periodModeOf, childrenOf, childAgeText, fetusPlanOf, fetusBriefText, hasRealHeritage, storyDateNow, storyDateTimeNow, BODY_FLAG_VARS, reportedBool, reportedBodyFlagOf, tracesForPrompt, traceOnOf, awarenessReferenceForPrompt, stripDateText, dueMarksOf, mergeDueByDate, nextPeriodFactOf, pregnantNowTarget, activeClutchesOf, eggStateForPrompt, eggDatesForPrompt, isTargetLoose, isTargetLight, estrusTargets, estrusInfoOf, ensureEstrusAnchor, trackModeOf, periodPrefsOf } from './store.js';
 // ★ 被排除的角色卡：这一段**一个字都不发**（判断只写这一处，所有调用点自动失效 ✓）
 import { isCardExcluded } from './cardexclude.js';
 // ★ 第六批：这一轮在场种族的条目正文（只发在场 ＋ 按阶段筛，见 codex-send.js）
@@ -25,7 +25,7 @@ import { buildCodexPlan } from './codex-send.js';
 // ★ 2026-11-09：图鉴数据是用到才读进来的 —— 没读进来那一轮**整段不发**（见 rebuildInjection）
 import { builtinReady } from './codex.js';
 // ★ 2026-11-08：这一族喂不喂奶（图鉴「泌乳」那一格），决定要不要发泌乳那一行 ✓
-import { readMilkOf } from './codex-values.js';
+import { readMilkOf, codexEntryOf } from './codex-values.js';
 
 const KEY_STATE = 'bodycord_state';
 const KEY_PATCH = 'bodycord_patch';
@@ -67,8 +67,8 @@ const _setKeys = new Set();
 //   · canBePregnant 能不能怀孕   —— 填「不能」⇒ 插件不再给该对象算受精/周期那几套，
 //                                面板也不显示受孕率这类无关数值 ✓
 //   · canImpregnate 能不能让别人怀孕 —— 填「不能」⇒ 该对象不会被算进"致孕方候选" ✓
-//   · canBearXeno 能不能怀上异种 —— 填「不能」⇒
-//     异种族致的致孕方不进候选、也不判受精 ✓
+//   · canBearXeno 能不能怀上人外 —— 填「不能」⇒
+//     人外族致的致孕方不进候选、也不判受精 ✓
 //     （为什么要有它：每个角色"能不能跟非人类生"是世界观设定，推演引擎猜不出来 ✓
 //      而且有了它，就不用为了"这个人不跟龙裔生"去单独改一整段规则文案 ✓）
 //
@@ -78,7 +78,7 @@ const _setKeys = new Set();
 //        `true`  = 明确能 ⇒ 直接用（玩家说能就是能，推到推演之前 ✓）
 //
 // ★ 坑：界面那四格的下拉写着「未填（按推演每轮判断）」，
-//   但只有「是不是异种」真读了 AI 报的值，另外三格 null 一律按"能"算
+//   但只有「是不是人外」真读了 AI 报的值，另外三格 null 一律按"能"算
 //   ⇒ 人设明写"不能怀孕"的角色会被当成能怀孕 —— 那显然不对
 //   ⇒ 三格都要读 AI 报的（取值的优先顺序：**玩家填的 > AI 报的 > 兜底按能** ✓）
 // ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ export function canImpregnatePerson(t) {
     return true;
 }
 
-/** 这个对象能不能怀上异种的孩子（同上；这条是世界观设定，同样按推演报的走 ✓） */
+/** 这个对象能不能怀上人外的孩子（同上；这条是世界观设定，同样按推演报的走 ✓） */
 export function canBearXenoPerson(t) {
     if (!t?.key) return true;
     try {
@@ -172,32 +172,40 @@ export function conceptionRate(t) {
 }
 
 /** 有没有「还在体内、还可能受精」的精子，或者已经在孕期了 */
-/** 人类的各种写法 —— 除了这些，其他都算异种 */
+/** 人类的各种写法 —— 除了这些，其他都算人外 */
 // 只作**兜底**用（AI 没报 is_xeno 时）。放宽一点，覆盖常见的「人类」写法。
 const HUMAN_RACE = /^(人类|人|human|human\s*female|human\s*male|普通人类|人类女性|人类男性|人族|地球人|人类血统|纯人类|无|未知|不确定|—|-)$/i;
 
 /**
- * 这个对象是不是异种／人外。
+ * 这个对象是不是人外（＝不是人类，跟"对谁而言"无关）。
  *
  * 种族来自 AI 在 vars.race 里报的值（契约里要求它写；只在还没报过时问一次，报过就记着 ✓）。
  * **没报、或写了「未知」就当人类** —— 宁可不发那些额外规则，也不要误fire。
  */
 export function isXeno(t) {
-    // ★★ 先看玩家/角色卡**锁定的**值（「角色基础信息 → 是不是人外」）✓
-    //   这一格是"插件不可能自己知道的事实"⇒ 填了就锁定、忽略 AI 报的 ✓
+    // ★★ 第一优先：玩家/角色卡**锁定的**值（「角色基础信息 → 是不是人外」）✓
+    //   这一格是"插件不可能自己知道的事实"⇒ 填了就锁定、忽略图鉴与 AI 报的 ✓
     //   这同时**解掉了首轮竞态**：新档第一轮插件还没有 AI 报的值，
     //   但玩家要是提前勾了"是人外"，规则表**第一轮就能发出去** ✓。
     try {
         const lock = t?.key ? bodyLockOf(t.key) : null;
         if (lock && typeof lock.isXeno === 'boolean') return lock.isXeno;
     } catch { /* 忽略 */ }
-    // ★ 优先用 AI 自己报的判断。
-    //   人外有很多、甚至还有原创的，锁死了不合适 ——
+    // ★★ 2026-11-12（她定的：异种是相对词，人外才是绝对的）——
+    //   图鉴那条分类本身就是绝对答案：只有「人类」不算人外，
+    //   动物 / 亚人 / 兽人 / 其他都算 ⇒ 能对上条目就不用等模型报、也不用玩家点 ✓
+    try {
+        const entry = t?.key ? codexEntryOf(t.key) : null;
+        if (entry && entry.cat) return entry.cat !== 'human';
+    } catch { /* 图鉴读不到就往下走 */ }
+    // ★ 其次用 AI 自己报的判断。
+    //   图鉴里没有的族（原创、临时、名字对不上）只能靠它 ——
     //   任何"人类白名单"都盖不全（地球人 / 人族 / 原创种族…），
     //   而 AI 本来就在读剧情，**它最清楚算不算人外**。所以让 it 直接报布尔值，
     //   插件只做读取，不再拿字符串去猜。
     const v = t?.vars?.is_xeno;
     if (v !== undefined && v !== null && String(v).trim() !== '') {
+        // 兼容：老数据里可能存的是「异种」
         return /^(true|1|yes|是|异种|人外)$/i.test(String(v).trim());
     }
     // 兜底：AI 没报布尔值（老数据 / 漏报）时，才用种族文本估一下
@@ -247,13 +255,13 @@ export function codexNeedRepro(t) {
  * 反过来没受精的时候，「怀孕判定模块」也用不上。
  */
 /**
- * 这一胎的「另一个亲代」算不算异种。
+ * 这一胎的「另一个亲代」算不算人外。
  *
- * ★ 异种补充规则原来只按"追踪对象"（受孕方）发 ⇒ 人类妈妈 ＋ 异种爸爸
+ * ★ 人外补充规则原来只按"追踪对象"（受孕方）发 ⇒ 人类妈妈 ＋ 人外爸爸
  *   那一胎，混血的孕期 / 遗传说明根本没发出去、全按人类算 ✗ ⇒ 它也算一路判据 ✓
- * ★ 2026-11-08（三张异种规则退场）：这一格不再问"属于哪一边" ——
- *   东西两边那两张表已经删了、胎数与发育改由图鉴条目判，所以只剩"是不是异种"一个事实。
- *   契约的 `impregnator_xeno` 填「人类 / 异种」，留空 = 剧情还没交代。
+ * ★ 2026-11-08（三张人外规则退场）：这一格不再问"属于哪一边" ——
+ *   东西两边那两张表已经删了、胎数与发育改由图鉴条目判，所以只剩"是不是人外"一个事实。
+ *   契约的 `impregnator_xeno` 填「人类 / 人外」，留空 = 剧情还没交代。
  *   解析口径只有一份（modules.js 的 parseImpregnatorXeno，store.js 判"这份答案用不用得上"也用它 ✓）。
  *
  * 返回 true / false：false 表示明确是人类、或根本还没报（不参与门控 ✓）
@@ -267,8 +275,8 @@ export function gateOpen(kind, targets) {
     const list = (targets && targets.length) ? targets : targetList();
 
     // ★ 门控可以是**数组**：多个条件要同时满足（AND）。
-    //   门控改成"识别到有异种之后才生效"时，需要同时判定两个条件 ——
-    //   一是异种，二是是否符合那个补丁本身 ⇒ 所以异种模块挂 ['xeno', 'pregnancy'] 这样。
+    //   门控改成"识别到有人外之后才生效"时，需要同时判定两个条件 ——
+    //   一是人外，二是是否符合那个补丁本身 ⇒ 所以人外模块挂 ['xeno', 'pregnancy'] 这样。
     //   关掉了自动门控的 kind 视为"不拦"，全部 kind 都关掉时一律发送（跟原来单条件的语义一致）。
     const kinds = Array.isArray(kind) ? kind : [kind];
     const active = kinds.filter(k => isGateEnabled(k));
@@ -309,9 +317,9 @@ export function heritageDue(t) {
 
 function gateSatisfied(kind, list) {
     switch (kind) {
-        // 异种／人外：对象的种族不是人类时才需要那些额外规则。
+        // 人外：对象的种族不是人类时才需要那些额外规则。
         // ⚠️ 种族由 AI 在 vars.race 里报（只问一次 ✓）；没报就**当人类**（宁可不发，也不误发）。
-        // ★ **另一个亲代是异种也算** —— 人类妈妈 ＋ 异种爸爸那一胎，
+        // ★ **另一个亲代是人外也算** —— 人类妈妈 ＋ 人外爸爸那一胎，
         //   混血的孕期 / 遗传规则必须照发；只看妈妈的话会全按人类算 ✗
         case 'xeno':
             return list.some(isXeno) || list.some(fatherIsXeno);
@@ -528,6 +536,9 @@ export const DEFAULT_TEMPLATES = {
         //   只给事实：下次月经大概哪天、距今几天。时间一跳，主 API 靠这两个数
         //   自己就能判断"这一跳里来过没有"（比一次减法，不用算余数 ✓）
         '- {{nextPeriod}}',
+        // ★ 2026-11-12：PMS / 基础体温两个开关接上之后的两行（不适用时整行消失 ✓）
+        '- {{pms}}',
+        '- {{temp}}',
         '- {{fetus}}',
         // ★ 2026-10-26（她定的）：预产期也发给主 API ——
         //   模型对"还剩多久"没有概念，不给它日期就会写"孕期漫长得看不到头"、
@@ -686,6 +697,25 @@ export function templates() {
             }
         }
     }
+    // ★★ 2026-11-12：状态摘要新增「经前状态」「基础体温」两行 —— 模板存在设置里，
+    //   老存档那份没有这两个占位符，不补就永远发不出去（跟 {{due}} / {{nextPeriod}} 同一个坑 ✓）
+    //   ⚠️ 只往已有的那一行后面插；玩家自己把这几行都删了的，一个字都不动 ✓
+    {
+        const cur = String(s.injectTemplates.targetBlock || '');
+        if (cur) {
+            const missing = ['pms', 'temp'].filter((k) => !cur.includes('{{' + k + '}}'));
+            if (missing.length) {
+                const after = ['nextPeriod', 'menstruation', 'pregnancy']
+                    .find((k) => cur.includes('{{' + k + '}}'));
+                if (after) {
+                    const add = missing.map((k) => '- {{' + k + '}}').join('\n');
+                    s.injectTemplates.targetBlock = cur.replace(
+                        new RegExp('(^\\s*[-•*·]\\s*\\{\\{' + after + '\\}\\}\\s*$)', 'm'),
+                        '$1\n' + add);
+                }
+            }
+        }
+    }
     return s.injectTemplates;
 }
 
@@ -699,7 +729,7 @@ export function templates() {
  * ⚠️ 这份名单和真实键的对账由 自测脚本 的一条断言盯着（怕两边漂 ✓）。
  */
 export const KNOWN_TEMPLATE_VARS = [
-    'name', 'isUser', 'pregnancy', 'menstruation', 'nextPeriod', 'fetus', 'due', 'milk', 'zones', 'birth',
+    'name', 'isUser', 'pregnancy', 'menstruation', 'nextPeriod', 'pms', 'temp', 'fetus', 'due', 'milk', 'zones', 'birth',
     'impregnator', 'awareness', 'physio', 'body', 'traces', 'recentSex',
     'text', 'target',
 ];
@@ -837,7 +867,8 @@ function targetVars(t) {
     const zonesOn = zonesFeatureOn();
     const milkOn = isModuleOn('lactation_system') || isModuleOn('lactation_patch');
     const awarenessOn = isModuleOn('awareness');
-    const periodOn = isModuleOn('period_system');
+    // ★ 2026-11-11：「生理期系统」退场之后没有这条开关了 ⇒ 经期那行只看这个人是不是在经期 ✓
+    const periodOn = true;
 
     // ★★ 只走**唯一那份判据** `isPregnant(t)`（它还会看「能不能怀孕」那把玩家锁）——
     //   这里以前自己重算一遍、不看锁 ⇒ 同一个 prompt 里主 API 收到「已孕」、
@@ -892,9 +923,18 @@ function targetVars(t) {
         } else if (noBleed) {
             vars.menstruation = '';
         } else if (periodOn && t.period && (t.period.day || t.period.flow)) {
+            // ★ 2026-11-11（第三批）：把「这一轮可报的表现」一起发过去 ——
+            //   模型只从这几条里挑真的发生过的，不再自己编症状名 ✓
+            //   ⚠️ 只在经期那几天发（这条分支本来就有门控）⇒ 不常驻、不占平时的 token ✓
+            let reportables = '';
+            try {
+                const names = periodPrefsOf(t.key).items.filter((x) => x.on).map((x) => x.name);
+                if (names.length) reportables = ` · 可报表现：${names.join('、')}`;
+            } catch { /* 读不到就不带 */ }
             vars.menstruation = `月经状态：月经期 · ${t.period.day || ''}`
                 + (t.period.flow ? ` · 流量${t.period.flow}` : '')
-                + (t.period.pain ? ` · 痛经${t.period.pain}` : '');
+                + (t.period.pain ? ` · 痛经${t.period.pain}` : '')
+                + reportables;
         } else {
             vars.menstruation = '月经状态：非经期';
         }
@@ -919,6 +959,44 @@ function targetVars(t) {
             if (!periodOn) return '';
             return `预计下次月经：${np.date}（距今 ${np.days} 天；这一轮要是把时间跳到第二天或更晚、`
                 + `跳过的天数不小于这个数，说明这一跳里来过，正文照常写，别写「第几天」这类数）`;
+        } catch { return ''; }
+    })();
+
+    // ★★ 2026-11-12（她拍的：这两个开关接上）——
+    //   PMS 与基础体温这两个开关以前**只有界面在存值**，提示词里没人读 ⇒ 开了等于没开 ✗
+    //   现在接上，两条都只在用得上的那几天出现、关着就一个字不发 ✓
+    //   · PMS：经前那几天（离下次月经不到「提前天数」）发一行「经前状态」
+    //     ⚠️ 不写「经前第几天」（数字会被抄进正文，跟"不发阶段名"同一个病根）
+    //   · 基础体温：按阶段发「偏低 / 偏高」；玩家在设置里填了写法就换成他的说法
+    //     ⚠️ 不写具体度数（会过期、还容易被当成硬设定抄进正文）
+    //   ⚠️ 孕期 / 产后 / 没有周期的人一律不发（她们没有"低温相 / 高温相"这回事）
+    const prefsP = (() => { try { return periodPrefsOf(t.key); } catch { return null; } })();
+    // ★ 2026-11-12：两条都跟着「经期表现」这条模块的开关走 ——
+    //   模块关掉就不再发（她以前点过同类问题：没开的模块还在往提示词里塞东西 ✗）
+    const periodModuleOn = (() => { try { return isModuleOn('period_patch'); } catch { return true; } })();
+    vars.pms = (() => {
+        try {
+            if (!periodModuleOn) return '';
+            if (!prefsP || !prefsP.pms) return '';
+            if (pregnant || !showCycle || noBleed) return '';
+            const np = nextPeriodFactOf(t.key);
+            if (!np || np.kind === 'recovery') return '';
+            const left = Number(np.days);
+            if (!Number.isFinite(left) || left < 1 || left > prefsP.pmsLead) return '';
+            return '经前状态：现在是经前那几天（乳房胀痛、腹胀、情绪起伏、食欲变化这类可能出现，月经一来就缓解）';
+        } catch { return ''; }
+    })();
+    vars.temp = (() => {
+        try {
+            if (!periodModuleOn) return '';
+            if (!prefsP || !prefsP.temp) return '';
+            if (pregnant || !showCycle || noBleed) return '';
+            const pid = String(p.phaseId || '');
+            const low = pid === 'menstrual' || pid === 'follicular';
+            const high = pid === 'ovulationDay' || pid === 'ovulation' || pid === 'transition' || pid === 'luteal';
+            if (!low && !high) return '';
+            const base = low ? '偏低' : '偏高（排卵之后这段）';
+            return '基础体温：' + base + (prefsP.tempText ? '（' + prefsP.tempText + '）' : '');
         } catch { return ''; }
     })();
 
@@ -1140,7 +1218,7 @@ function buildPatchText(targets) {
         .replace(/\{\{\s*user\s*\}\}/gi, who)
         .replace(/\{\{\s*char\s*\}\}/gi, who);
 
-    // ★ 异种口径：名单里有没有异种 ⇒ 决定 `@@IF_XENO@@` 走哪半边
+    // ★ 人外口径：名单里有没有人外 ⇒ 决定 `@@IF_XENO@@` 走哪半边
     //   （全局模块一次只发一份 ⇒ 名单级判据，和 judge.js 那边同一套 ✓）
     const hasXeno = targets.some(isXeno);
 

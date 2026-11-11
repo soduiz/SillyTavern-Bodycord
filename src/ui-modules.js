@@ -76,8 +76,8 @@ const FIXED_FIELDS = [
     ['period', '生理监测（不需要时填 null）', '经期面板读不出来'],
     ['name', '追踪对象的名字', '面板分不清是哪个对象'],
     ['Is_Pregnant', '是否怀孕。已改由系统自己维护（着床完成时切 true、分娩或妊娠终止时切 false），不再问模型', '孕期门控全乱：该发的不发、不该发的照发'],
-    ['race', '该对象的种族', '异种规则的门控失灵（那是按种族发的）'],
-    ['is_xeno', '算不算人类以外的种族（true / false）', '人类 / 异种的分流失灵'],
+    ['race', '该对象的种族', '人外规则的门控失灵（那是按种族发的）'],
+    ['is_xeno', '算不算人类以外的种族（true / false）', '人类 / 人外的分流失灵'],
     ['Time_Scale', '剧情时间（周期日 / 孕周）。已改由系统按剧情日期自己算，不再问模型', '它由系统每轮自己写；你看到的数改不动也没关系'],
     ['Ovulation_Day', '排卵日。由系统按身体补丁那一行同步，不用模型报', '改这里不再影响计算（计算读的是身体补丁）'],
     ['Cycle_Length', '周期长度。由系统按身体补丁那一行同步，不用模型报', '同上'],
@@ -163,7 +163,7 @@ function gateGlossaryBlock() {
     apply();
     return h('div', { class: 'bc-gate-glossary' },
         h('div', { class: 'bc-ff-bar' },
-            h('span', { class: 'bc-hint', text: '上面那些词（怀孕 / 经期 / 异种…）是什么意思' }),
+            h('span', { class: 'bc-hint', text: '上面那些词（怀孕 / 经期 / 人外…）是什么意思' }),
             btn,
         ),
         rows,
@@ -299,7 +299,7 @@ function templatesCard(handlers) {
 // 二选一的模块对：两个都开会互相打架
 const EXCLUSIVE_PAIRS = [
     ['maternal_real', 'maternal_anime', '孕期母体反应：现实向 / 二次元轻松向是二选一，两个都开会互相打架'],
-    ['heritage', 'heritage_xeno', '血脉遗传特质：人类版 / 异种版是二选一，两个都开孩子特质会写两遍'],
+    ['heritage', 'heritage_xeno', '血脉遗传特质：人类版 / 人外版是二选一，两个都开孩子特质会写两遍'],
 ];
 
 /** 当前的开关组合里有没有互斥冲突 */
@@ -800,7 +800,7 @@ function moduleCard(mod, targetKey, handlers) {    // 这个变体依赖的本�
         extraBody.appendChild(implantDaysRow(handlers));
         extraBody.appendChild(implantTimingRow(handlers));
     }
-    // 互斥的变体（现实向/二次元向、人类版/异种版）明确说明二选一
+    // 互斥的变体（现实向/二次元向、人类版/人外版）明确说明二选一
     if (mod.exclusive) {
         const mates = MODULES.filter(m => m.exclusive === mod.exclusive && m.id !== mod.id);
         if (mates.length) {
@@ -814,7 +814,7 @@ function moduleCard(mod, targetKey, handlers) {    // 这个变体依赖的本�
     // 本体没开就明说，别让人打开变体却看不出为什么没效果
     //   ⚠️ 这一块**不能套进 `if (mod.exclusive)` 里** ✗
     //     ⇒ 只有"互斥变体"才可能走到，而互斥那两条偏偏没有 requires ⇒
-    //       带 requires 的（敏感带自定义 / 异种血脉 / 异种精子）永远看不到这句说明 +
+    //       带 requires 的（敏感带自定义 / 人外血脉 / 人外精子）永远看不到这句说明 +
     //       「去开启本体」那颗跳转按钮，jumpToModule 也整条不可达 ✗
     if (missingBase.length) {
         const baseId = missingBase[0];
@@ -1666,7 +1666,7 @@ function personBasicInfoCard(targetKey, rerender) {
     const onChange = () => { try { rerender?.(); } catch { /* 忽略 */ } };
     // ★ 2026-11-06（她：人物里凭什么不能设种族）：这张卡**现在**带「种族 / 属于哪个大类」，
     //   下面身体补丁的参数面板不再重复画那两格 ⇒ 一个动作一个入口，而且人待的地方就有 ✓
-    //   ⚠️「属于哪个大类」是**临时的**：等图鉴那一批种族数据接管异种表，这一格就退休；
+    //   ⚠️「属于哪个大类」是**临时的**：等图鉴那一批种族数据接管人外表，这一格就退休；
     //     长期留在这张卡上的是「种族」那格（她说这一格之后会删掉 ✓）
     bodyLockRows(body, targetKey, { onChange });
     // ★ 2026-10-24：察觉档位（A~E）——这里也能改；玩家自己存全局，别的存本聊天
@@ -1700,8 +1700,8 @@ function personBasicInfoCard(targetKey, rerender) {
             '这四项是「插件自己不可能知道、只能由你告诉它」的事。留空就一直按推演每轮报的走',
             '能不能怀孕：填「不能」⇒ 插件不再给这个人算受精 / 周期那几套。怀不上但想看月经的，把「周期模式」选成月经就行（这是两件事）',
             '能不能让别人怀孕：填「不能」⇒ 这个人不会被算进「致孕方候选」',
-            '能不能怀上异种：填「不能」⇒ 这个人不会因为异种族致的致孕方而受孕',
-            '是不是异种：填「是」⇒ 异种那套规则第一轮就发，不用等推演报回来',
+            '能不能怀上人外：填「不能」⇒ 这个人不会因为人外族致的致孕方而受孕',
+            '是不是人外：填「是」⇒ 人外那套规则第一轮就发，不用等推演报回来',
             '别名：推演报的名字只要在这里出现过，就会对回这一份档；多个用 / 、或空格隔开（同名两个角色各填不同别名就不会串）',
             '标签：分类用，比如「未来篇」「十年后」。它没有内置词表，推演看到剧情怎么写就报什么，你手填过就以你为准；只挂在一个对象身上的标签还能当别名用',
             '备注：纯说明，不参与匹配，用来提醒自己这是哪个同名的人',
@@ -2016,12 +2016,7 @@ export function renderModulesTab(container, handlers = {}) {
     //     ⚠️ 定稿就这两句：
     //        ①**位置 = 世界观**；②**可见性 = 只在「全文可改」下**（平常根本不列它 ✓）
     // ⚠️ 例外表 `VIEW_OVERRIDE` 已提到文件上面（跳转那边也要用它认视图 ✓ 见 viewOfModule）
-    const PERIOD_SYSTEM = 'period_system';
     const scoped = (id) => {
-        // 生理期系统：世界观视图里**常驻**（不然就成"全文可改"模式下才能用了，这不对）
-        //   ⚠️ 不能做成「只有自定义（=全文可改）模式下可以看见」——
-        //     数值档下这张卡整个消失、连"有这个板块"都看不出来 ✗
-        if (id === PERIOD_SYSTEM) return isWorld;
         const ov = VIEW_OVERRIDE[id];
         if (ov) return ov === view;
         return (moduleScope(id) === 'global') === isWorld;
@@ -2036,12 +2031,8 @@ export function renderModulesTab(container, handlers = {}) {
     const _viewMode = (() => { try { return periodModeOf(_viewKey); } catch { return 'normal'; } })();
     const pmNone = isWorld ? !anyTargetHasCycle() : (_viewMode !== 'normal');
     const pmNoCycle = !isWorld && _viewMode === 'amenorrhea';
-    //   ⚠️ 但**「生理期系统」例外**：它是一条**大规则**，在世界观视图里**常驻显示** ✓
-    //     （数值档下它显示成"已冻结"，和别的判定规则一样 ✓ 见上面 `scoped`）
-    //     ⇒ 它也不受"非月经隐藏"影响 ✓
-    //     ⇒ 藏的只是"当前用不到的**数据/描写**类"（生理期体质补丁、经期其他角色反应）✓
-    const isPeriodGated = (m) => m.id !== PERIOD_SYSTEM
-        && (Array.isArray(m.gate) ? m.gate : [m.gate]).includes('menstruation');
+    //   ⚠️ 2026-11-11：「生理期系统」退场之后，这条只是把"经期才用得到"的那几条藏起来 ✓
+    const isPeriodGated = (m) => (Array.isArray(m.gate) ? m.gate : [m.gate]).includes('menstruation');
     const viewMods = MODULES.filter(m => scoped(m.id)
         && !(pmNone && isPeriodGated(m))
         && !(pmNoCycle && NO_CYCLE_HIDDEN_IDS.includes(m.id)));
@@ -2122,7 +2113,7 @@ export function renderModulesTab(container, handlers = {}) {
         //   ⚠️ 只放进「角色基础信息」（悬浮球弹窗 + 设置页）的话，人物里面看不到 ✗
         //     ⇒ 补在人待着的地方（补丁页 · 人物视图的对象选择器旁边 ✓
         //        原则：入口要放在"那一刻人在哪" ✓）
-        // ★★ 2026-11-10（她截图说「要不把周期模式挪动到上面」）——
+        // ★★ 2026-11-10（她截图说过想把周期模式挪到上面）——
         //   三个页面（设置页 / 悬浮球弹窗 / 这里）统一：**周期模式排在最前面**，
         //   四项锁定跟在它后面。周期模式是这个人的顶层事实（有没有周期），
         //   摆在下面要滚下去才看得到 ✓
@@ -2346,8 +2337,8 @@ export function renderModulesTab(container, handlers = {}) {
             pane.appendChild(moduleCard(m, isWorld ? '__global__' : targetKey, H));
         }
         // ★ 2026-11-08：这几张卡是**全局开关**（卡头徽章就写着「全局」），不是有正文的模块 ——
-        //   原来只按「是不是生理期这一页」挂，结果**人物视图也画了一份**（她问「人物为什么里面
-        //   也有性特征和产后恢复」）⇒ 那些开关按人不分，画在人物里只是同一个开关的副本 ✗
+        //   原来只按「是不是生理期这一页」挂，结果**人物视图也画了一份**（她问过人物视图里
+        //   为什么也有性特征和产后恢复）⇒ 那些开关按人不分，画在人物里只是同一个开关的副本 ✗
         //   ⇒ 只在**世界观**视图挂 ✓
         //   ⚠️ 判据仍然用**页面**；加的是"哪个视图"这一条，
         //     别拿"这页里有没有某个模块"当条件（模块会被 scoped() 藏掉 ⇒ 整张卡不见 ✗）

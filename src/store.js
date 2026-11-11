@@ -6,7 +6,8 @@
  */
 
 import { getChatMetadata, saveChatMetadata, getChatKey, getPersonaName, substitute, getCtx } from './st.js';
-import { settings, save, amenorrheaRateOf, periodDaysOf, periodMode, isNeutralMode, termNameOf, cycleModeLabel, traceNightsMapOf, traceNightsForLevel, getCalendarPreset, CAL_PRESET_BUILTIN, bodyCycleParamsOf, postpartumOvulationDaysOf, windowRateOf, achLenOf, parseZoneRows, serializeZoneRows, zoneParamsOf, bodyCoefOf, peakCoefOf, protCoefOf, cycleDayInfoOf, cycleSettleDayOf, bodyRaceOf, postpartumParamsOf, stageResidueMode, stageCleanMode, contactsHideDead, spermBellyOn, spermBellyTextIn, spermBellyTextOut, spermBellyTextVaginaIn, isModuleOn, awarenessWindowsOf, awarenessUpperOf, fetusCountOf, fetusSexRangeOf, fetusOvumRangeOf, fetusMixRangeOf, fetusDevAllLines, judgeBasisOf, talentTierLabelOf, talentTierTableOf, dominantSourceRangeOf, dominantSourceOf, ovuModeOf, inducedParamsOf, estrusParamsOf } from './settings.js';
+import { settings, save, amenorrheaRateOf, periodDaysOf, periodMode, isNeutralMode, termNameOf, cycleModeLabel, traceNightsMapOf, traceNightsForLevel, getCalendarPreset, CAL_PRESET_BUILTIN, bodyCycleParamsOf, postpartumOvulationDaysOf, windowRateOf, achLenOf, parseZoneRows, serializeZoneRows, zoneParamsOf, bodyCoefOf, peakCoefOf, protCoefOf, cycleDayInfoOf, cycleSettleDayOf, bodyRaceOf, postpartumParamsOf, stageResidueMode, stageCleanMode, contactsHideDead, spermBellyOn, spermBellyTextIn, spermBellyTextOut, spermBellyTextVaginaIn, isModuleOn, awarenessWindowsOf, awarenessUpperOf, fetusCountOf, fetusSexRangeOf, fetusOvumRangeOf, fetusMixRangeOf, fetusDevAllLines, judgeBasisOf, talentTierLabelOf, talentTierTableOf, dominantSourceRangeOf, dominantSourceOf, ovuModeOf, inducedParamsOf, estrusParamsOf, setPeriodPrefsReader, periodDaysCapOf } from './settings.js';
+import { periodReadoutOf } from './period-readout.js';
 import { cycleHooks } from './cycle-hooks.js';
 import { deriveCycleFields, defaultCycleStartDay, randomCycleStartDay, DIAPAUSE_IMPLANT_DAYS } from './derive.js';
 // ★ 后半段那几个是「自定义历法」：换算都在 fiction-date.js 里，
@@ -25,7 +26,7 @@ import { calEvId, calEvLabel, calEvFilled, calEvSort, calEvOn, calEvApply, calEv
 // ★ 胎儿状态（d6）的结构化读写 —— 「自动提醒」要从每个孩子的括号里读「预产期」✓
 //   ⚠️ fetus.js 是叶子模块（它不 import 任何人）⇒ 引它不会成环 ✓
 import { parseFetus, buildFetus, stripWeekBand } from './fetus.js';
-// ★ 异种那格的解析只有一份（modules.js 是叶子模块 ⇒ 引它不成环）✓
+// ★ 人外那格的解析只有一份（modules.js 是叶子模块 ⇒ 引它不成环）✓
 import { parseImpregnatorXeno } from './modules.js';
 export { FICTION_DATE_START };
 
@@ -365,7 +366,7 @@ export function resetAllKeepUser() {
 // ★ 角色基础信息（「这个角色是什么」）
 //
 // 这一块装**插件不可能自己知道、只能由玩家/角色卡给出的事实** ——
-//   · 能不能怀孕 / 能不能让别人怀孕 / 是不是异种
+//   · 能不能怀孕 / 能不能让别人怀孕 / 是不是人外
 // 三个字段都三态：`null` = **未填**（一切按现在的行为、由推演 API 每轮报的说了算 ✓）
 //                  `true` / `false` = 填了 ⇒ 插件**锁定用这个值**、忽略 AI 报的 ✓
 //
@@ -438,7 +439,7 @@ export function setBodyLockField(key, field, value) {
 //   总不能人设说不能怀孕、判定却给了能怀孕 ✓
 //
 // 查出来的洞：界面上那四格的下拉**都**写着「未填（按推演每轮判断）」，
-//   但代码里只有「是不是异种」真接了 AI（prompt.js 读 vars.is_xeno）；
+//   但代码里只有「是不是人外」真接了 AI（prompt.js 读 vars.is_xeno）；
 //   另外三格 null 一律按「能」算，契约里也从来没问过 ⇒ 界面在说谎 ✗
 //   （四态本来就写着「null 未填＝全按推演报的」，
 //    只做了"玩家锁定"那一半 ⇒ 这里把 AI 那一半接上 ✓）
@@ -465,6 +466,7 @@ export function reportedBool(v) {
     if (v === true || v === false) return v;
     const s = String(v ?? '').trim();
     if (!s) return null;
+    // 兼容：老数据 / 老模型可能回「异种」
     if (/^(true|1|yes|是|能|可以|异种|人外)$/i.test(s)) return true;
     if (/^(false|0|no|否|不是|不能|不可以|无)$/i.test(s)) return false;
     return null;
@@ -506,17 +508,17 @@ export function canBePregnantTarget(key) {
 }
 
 /**
- * ★ 这一胎的另一个亲代算不算异种：
+ * ★ 这一胎的另一个亲代算不算人外：
  * 只在**已经怀上**（`Is_Pregnant` 为真）、而且还没报过时问一次 ✓
- * 为什么问：异种规则表原来只按"追踪对象"（＝受孕方）发 ⇒ **人类妈妈 ＋ 异种爸爸那一胎，
+ * 为什么问：人外规则表原来只按"追踪对象"（＝受孕方）发 ⇒ **人类妈妈 ＋ 人外爸爸那一胎，
  *   混血的孕期 / 遗传规则根本没发出去、全按人类算** ✗（孕期不会换爸爸 ⇒ 问一次就够 ✓）
  *
- * ★★ 2026-11-08（三张异种规则退场）：这一格不再问「属于哪一边」——
- *   东西两张表已经删了、胎数与发育改由图鉴条目判 ⇒ 只剩一个事实：那个亲代是不是异种。
- *   字段改叫 `impregnator_xeno`（人类 / 异种 / 留空）；
- *   老存档里存过的 `impregnator_side`（西方与通用 / 东方 / 东西混血）照样认成"是异种" ✓
+ * ★★ 2026-11-08（三张人外规则退场）：这一格不再问「属于哪一边」——
+ *   东西两张表已经删了、胎数与发育改由图鉴条目判 ⇒ 只剩一个事实：那个亲代是不是人外。
+ *   字段改叫 `impregnator_xeno`（人类 / 人外 / 留空）；
+ *   老存档里存过的 `impregnator_side`（西方与通用 / 东方 / 东西混血）照样认成"是人外" ✓
  *   ⚠️ 剧情里还没交代那个亲代是什么种族 ⇒ 留空：插件下一轮还会问（这就是"改判通道" ✓），
- *     也**不白发异种补充规则**（留空 ⇒ 不参与，跟老行为一致 ✓）
+ *     也**不白发人外补充规则**（留空 ⇒ 不参与，跟老行为一致 ✓）
  */
 export function needsImpregnatorXeno(key) {
     const t = state().targets?.[key];
@@ -524,8 +526,8 @@ export function needsImpregnatorXeno(key) {
     if (String(t?.vars?.Is_Pregnant ?? '').trim().toLowerCase() !== 'true') return false;   // 没怀上 ⇒ 不问 ✓
     // ★★ 判据必须是「**这份答案我能不能用**」，不是「字串空不空」✗
     //   原来只判空串 ⇒ 模型填了「未知」时，就变成
-    //   **再也不问 ＋ 当人类处理** ⇒ 异种补充规则永久不发（静默丢失）✗
-    //   ⇒ 现在：留空 ⇒ 接着问；认得出（人类 / 异种）⇒ 记着；认不出 ⇒ 接着问 ✓
+    //   **再也不问 ＋ 当人类处理** ⇒ 人外补充规则永久不发（静默丢失）✗
+    //   ⇒ 现在：留空 ⇒ 接着问；认得出（人类 / 人外）⇒ 记着；认不出 ⇒ 接着问 ✓
     const raw = String(t?.vars?.impregnator_xeno ?? t?.vars?.impregnator_side ?? '').trim();
     if (raw === '') return true;
     return parseImpregnatorXeno(raw) === null;
@@ -564,7 +566,7 @@ export function needsRaceCaps(key) {
  * ★ 这个对象的**真实种族 ＋ 这一格是怎么来的**（「强制判对」）。
  *
  * 来源四态（优先级从高到低）：
- *   · **玩家**  —— 你在面板上点了「是不是异种」⇒ 锁死，AI 判什么都盖不住 ✓
+ *   · **玩家**  —— 你在面板上点了「是不是人外」⇒ 锁死，AI 判什么都盖不住 ✓
  *   · **设定**  —— 推演说依据是世界书 / 角色描述 / 名单设定里明写的真相 ✓
  *   · **推断**  —— 推演说是从剧情或角色卡推出来的 ✓
  *   · **存疑**  —— 没报来源 / 报得认不出来 / 明说材料里没写 ⇒ **不算已确认**，
@@ -744,6 +746,150 @@ export function setFertilityManualOf(key, on) {
     if (on) t.fertilityManual = true; else delete t.fertilityManual;
     commit();
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// ★ 「经期表现」的设置（2026-11-11 第二批）
+//
+// 存哪：用户本人 → 插件设置（穿所有聊天，跟身体补丁正文同一个待遇 ✓）；
+//   其他角色 → 本聊天的 `targets[key]`（跟 fertilityTier / cycleMode 一个待遇 ✓）。
+//
+// 为什么不写进补丁正文：这几项是**设置**（档位、开关、清单），不是规则正文。
+//   混进正文的话，改一次档位就得动那份文字，还会被「只能改数值」冻结那一套牵住 ✗
+// ---------------------------------------------------------------------------
+
+/** 内置的经期表现条目（固定不可删、名字不可改，条目里的补充内容可以填 ✓） */
+export const PERIOD_ITEM_DEF = ['腰酸', '腹胀', '乳房胀痛', '情绪', '乏力', '头痛', '食欲', '睡眠'];
+
+const PERIOD_FLOW_DEF = ['少', '中', '多'];
+const PERIOD_PAIN_DEF = ['无', '轻', '中', '重'];
+const PERIOD_PAIN_PATTERN_DEF = ['descend', 'steady', 'front', 'custom'];
+
+/**
+ * 把半截 / 老存档 / 手改坏的值收拾成能用的形状。
+ * 缺什么补什么；已经填过的一个都不丢（内置按固定顺序排前，自建按原顺序跟在后面 ✓）
+ */
+function normPeriodPrefs(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const flow = PERIOD_FLOW_DEF.includes(src.flow) ? src.flow : '中';
+    const pain = PERIOD_PAIN_DEF.includes(src.pain) ? src.pain : '轻';
+    const lead = Math.round(Number(src.pmsLead));
+    const pmsLead = Number.isFinite(lead) ? Math.max(1, Math.min(15, lead)) : 3;
+    const rawItems = Array.isArray(src.items) ? src.items : [];
+    const byName = new Map();
+    for (const it of rawItems) {
+        const name = String(it?.name ?? '').trim();
+        if (!name || byName.has(name)) continue;
+        byName.set(name, { on: it?.on === true, note: String(it?.note ?? '').trim() });
+    }
+    const items = [];
+    for (const name of PERIOD_ITEM_DEF) {
+        const hit = byName.get(name);
+        items.push({ name, on: !!hit?.on, note: hit?.note || '', builtin: true });
+        byName.delete(name);
+    }
+    for (const [name, val] of byName) items.push({ name, on: val.on, note: val.note, builtin: false });
+    // ★ 2026-11-11：经期天数搬进设置（不再写在补丁正文里）——
+    //   同一个数只留一处。老存档没有这一格 ⇒ null，`periodDaysOf` 会去读正文那行兜底 ✓
+    // ★ 2026-11-12：痛经走势 —— descend 逐天减轻（默认）/ steady 全程保持 /
+    //   front 只头几天疼 / custom 逐天自己点（painByDay 按天存）✓
+    const painPattern = PERIOD_PAIN_PATTERN_DEF.includes(src.painPattern) ? src.painPattern : 'descend';
+    const rawByDay = Array.isArray(src.painByDay) ? src.painByDay : [];
+    const painByDay = rawByDay.map((v) => (PERIOD_PAIN_DEF.includes(v) ? v : ''));
+    const daysN = Math.round(Number(src.days));
+    return {
+        days: (Number.isFinite(daysN) && daysN >= 1) ? daysN : null,
+        flow,
+        pain,
+        painPattern,
+        painByDay,
+        pms: src.pms !== false,
+        pmsLead,
+        temp: src.temp === true,
+        // ★ 2026-11-11：基础体温的「写法」也能自己填（留空就按阶段自动生成）✓
+        tempText: String(src.tempText ?? '').trim(),
+        color: String(src.color ?? '').trim(),
+        texture: String(src.texture ?? '').trim(),
+        items,
+    };
+}
+
+/** 这个人的经期表现设置（永远返回能用的形状 ✓） */
+export function periodPrefsOf(key) {
+    let raw = null;
+    try {
+        if (key && isUserKey(key)) raw = settings().periodPrefs?.[key] || null;
+        else if (key) raw = state().targets?.[key]?.periodPrefs || null;
+    } catch { raw = null; }
+    return normPeriodPrefs(raw);
+}
+
+/** 改其中几项，其余保持不变 ✓ */
+export function setPeriodPrefsOf(key, patch) {
+    if (!key) return false;
+    const next = normPeriodPrefs({ ...periodPrefsOf(key), ...(patch || {}) });
+    // ★ 天数进设置的时候就先夹到上限（设置里存的数永远和推演用的那个一致 ✓）
+    if (next.days) {
+        try { next.days = Math.max(1, Math.min(next.days, periodDaysCapOf(key))); } catch { /* 读不到上限就不夹 */ }
+    }
+    try {
+        if (isUserKey(key)) {
+            const s = settings();
+            if (!s.periodPrefs || typeof s.periodPrefs !== 'object') s.periodPrefs = {};
+            s.periodPrefs[key] = next;
+            save();
+            return true;
+        }
+        const t = state().targets?.[key];
+        if (!t) return false;
+        t.periodPrefs = next;
+        commit();
+        return true;
+    } catch { return false; }
+}
+
+// ★ 2026-11-11：把「经期设置」的读取器交给 settings（它不能 import store，会成环 ✓）
+setPeriodPrefsReader((key) => periodPrefsOf(key));
+
+// ---------------------------------------------------------------------------
+// ★★ 2026-11-12（她定的）：NPC 的经量 / 痛经**第一次进经期时掷一次**，之后一直用它
+//
+// 为什么掷：不掷就全是「中 / 轻」，几个人同时来月经，面板和正文读起来一个样
+//   （她 2026-11-09 挑过"预览里每个对象数据都一样"的刺，同一个病根 ✓）
+// 为什么只掷一次：每次随机会让同一个人忽轻忽重，读起来跳；掷一次存住更像体质
+//   （跟「显怀周数第一次随机定、之后不重掷」同一个做法 ✓）
+// ⚠️ 只给非 {{user}} 的人掷：她自己会去设置里填 ✓
+// ⚠️ 已经有 periodPrefs 的人一律不动（老存档里手配过的 NPC 不会被覆盖 ✓）
+const PERIOD_ROLL_FLOW = [['少', 25], ['中', 50], ['多', 25]];
+const PERIOD_ROLL_PAIN = [['无', 20], ['轻', 40], ['中', 30], ['重', 10]];
+
+function pickWeighted(list, rng = Math.random) {
+    const total = list.reduce((n, x) => n + x[1], 0);
+    let raw = 0;
+    try { raw = Number(rng()); } catch { raw = 0; }
+    if (!Number.isFinite(raw)) raw = 0;
+    let r = Math.min(Math.max(raw, 0), 0.999999) * total;
+    for (const [v, w] of list) { r -= w; if (r < 0) return v; }
+    return list[list.length - 1][0];
+}
+
+/**
+ * NPC 第一次进经期时把经量 / 痛经掷定并存住（返回这次有没有掷）。
+ * 导出是给自测用的；生产路径在 upsertTargetResult 里调（只在正处经期时才调 ✓）。
+ */
+export function rollPeriodTiersOnce(key, rng = Math.random) {
+    try {
+        if (!key || isUserKey(key)) return false;
+        const t = state().targets?.[key];
+        if (!t || !t.period) return false;                                  // 不在经期 ⇒ 不掷
+        if (t.periodPrefs && typeof t.periodPrefs === 'object') return false; // 配过 / 已经掷过
+        const inPeriod = String(t.profile?.phaseId || '') === 'menstrual'
+            || /月经期|经期/.test(String(t.profile?.phase || ''));
+        if (!inPeriod) return false;
+        const flow = pickWeighted(PERIOD_ROLL_FLOW, rng);
+        const pain = pickWeighted(PERIOD_ROLL_PAIN, rng);
+        return setPeriodPrefsOf(key, { flow, pain });
+    } catch { return false; }
 }
 
 // ---------------------------------------------------------------------------
@@ -944,7 +1090,7 @@ export function applyReportedTags(key, tags) {
 // 为什么必须按聊天：补丁文本里**嵌着这个角色的数值**（周期长度 / 排卵日 / 体质系数
 //   就写在「身体补丁」那段散文里，参数面板改的就是它）。
 //   以前它按**名字**存在插件设置里 ⇒ 跨聊天共用 ⇒
-//   在 A 聊天把丽娜改成异种，B 聊天里那个普通人的丽娜也跟着变味 ✗
+//   在 A 聊天把丽娜改成人外，B 聊天里那个普通人的丽娜也跟着变味 ✗
 //   而身体档案 / 敏感带 / 三态**早就都是按聊天存的** ⇒ 现在规则统一 ✓
 //
 // ⚠️ 用户本人（USER_KEY）**不走这里** —— 它在 settings().targetPatches 里，
@@ -1196,7 +1342,7 @@ export function isTargetLight(key) {
 }
 
 /** 设 / 取消轻档（`light=false` ⇒ 升格成正式档 ✓）
- *  ★ 2026-10-23（她问「为什么轻档有周期？」）—— 轻档的定义是"只登记名字、不进推演名单"，
+ *  ★ 2026-10-23（她问过轻档为什么有周期）—— 轻档的定义是"只登记名字、不进推演名单"，
  *    可 `createTarget` 建对象时会**无条件**种一份周期起始 ⇒ 轻档身上挂着 Day25、0% 这种读数，
  *    看着像真在追踪 ✗ ⇒ 退回轻档时把那颗种子清掉（升格后第一次进推演会重新种 ✓） */
 export function setTargetLight(key, light) {
@@ -1493,12 +1639,6 @@ export function estrusInfoOf(key, dateArg) {
     } catch { return null; }
 }
 
-/** 某个日期在不在发情里（日历画格子用 ✓） */
-export function isEstrusOnDate(key, dateStr) {
-    const e = estrusInfoOf(key, dateStr);
-    return !!(e && e.inHeat);
-}
-
 /**
  * 日历上要标的发情日：把某年某月每一天过一遍（一个月最多 31 天，读起来很轻 ✓）。
  * @returns {Array<{key:string,name:string,day:number,dayNo:number}>}
@@ -1586,7 +1726,7 @@ export function lightTargetList() {
 //   插件手里没有种族可读**（只能显示「种族未知」）—— 种族这种由设定决定的东西
 //   只有引擎看得见（世界书 / 角色描述），所以让它报一次就够 ✓
 //
-// ⚠️ 这里**只收名字 ＋ 种族**：能力那四格（能不能怀孕 / 能不能致孕 / 异种…）不问 ——
+// ⚠️ 这里**只收名字 ＋ 种族**：能力那四格（能不能怀孕 / 能不能致孕 / 人外…）不问 ——
 //   轻档不参与推演 ⇒ 那几格记了也没人消费，等它真进名单时按"只问一次"
 //   那套问才准 ✓（要不要记，结论是这个 ✓）
 // ---------------------------------------------------------------------------
@@ -1770,7 +1910,7 @@ export function upsertTargetResult(res, opts = {}) {
 
     // ★ 契约只在"还没定过"时问那三格能力 ＋ 种族本身也是可空的 ⇒
     //   **问过之后就不会每轮回传**，而下一行是**整份替换** ⇒ 不抄回来就会被抹掉、
-    //   下一轮又问一遍（问答隔一轮抖一次 ✗），被抹掉的那一轮异种门控还会退回"当人类" ✗
+    //   下一轮又问一遍（问答隔一轮抖一次 ✗），被抹掉的那一轮人外门控还会退回"当人类" ✗
     //   ⇒ 跟 `Is_Pregnant` 同一个写法：先抄下来、替换完再放回去 ✓（这一轮回传了就以它为准 ✓）
     const keepVars = {};
     for (const vk of ['race', 'race_source', 'is_xeno', 'can_be_pregnant', 'can_impregnate', 'can_bear_xeno', 'impregnator_xeno', 'impregnator_side']) {
@@ -2006,14 +2146,36 @@ export function upsertTargetResult(res, opts = {}) {
         const stim = Array.isArray(res?.zones?.stim) ? res.zones.stim : [];
         t.profile.d9 = applyZoneStim(d9Before, stim);
     } catch (e) { console.warn('[Bodycord] 累加敏感带失败', e); }
-    t.period = res.period && typeof res.period === 'object' ? res.period : null;
+    // ★★ 2026-11-12 修：模型不报 period（或填 null）时，**只要这个人正处在经期**，
+    //   面板照样要有数据 —— 流量 / 颜色 / 质地 / 痛经现在全是插件算的，
+    //   不该因为模型这轮没报表现就整块消失（她报过"不出现会被当成吞数据" ✓）
+    const phaseTxtNow = String(t.profile?.phase || '');
+    const inPeriodNow = /月经期|经期/.test(phaseTxtNow);
+    t.period = res.period && typeof res.period === 'object'
+        ? res.period
+        : (inPeriodNow ? {} : null);
     // ★ `period.day`（周期第几天）归插件 ——
     //   它手上有周期日（`cycleDayNum(key)`，跟阶段 / 判定 / 喂回都是同一个数 ✓）⇒
     //   契约不再问这一格，这里用插件算出来的值覆盖（AI 报什么都盖掉）；
     //   ⚠️ 读不到周期日（还没建档 / 没日期）⇒ 保留原值，绝不清空 ✓
     if (t.period) {
+        // ★ 2026-11-12：NPC 第一次进经期 ⇒ 先把经量 / 痛经掷定（只掷这一次，见 rollPeriodTiersOnce）✓
+        try { rollPeriodTiersOnce(key); } catch { /* 掷不了就退回默认档 */ }
         const cdNow = cycleDayNum(key);
         if (cdNow !== null) t.period.day = `Day${cdNow}`;
+        // ★★ 2026-11-11（第三批）：流量 / 颜色 / 质地 / 痛经也归插件 ——
+        //   这四格能按「档位 + 第几天」推出来，交给模型每轮猜会飘、还会和设置里的档位对不上 ✗
+        //   ⇒ 模型只报「这一轮真的发生了什么」（表现名 + 临时偏离 + 原因），
+        //     这里按这个人的设置算成读数，面板读的也是这一份 ✓
+        try {
+            const ro = periodReadoutOf(periodPrefsOf(key), t.period);
+            t.period.flow = ro.flow;
+            t.period.color = ro.color;
+            t.period.texture = ro.texture;
+            t.period.pain = ro.pain;
+            t.period.items = ro.items;
+            t.period.off = ro.off;
+        } catch { /* 算不出来就保留模型报的那份 */ }
     }
     // ★ `d3`（体质系数）归插件 —— 真相源就是身体补丁里那行「日常体质系数」✓
     //   （模块正文自己写着"以 [身体补丁] 里那一行为准" ⇒ 插件读同一行，不会再和它对不上 ✓）
@@ -2176,7 +2338,7 @@ export function upsertTargetResult(res, opts = {}) {
             const who = displayName(t) || key;
             upsertAlert({
                 kind: 'race', target: key, sub: '', name: who, date: (() => { try { return currentDate() || ''; } catch { return ''; } })(),
-                seen: false, note: `${who} 的种族还没确认（会影响异种判定与孕期），确认一下那格`,
+                seen: false, note: `${who} 的种族还没确认（会影响人外判定与孕期），确认一下那格`,
             });
         }
     } catch (e) { /* 提醒失败不影响推演 ✓ */ }
@@ -2551,7 +2713,7 @@ export function markAlertSeen(id) {
 
 /**
  * 删掉某个对象那几条"怀孕提醒"（2026-10-23）——
- * 她报：改数值里「设为未孕（撤销）」之后，气泡还挂着「已着床完成（怀孕）」。
+ * 她报：改数值里的设为未孕（撤销）按钮点完之后，气泡还挂着已着床完成（怀孕）的状态。
  * 原因：设未孕只撤了判定与胎数，没撤这条提醒 ⇒ 它是"未读提醒"，硬刷新也会再弹 ✗
  * 判据：孕已经撤了，那几条基于孕的提醒就不该再存在（含没着床那条）✓
  * @returns {number} 删掉几条
@@ -4023,17 +4185,6 @@ export function inducedOvuOf(key) {
     } catch { return null; }
 }
 
-/** 清掉本周期那次诱导排卵（结算 / 手改周期时用） */
-export function clearInducedOvu(key) {
-    try {
-        const t = state().targets?.[String(key || '')];
-        if (!t || !t.inducedOvu) return false;
-        delete t.inducedOvu;
-        commit();
-        return true;
-    } catch { return false; }
-}
-
 /**
  * 这次交配有没有触发排卵。
  * @param {{date?:string, clk?:string, day?:number}} opts 这一笔交配的剧情日期 / 钟点 / 周期日
@@ -5303,24 +5454,6 @@ export function applyHeritageNow(key, list) {
 }
 
 /**
- * ★ 2026-10-23（她：加一个手动 ROLL 血脉遗传的兜底）——
- *   它不是掷的，是模型写进 d6 的；这个兜底＝**让下一轮推演再发一次那个模块**（不额外发包）✓
- *   清掉 heritageDone / heritageTry，下一轮 `heritageDue` 就会重新带上它 ✓
- */
-export function requestHeritageReroll(key) {
-    try {
-        const t = state().targets?.[String(key || '')];
-        if (!t) return false;
-        t.heritageDone = false;
-        t.heritageTry = 0;
-        delete t.heritageGiveUp;
-        t.heritageRerollAt = Date.now();
-        commit();
-        return true;
-    } catch { return false; }
-}
-
-/**
  * ★ 2026-10-24（构建 -97）：这里原来做的是"已经标了判过、但 d6 里没有三格 ⇒ 清掉标记、
  *   下一轮再发"。那条是拿 d6 反推状态 —— d6 一旦被覆盖或模型少写，判过的那一胎就被
  *   重新当成"没判过"，于是卡每轮都发、它每轮都知道要编天赋 ✗
@@ -5957,147 +6090,6 @@ export function isImportedAchievement(a) {
     return false;
 }
 
-
-/**
- * 推演落报告时走这里：把这一轮报的那一条收进清单，再把清单渲染回 `row3`。
- *
- * @param {string} key 对象 key
- * @param {string} prevRow3 替换前那一格的原文（老数据搬家用 ✓）
- * @param {string} reported 这一轮报回来的那一条（可能是「无」⇒ 清单不动 ✓）
- */
-const CN_DIGITS = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
-
-function cnNumOf(t) {
-    const s = String(t || '');
-    if (!s) return NaN;
-    if (/^\d+$/.test(s)) return Number(s);
-    if (s.length === 1) return CN_DIGITS[s] ?? NaN;
-    if (s[0] === '十') return 10 + (CN_DIGITS[s[1]] ?? 0);
-    if (s[1] === '十') return (CN_DIGITS[s[0]] ?? 0) * 10 + (CN_DIGITS[s[2]] ?? 0);
-    return NaN;
-}
-
-/** 一句话里写着"做了几回"（认「三次 / 3 次 / 三回 / 一共四次」；认不出 ⇒ 1） */
-function sexTimesInText(text) {
-    const s = String(text || '');
-    if (!s) return 1;
-    const re = /(\d{1,2}|[一二两三四五六七八九十]{1,3})\s*(次|回|遍)/g;
-    let m;
-    while ((m = re.exec(s))) {
-        // 「第 3 次」是在数第几回，不是在说这一批有几回 ⇒ 跳过
-        if (s.slice(Math.max(0, m.index - 1), m.index) === '第') continue;
-        const n = cnNumOf(m[1]);
-        if (Number.isFinite(n) && n >= 1) return Math.min(20, Math.round(n));
-    }
-    return 1;
-}
-
-/** 这句说的是不是"射进体内"那一档（外射 / 蹭 / 前液都不算 ✓） */
-function isInternalSexText(text) {
-    try { return guardKeyOf(text) === 'internal'; } catch { return false; }
-}
-
-/** 从一段"日期 ＋ 钟点"的文字里抠出日期（抠不出 ⇒ 空串） */
-function datePartOfText(text) {
-    const m = String(text || '').match(/(\d{1,4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-    return m ? `${m[1]}年${String(m[2]).padStart(2, '0')}月${String(m[3]).padStart(2, '0')}日` : '';
-}
-
-/**
- * ★★ 2026-11-09（她报：近期性行为那行写着「无套内射三次」，累计受孕率却还是只算了一笔）——
- *   模型把次数写进了 row3、却没写进 sex_events（那一轮 `hadEvent = false`）⇒ 内射账本一笔都没加 ✗
- *   两边都是它自己说的，账不该因为放错了格子就丢掉 ⇒ 按 row3 那句的**总次数**把账对齐。
- * ⚠️ 是"对齐"不是"再加 N 笔"：同一天同一个人的笔数已经够 N 就不动，
- *    所以重推同一楼不会越补越多 ✓（幂等）
- * ⚠️ 只在"这一轮的正文里新出现的那几行"上做（`lines` 来自 `incoming`），
- *    模型把旧条目原样抄回来那种不算 ✓
- */
-function alignInsemCountFromRow3(key, lines, floor) {
-    const s = state();
-    for (const one of (Array.isArray(lines) ? lines : [])) {
-        if (!one) continue;
-        if (!isInternalSexText(one.event)) continue;
-        const times = sexTimesInText(one.event);
-        if (!(times > 1)) continue;
-        const by = String(one.by || '').trim();
-        const dayStr = datePartOfText(one.time) || (() => { try { return currentDate() || ''; } catch { return ''; } })();
-        const dayAbs = absDayOfDateStr(dayStr);
-        const have = (Array.isArray(s.insems) ? s.insems : []).filter((x) => {
-            if (String(x.target || '') !== String(key || '')) return false;
-            if (by && String(x.by || '') !== by) return false;
-            try { if (guardKeyOf(x.protection || x.note) !== 'internal') return false; } catch { return false; }
-            const xAbs = absDayOfDateStr(String(x.depotDate || ''));
-            if (dayAbs == null) return !String(x.depotDate || '').trim();   // 谁都认不出日期 ⇒ 只算没日期的
-            return xAbs === dayAbs;
-        }).length;
-        if (have >= times) continue;
-        const need = times - have;
-        let day = null;
-        try { day = cycleDayNum(key); } catch { day = null; }
-        for (let i = 0; i < need; i++) {
-            recordInsemination(
-                { by: by || '未标注', note: String(one.event || ''), protection: '内射' },
-                { target: key, floor, day, date: dayStr, seq: have + i + 1 },
-            );
-        }
-        console.log(`[Bodycord] 近期性行为写着「${times} 回」、账本里只有 ${have} 笔 ⇒ 补齐 ${need} 笔`);
-    }
-}
-
-export function applyReportedSex(key, prevRow3, reported, floor = null, hadEvent = false) {
-    const s = state();
-    const t = (s.targets || {})[key];
-    if (!t) return;
-    // ① 清单还没有过 ⇒ 先把老的那格拆进来（老聊天升级；一次 ✓）
-    if (!Array.isArray((s.sexLog || {})[key]) || !s.sexLog[key].length) {
-        const old = parseSexLines(prevRow3);
-        if (old.length) {
-            const bag = sexBag(key, true);
-            for (let i = old.length - 1; i >= 0; i--) bag.push({ ...old[i], at: 0 });
-        }
-    }
-    // ② 这一轮的（报「无」时 `parseSexLines` 返回空数组 ⇒ 清单一个字都不动 ✓）
-    // ★★ 2026-10-23 她问「口交为什么没有记录」——
-    //   以前这里只看 `sex_events` 有没有：口交不是风险事件 ⇒ 整轮 row3 一律不采信 ✗
-    //   但「近期性行为」本来就是记录**所有**性行为（口交 / 手交 / 避孕成功都算）✓
-    //   ⇒ 现在：有风险事件照收；没有风险事件，但 row3 报了一条**清单里没有的新条目**，也收 ✓
-    //   ⚠️ 唯一的防线：模型把上一轮那格原样抄回来时（`reported === prevRow3`）不收，
-    //      以及清单里已经有一模一样的（时间 + 人物 + 事件）不重复记 ✓
-    const parsed = parseSexLines(reported);
-    const repNorm = String(reported || '').trim();
-    const prevNorm = String(prevRow3 || '').trim();
-    const sameAsPrev = !!repNorm && repNorm === prevNorm;
-    const bag0 = sexBag(key);
-    const allInLog = parsed.length > 0 && parsed.every((one) => bag0.some((x) => x.time === one.time && x.by === one.by && x.event === one.event));
-    const hasNewLine = parsed.some((one) => !bag0.some((x) => x.time === one.time && x.by === one.by && x.event === one.event));
-    // ★ 2026-10-23：只拦"原样抄回来、而且清单里已经有"的那种；
-    //   如果界面上那行字在清单里根本没记（老数据 / 落账失败过），就算和上一轮一样也要补记 ✓
-    const copyBack = sameAsPrev && allInLog;
-    // 只替换：**每一楼只留一条** ——
-    //   重推同一楼时先把这一楼原来那条**换掉**，别的楼层一个字不动 ✓
-    //   （老条目没有 `floor` ⇒ 不参与这条判据，留给老数据自己慢慢走完 ✓）
-    const flRaw = floor;
-    const fl = (flRaw === null || flRaw === undefined || flRaw === '') ? NaN : Number(flRaw);
-    const incoming = (!copyBack && (hadEvent || hasNewLine || !allInLog)) ? parsed : [];
-    if (incoming.length && Number.isFinite(fl)) {
-        const bag = sexBag(key, true);
-        const kept = bag.filter((x) => Number(x.floor) !== fl);
-        if (kept.length !== bag.length) {
-            bag.length = 0;
-            for (const x of kept) bag.push(x);
-        }
-    }
-    for (const one of incoming) addSexEntry(one, { key, floor: Number.isFinite(fl) ? fl : null });
-    // ★★ 2026-11-09：次数只写在 row3、没写进 sex_events 时，按次数把**内射账本**补齐
-    //   （见 `alignInsemCountFromRow3` 的说明；这一格是它自己说的，不该因为放错格子就丢 ✓）
-    if (!hadEvent) {
-        try { alignInsemCountFromRow3(key, incoming, Number.isFinite(fl) ? fl : null); }
-        catch (e) { console.warn('[Bodycord] 按近期性行为补记内射失败', e); }
-    }
-    // ③ 渲染回去（面板 / 主 API / 联系人都读这一格）
-    if (!t.profile || typeof t.profile !== 'object') t.profile = {};
-    t.profile.row3 = renderSexLog(key);
-}
 
 /**
  * ★★ 2026-11-09（甲方案：**一个入口**）——
@@ -7082,7 +7074,7 @@ export function recordInsemination(ev, opts = {}) {
     // ⚠️ 去重键必须带 target：同一轮里"同一个致孕方 → 两个不同对象"、
     //   而 AI 的 note 是模板化措辞（两个人写同一句很正常）⇒ 不带 target 会把
     //   第二条当成重复静默丢掉，那个对象这轮的内射就永久不入账（累计率少算 ✗）
-    // ★ 2026-11-09（她报：一行写着「无套内射三次」、累计受孕率只算了一笔）——
+    // ★ 2026-11-09（她报：一行写着好几次、累计受孕率只算了一笔）——
     //   同一批里报几条一模一样的记录时，原来会被当成重复吞掉后两条。
     //   序号只在这**一批**里区分第几笔：第一笔仍然用老键（老存档里删过的照旧认得 ✓）
     const seq = Number(opts.seq) || 0;
@@ -7722,7 +7714,7 @@ export function awarenessTextOf(targetKey = null, aiValue = '') {
 //   性别 / 致孕方 / 种族 / 显性隐性 全跟子1 一样（同一个基因组 ✓），d6 概述写成「双胎（同卵）」
 //   ⚠️ 单胎不掷（没什么同卵异卵之分）；正文那段认不出 ⇒ `sameOvum = null` ＝ 老行为 ✓
 //
-// ⚠️ 只接管**没走异种表**的胎（异种那两套按族逐行判，写在异种包里 ⇒ 先不碰，老行为一字不变 ✓）
+// ⚠️ 只接管**没走人外表**的胎（人外那两套按族逐行判，写在人外包里 ⇒ 先不碰，老行为一字不变 ✓）
 // ⚠️ 表认不出来 / 数不够 ⇒ 返回 null ⇒ 调用方什么都不做（老行为一字不变 ✓）
 // ---------------------------------------------------------------------------
 
@@ -7856,9 +7848,9 @@ export function makeFetusPlan(targetKey, countValue, sexValues, ovumValue = null
 }
 
 // ---------------------------------------------------------------------------
-// ★ 2026-10-24：天赋判定 / 显性来源的**分组**（人类、类人异种、卵群共用一套）
+// ★ 2026-10-24：天赋判定 / 显性来源的**分组**（人类、类人人外、卵群共用一套）
 //
-// 为什么不再看"人类胎那份判定记录"：异种走种族表、卵群只有一句概括，都没有那份记录，
+// 为什么不再看"人类胎那份判定记录"：人外走种族表、卵群只有一句概括，都没有那份记录，
 //   结果是骰子根本不掷 ⇒ 模型只能自己编。分组只认 d6（大家都往这里写）。
 // 顺序：① 人类判过且记着分组 → 用它（当时锁定，最准）
 //       ② d6 概述里的同卵标记（「（同卵）」／「同卵：子1、子2」）
@@ -7895,7 +7887,7 @@ function sameOvumGroupsFromD6(key, n) {
     } catch { return null; }
 }
 
-/** 这一胎的分组：`[{kids:[下标…], same, bulk?}]`（不依赖是不是异种 ✓） */
+/** 这一胎的分组：`[{kids:[下标…], same, bulk?}]`（不依赖是不是人外 ✓） */
 export function heritageGroupsOf(key) {
     const k = String(key || '');
     const t = state().targets?.[k];
@@ -8003,7 +7995,7 @@ export function rollDominantSrcFor(key) {
 
 /**
  * ★ 2026-10-24：同卵组内「显性 / 隐性 / 天赋」必须一致 ——
- *   人类那条靠 `applyFetusPlanOf` 的组统一；异种没有那份记录，所以要单独做一次 ✓
+ *   人类那条靠 `applyFetusPlanOf` 的组统一；人外没有那份记录，所以要单独做一次 ✓
  *   以组里第一个有内容的孩子为准，其余照它写；**跟种族无关**。
  *   ⚠️ 手改过 d6 的对象不动（那是玩家的）✓
  * @returns {boolean} 有没有改动
@@ -8584,7 +8576,7 @@ export function spermTierFromText(raw) {
 }
 
 /**
- * ★★ 2026-10-29（她报的坑）：**孕期 / 无月经档的「残留」会一直挂着**。
+ * ★★ 2026-10-29（她报的坑）：**孕期 / 无月经档的残留会一直挂着**。
  *
  * 病根：「残留」原本只在**周期结算**时清（`settleResidueLoad`），
  *   而这两种人等不到周期结算 —— 孕期不结算，无月经档压根没有周期
@@ -9893,7 +9885,7 @@ export function syncPregnancyState(key) {
         //   切孕这一轮只算着床，胎数/性别留到下一轮的推演里判。
         //   这个标记就是"这一轮别判胎儿"；judge 那边见到它会跳过一次并清掉 ✓
         t.fetusPlanPending = true;
-        // ★ **新一轮怀孕 ⇒ 忘掉上一次那个亲代**（不然上一次报的"是不是异种"会挂到这一胎上 ✗）
+        // ★ **新一轮怀孕 ⇒ 忘掉上一次那个亲代**（不然上一次报的"是不是人外"会挂到这一胎上 ✗）
         delete t.vars.impregnator_xeno;
         delete t.vars.impregnator_side;
         // ★ A3：**新一轮怀孕也得忘掉上一次"剧情强制提前"记到哪一档** ——
@@ -9992,7 +9984,7 @@ export function settleCycle(mode, reason, opts = {}) {
             }
         }
     } catch { /* 判不了就用传进来的 */ }
-    // ★★ 2026-10-31（她报：分娩之后「胎儿动态」还显示那一胎）——
+    // ★★ 2026-10-31（她报：分娩之后胎儿动态还显示那一胎）——
     //   胎儿那一格平时允许模型不写，插件对"模型没写"的做法是**保留上一轮**
     //   （防孕期中间它顺手写「无」把整格抹掉）⇒ 结果**状态机的终点**也没人走：
     //   分娩 / 妊娠终止那一轮模型不写「无」，旧胎儿就一直挂着，对不对全靠运气 ✗
@@ -10122,10 +10114,10 @@ export function settleCycle(mode, reason, opts = {}) {
                 //   出孕期时也按空落盘，别让孕前的旧值借这个机会冒出来 ✓
                 tt.wombLoad = 'empty';
             }
-            // ★★ **这一胎的「另一个亲代是不是异种」也一起忘掉** ——
+            // ★★ **这一胎的「另一个亲代是不是人外」也一起忘掉** ——
             //   那格是"这一胎"的属性（怀孕时问一次、之后记着）⇒ 孕期一结束就该清 ✓
             //   ⚠️ 只靠"下一次怀孕时清"（syncPregnancyState 里那处）会留一个空窗：
-            //     产后每轮还靠它把异种门控开着，空窗期内新来的对象还会拿**上一胎**那个答案 ✗
+            //     产后每轮还靠它把人外门控开着，空窗期内新来的对象还会拿**上一胎**那个答案 ✗
             delete tt.vars.impregnator_xeno;
             delete tt.vars.impregnator_side;
             // 周期结束只把：残留清空，有量（少/中/多/满）的不动

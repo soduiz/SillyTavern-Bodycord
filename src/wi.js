@@ -360,7 +360,7 @@ export function packWorldInfo(opts = {}) {
     // ⚠️ 「开关开着」和「当前这张卡有描述」是两件事：绑了卡的对象要的是开关，不是当前卡有没有正文
     const descOn = src ? (src.desc === true) : (opts.skipDesc !== true && wiDescOn());
     const desc = descOn ? characterDescription() : '';
-    // ★ 2026-10-23：用户自己那份人设描述（她提的「用户角色信息也要一颗开关」）——
+    // ★ 2026-10-23：用户自己那份人设描述（她提过用户角色信息也要一颗开关）——
     //   没开就不取；`forcePersona` 是遗传判定那一轮的临时放行（**不改开关的存值** ✓）
     const persona = src
         ? (src.persona === true ? personaDescriptionForChat() : '')

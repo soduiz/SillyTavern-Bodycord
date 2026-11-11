@@ -72,7 +72,7 @@ import { askArchiveName, applyPersonArchiveInteractive } from './ui-archive.js';
 //   ⚠️ 方向是**单向**的（ui-settings 引 ui-codex；ui-codex 不引 ui-settings）⇒ 不成环 ✓
 import { openCodexOverrideEditor, codexPickControl } from './ui-codex.js';
 import { codexIdOf, setCodexIdOf, resolveRaceText, codexOverrideCount, setShowWeekOf } from './codex-bind.js';
-import { readShowWeeksOf, readShowWeekOf, showWeekForLevel, SHOW_LEVELS } from './codex-values.js';
+import { readShowWeeksOf, readShowWeekOf, showWeekForLevel, SHOW_LEVELS, codexEntryOf } from './codex-values.js';
 import { codexEntry } from './codex.js';
 import { wiSection } from './ui-wi.js';
 // ★ 第七批：「设定来源」（角色绑了哪几条世界书条目）＋「从世界书建角色」
@@ -1139,15 +1139,15 @@ function targetSection(container, onChange) {
 
     // 新面孔识别要不要：提前认种族
     //   关＝只有真正发生了身体相关的事才登记（默认，免得把宠物 / 路人建进来）；
-    //   开＝剧情只是交代了种族也登记（异种世界想提前知道种族时打开）
-    b.appendChild(toggleRow('提前识别异种种族',
+    //   开＝剧情只是交代了种族也登记（人外世界想提前知道种族时打开）
+    b.appendChild(toggleRow('提前识别非人类种族',
         s.raceScan === true,
         (v) => {
             s.raceScan = v;
             save();
             onChange?.(true);
         },
-        '打开后：剧情里只是交代了某人的种族，也会先登记成「只登记了名字的对象」（适合异种多的世界）。关着：只有真的发生了身体相关的事才会登记'));
+        '打开后：剧情里只是交代了某人的种族，也会先登记成「只登记了名字的对象」（适合人外多的世界）。关着：只有真的发生了身体相关的事才会登记'));
 
     // ★ 要不要追踪"{{user}} 本人" ✓
     //   玩男性角色、不能怀孕、但想泌乳体质和敏感带的那些，就靠这个开关 ✓
@@ -1453,7 +1453,7 @@ function targetSection(container, onChange) {
     b.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
         button('从世界书建角色…', () => openWiBuildTargets(() => onChange?.(true)),
             { title: '勾世界书里的条目，一条建一个追踪对象，并绑上那条设定来源' }),
-        // ★ 2026-11-09（她提的）：从角色卡建角色，只绑那张卡的「角色描述」那一段
+        // ★ 2026-11-09（她提的）：从角色卡建角色，只绑那张卡的角色描述那一段
         button('从角色卡建角色…', () => openCardBuildTargets(() => onChange?.(true)),
             { title: '勾角色卡，一张建一个追踪对象，并绑上那张卡的角色描述' }),
         undoRow,
@@ -4307,7 +4307,7 @@ function personaVersionRow(b, onChange) {
  * @param {string} key 哪个对象（USER_KEY ⇒ 读全局设置；其他 ⇒ 本聊天档案 ✓）
  * @param {{onChange?: (structural?: boolean) => void}} opts
  *   `onChange(true)` = 需要**整页重建**；只有「能不能怀孕」会用到
- *   （它决定「能不能怀上异种」那一格生不生效 ⇒ 不重建就得等下次进这页才看得见 ✗）
+ *   （它决定「能不能怀上人外」那一格生不生效 ⇒ 不重建就得等下次进这页才看得见 ✗）
  */
 export function bodyLockRows(host, key, opts = {}) {
     const notify = opts.onChange || (() => {});
@@ -4320,7 +4320,7 @@ export function bodyLockRows(host, key, opts = {}) {
     const opts3 = [['', '未填（按推演每轮判断）'], ['true', '能'], ['false', '不能']];
     const yesOpts = [['', '未填（按推演每轮判断）'], ['true', '是'], ['false', '不是']];
 
-    // ★ 徽章的措辞要跟那一行的问题对得上（"是不是异种"那行显示成"锁定：能/不能"就不对 ✗）
+    // ★ 徽章的措辞要跟那一行的问题对得上（"是不是人外"那行显示成"锁定：能/不能"就不对 ✗）
     //   ⇒ 每行自己带一对词，别一律用"能/不能" ✓
     //
     // ★★ 不能做成**每格三行** ——
@@ -4328,7 +4328,31 @@ export function bodyLockRows(host, key, opts = {}) {
     //   （徽章写「未填」跟下拉里那句重复，「恢复自动」也没东西可恢复 ✗）。
     //   ⇒ ① 徽章上到**标签那一行**；② 「恢复自动」挪到**下拉那一行**的右边，
     //   而且**只在锁定时才出现** ⇒ 每格固定两行，一个字都没藏 ✓
-    const row = (label, field, options, words = ['能', '不能']) => {
+    // ★ 2026-11-12（她定的：异种是相对词，人外才是绝对的；而且图鉴已经能答）——
+    //   能对上图鉴条目的对象，这一行**不再放下拉**：图鉴分类（人类 / 动物 / 亚人 / 兽人 / 其他）
+    //   本身就是答案，再摆一个手选等于两个事实源 ✓
+    //   ⚠️ 玩家以前锁过的值**照样显示成下拉**（不然他解不开那个锁 ✗）
+    const codexXenoText = (() => {
+        try {
+            const lockV = bodyLockOf(key).isXeno;
+            if (lockV !== null && lockV !== undefined) return '';
+            const e = codexEntryOf(key);
+            if (!e || !e.cat) return '';
+            return e.cat === 'human' ? '跟图鉴：人类' : ('跟图鉴：人外（' + String(e.name || '这一族') + '）');
+        } catch { return ''; }
+    })();
+    const row = (label, field, options, words = ['能', '不能'], fixedText = '') => {
+        // 只读那一档：事实由图鉴说了算，没有下拉、没有「恢复自动」✓
+        if (fixedText) {
+            host.appendChild(h('div', { class: 'bc-field' },
+                h('div', { class: 'bc-label-row' },
+                    h('div', { class: 'bc-label', text: label }),
+                    h('span', { class: 'bc-badge bc-lock-tag on', text: fixedText }),
+                ),
+                h('div', { class: 'bc-hint', text: '由图鉴分类决定；图鉴对不上的对象才需要手选' }),
+            ));
+            return;
+        }
         // ★ 未填时**不只写「未填」** —— 把推演这一轮判的值印出来 ✓
         //   要的正是这个（人设里面明明写着不能怀孕，那就肯定得判 ——
         //   总不能人家不能怀孕却判了能怀孕）⇒ 徽章要能看出"现在是按推演判的哪一边" ✓
@@ -4337,7 +4361,7 @@ export function bodyLockRows(host, key, opts = {}) {
             ? (ai === null ? '未填' : '推演判：' + (ai ? words[0] : words[1]))
             : '锁定：' + (v ? words[0] : words[1]));
         const lock = bodyLockOf(key);
-        // ★ 不能怀孕 ⇒「能不能怀上异种」这一格**不生效**（变灰 + 一行小字）——
+        // ★ 不能怀孕 ⇒「能不能怀上人外」这一格**不生效**（变灰 + 一行小字）——
         //   ⚠️ 只改**显示**：数据一个字都不动（红线：改一个格子别顺手动另一个 ✗）
         const moot = (field === 'canBearXeno') && lock.canBePregnant === false;
         // 徽章要先建出来，好让下面的下拉能**当场**改它
@@ -4384,8 +4408,8 @@ export function bodyLockRows(host, key, opts = {}) {
     //     不孕症的角色想看月经：把周期模式选成「月经」就行，不需要第二个开关 ✓
     row('能不能让别人怀孕', 'canImpregnate', opts3);
     // 第四项：能不能跟非人类生 ✓
-    row('能不能怀上异种', 'canBearXeno', opts3);
-    row('是不是异种', 'isXeno', yesOpts, ['是', '不是']);
+    row('能不能怀上人外', 'canBearXeno', opts3);
+    row('是不是人外', 'isXeno', yesOpts, ['是', '不是'], codexXenoText);
     // ★ 2026-11-06（她定的）：大类那格**从界面退休** ——
     //   它本来就是给玩家做分类看的，不是判定输入；判定只看「种族」那一条图鉴 ✓
     //   → 分类以后由「种族 + 图鉴里的分类标签」承担，这里不再摆那一格。
@@ -4400,7 +4424,7 @@ export function bodyLockRows(host, key, opts = {}) {
     const paintRace = () => {
         const rj = raceJudgeOf(key);
         let warn = '';
-        if (rj.src === '存疑') warn = '⚠️ 种族待确认：会影响异种规则与孕期，确认一下这格';
+        if (rj.src === '存疑') warn = '⚠️ 种族待确认：会影响人外规则与孕期，确认一下这格';
         raceWarn.textContent = warn;
         raceWarn.style.display = warn ? '' : 'none';
     };
@@ -4441,7 +4465,7 @@ function showField(key) {
     const line = h('div', { class: 'bc-hint' });
     let dd = null;
     let num = null;
-    // ★ 2026-11-06（她报「改了档，右边数字不变」）：换档之后数字框与下拉都要跟着重画，
+    // ★ 2026-11-06（她报过改了档右边数字不变）：换档之后数字框与下拉都要跟着重画，
     //   光改下面那行说明是不够的 ✗
     const paint = () => {
         if (!sw) return;
@@ -4650,8 +4674,8 @@ function userBodyInfoSection(container, onChange) {
             '这四项是「插件自己不可能知道、只能由你告诉它」的事。留空就一直按推演每轮报的走',
             '能不能怀孕：填「不能」⇒ 插件不再给该角色算受精 / 周期那几套。怀不上但想看月经的，把「周期模式」选成月经就行（这是两件事）',
             '能不能让别人怀孕：填「不能」⇒ 你不会被算进「致孕方候选」',
-            '能不能怀上异种：填「不能」就不会怀上异种',
-            '是不是异种：填「是」就从第一轮起按异种那套规则判，不用等推演报回来',
+            '能不能怀上人外：填「不能」就不会怀上人外',
+            '是不是人外：填「是」就从第一轮起按人外那套规则判，不用等推演报回来',
             '周期模式：你自己有没有月经。只改名字与描写（排卵日 ↔ 受孕高峰日 这类），受孕率、判定、结算两档完全一样',
             '别名：推演报的名字只要在这里出现过，就会对回这一份档；多个用 / 、或空格隔开（同名两个角色各自填不同别名，就不会互相串）',
             '标签：分类用，比如「未来篇」「十年后」。它没有内置词表，推演看到剧情怎么写就报什么，你手填过就以你为准；只挂在一个对象身上的标签还能当别名用',
@@ -4676,7 +4700,7 @@ function userBodyInfoSection(container, onChange) {
         h('div', { class: 'bc-hint', text: '换人设不会跟着变，要跟着换就自己存一份档案' }),
     ));
 
-    // ★★ 2026-11-10（她截图说「要不把周期模式挪动到上面」）——
+    // ★★ 2026-11-10（她截图说过想把周期模式挪到上面）——
     //   周期模式是这一页最顶层的一件事（这个人有没有周期），所以摆在四项前面，
     //   跟「补丁页 · 人物视图」那边「周期模式在最上面」排法一致 ✓
     //   ⚠️ 只动位置，一个字的数据都不改 ✓

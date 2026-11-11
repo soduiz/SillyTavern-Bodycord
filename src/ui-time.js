@@ -163,7 +163,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
     const detailHost = h('div', { class: 'bc-tm-detail' });
     const headInfo = h('div', { class: 'bc-tm-info' });
     const statusHost = h('div', { class: 'bc-tm-status' });
-    // ★ 2026-10-23（她截图报的：上一层的时光机里「撤销刚才那次回滚」看着像属于这一楼）——
+    // ★ 2026-10-23（她截图报的：上一层的时光机里撤销刚才那次回滚看着像属于这一楼）——
     //   那是**全聊天**动作，挪到列表外面单独放，不跟选中的楼层绑在一起 ✓
     const globalHost = h('div', { class: 'bc-tm-global' });
 

@@ -159,7 +159,7 @@ export function dropdown(value, options, onChange, opts = {}) {
     const valueEl = h('div', { class: 'bc-dd-value', text: current[1] });
     const menu = h('div', { class: 'bc-dd-menu' });
     const rootEl = h('div', {
-        // ★ `opts.disabled` ⇒ "这一格不生效"的样子（不能怀孕时的「能不能怀上异种」✓）
+        // ★ `opts.disabled` ⇒ "这一格不生效"的样子（不能怀孕时的「能不能怀上人外」✓）
         //   ⚠️ 这是**新加的第 4 个参数**：以前 select() 的第 4 个参数是被静默丢掉的 ✗
         //     （栽过一次：传了 {rebuild:true} 而 dom.js 根本没读 ⇒ 界面上不重建）
         class: 'bc-dd' + (opts.class ? ' ' + opts.class : '') + (opts.disabled ? ' is-disabled' : ''),
@@ -335,7 +335,7 @@ export function toggle(checked, onChange) {
  *
  * ★ 2026-11-09：**裸 `<input type="checkbox">` 不许直接用** —— 它会被酒馆主题
  *   重新刷一遍样式，长成酒馆的样子，跟插件不是一套 ✗（图鉴「发情季节」那 12 个月
- *   就是这么漏出去的，她截图问「是不是又没用插件的选择框」）。
+ *   就是这么漏出去的，她截图问过是不是又没用插件的选择框）。
  *   方块本身是 CSS 画的 `.bc-check`（对勾用两条边框转 45 度，不吃字体里的符号 ✓）。
  * ★ 选中**不靠整行变色**：只画方块（她那边整行变深蓝会让字看不见 ✗）。
  * `onToggle` 收的是「点完之后应该是勾上还是取消」。

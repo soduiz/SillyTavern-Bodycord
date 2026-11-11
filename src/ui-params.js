@@ -16,6 +16,9 @@ import {
 import {
     h, clear, button, textInput, numberInput, askConfirm, dropdown, helpButton, askText,
 } from './dom.js';
+// ★ 2026-11-11：「经期表现」卡的设置区（天数格子 / 档位 / 清单 / 颜色质地写法）——
+//   它长在那条模块卡片自己的参数区里，不再单独挂在页顶上 ✓
+import { periodSettingsBlock } from './ui-period.js';
 import {
     listZonePresets, saveZonePreset, updateZonePreset, deleteZonePreset, getZonePreset,
 } from './settings.js';
@@ -258,7 +261,21 @@ function numberFields(spec, targetKey, handlers, status) {
         //   一律喊"内容没有变化"会让人以为是自己没改 ✗
         //   ⇒ 读回来跟草稿逐格比一次：一样 ⇒ 真是没变化；不一样 ⇒ 明说是不合法被拒 ✓
         if (ok) {
-            flash(status, '已保存');
+            // ★ 2026-11-11：经期天数被上限夹过 ⇒ 明说一句「按 X 天记」，并把输入框改回实际值。
+            //   不然玩家填 7、保存后看见 6，会以为自己的数被吞了（这条是数据红线 ✓）
+            let msg = '已保存';
+            if (spec.moduleId === 'period_patch') {
+                try {
+                    const want = Math.round(Number(draft.days));
+                    const got = Math.round(Number(readParams(spec, targetKey)?.days));
+                    if (Number.isFinite(want) && Number.isFinite(got) && want > got) {
+                        draft.days = String(got);
+                        if (fieldEls.days) fieldEls.days.value = String(got);
+                        msg = `已保存（经期天数最多到排卵日减 2 天，按 ${got} 天记）`;
+                    }
+                } catch { /* 忽略 */ }
+            }
+            flash(status, msg);
         } else {
             let same = false;
             try {
@@ -278,6 +295,8 @@ function numberFields(spec, targetKey, handlers, status) {
     //   点它没反应 ✗（而卡级「全部恢复默认」是普通按钮 ⇒ 照旧能用 ✓）。
     //   ⇒ 每格留一个"按当前草稿重算灰不灰"的小函数，改值 / 提交之后都调一遍 ✓
     const resets = [];
+    // ★ 每格建出来的输入框（提交后要能**纠正显示值**，比如经期天数被上限夹过 ✓）
+    const fieldEls = {};
     for (const f of spec.fields) {
         // ★ 2026-11-06：人物视图里种族那格已经在上面的「角色基础信息」卡里了，
         //   参数面板里不再重复画一遍 ✓
@@ -340,6 +359,8 @@ function numberFields(spec, targetKey, handlers, status) {
         }
         // ★ 第二批：这里也能选图鉴条目（选了就绑定编号），手打照旧 = 不绑定 ✓
         const racePick = null;
+        // ★ 2026-11-11：记下这一格的输入框 —— 提交后若被夹取，要把显示值改回实际值 ✓
+        if (input) fieldEls[f.key] = input;
         // ★「日常体质系数」这一格下面多一行读数（这个值是谁定的 ＋ 交回按钮 ✓）
         //   ⚠️ 交回按钮改的是**补丁正文**，而面板手上还攥着一份 `draft` —— 两者不同步的话，
         //     下一次 commit 会把整份 draft 写回去、把刚恢复的值又盖成旧值 ✗
@@ -664,7 +685,7 @@ function blockResetBtn(spec, targetKey, handlers, status, afterReset) {
         // ★★ 光把值写进设置**不够**：下面那些输入框是建的时候读一次、之后自己攥着 `draft`
         //   （每格那颗小 ↩ 是直接改 input.value 的，所以它看起来"生效了"）
         //   ⇒ 整条重置之后必须**重建这一块**，否则输入框还是旧数
-        //   （2026-10-23 她报的：点「重置这一条」有反应，但吐槽上限那格不变 ✗）
+        //   （2026-10-23 她报的：点重置这一条有反应，但吐槽上限那格不变 ✗）
         try { afterReset?.(); } catch { /* 忽略 */ }
         flash(status, ok ? ('这一条已恢复默认（' + defs.length + ' 格）') : '这一条本来就是默认值', ok);
     }, { title: '把这一整个条目恢复成默认值（这块共 ' + (spec.fields || []).length + ' 格）' });
@@ -688,6 +709,13 @@ export function renderParamFields(moduleId, targetKey, handlers = {}) {
     const fieldsHost = h('div', {});
     const paintFields = () => {
         clear(fieldsHost);
+        // ★ 2026-11-11：「经期表现」卡上的设置区长在这张卡的参数区里（它现在就是
+        //   「经期表现」这条模块自己）—— 点格子、档位、清单、颜色质地都在这一块 ✓
+        if (spec.moduleId === 'period_patch') {
+            fieldsHost.appendChild(periodSettingsBlock(targetKey, paintFields));
+        }
+        // 没登记通用字段的（比如「经期表现」，参数全在上面的设置区里）⇒ 不再画空白网格 ✓
+        if (!Array.isArray(spec.fields) || spec.fields.length === 0) return;
         fieldsHost.appendChild(spec.kind === 'list'
             ? zoneFields(spec, targetKey, handlers, status)
             : numberFields(spec, targetKey, handlers, status));

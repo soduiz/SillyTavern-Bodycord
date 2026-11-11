@@ -220,18 +220,26 @@ export function buildUntrackedProfile(name, isPregnant = false) {
     return L.join('\n');
 }
 
+import { periodOffText } from './period-readout.js';
+
 export function buildPeriodProfile(name, period = {}) {
     const who = safeName(name);
-    return [
+    const items = (Array.isArray(period.items) ? period.items : []).map((x) => String(x ?? '').trim()).filter(Boolean);
+    const offTxt = periodOffText(period.off);
+    const L = [
         `<period_profile name="${who}">`,
         `第几天：${clean(period.day) || '—'}`,
         `流量：${clean(period.flow) || '—'}`,
         `颜色：${clean(period.color) || '—'}`,
         `质地：${clean(period.texture) || '—'}`,
         `痛经：${clean(period.pain) || '—'}`,
-        `经期症状：${clean(period.desc) || '—'}`,
-        '</period_profile>',
-    ].join('\n');
+        // ★ 2026-11-11（第三批）：原来的「经期症状」拆成两行 ——
+        //   常态＝这一轮真的发生、而且清单里勾上的；非常态＝这次才有的（带原因）✓
+        `常态：${items.length ? items.join('、') : '无'}`,
+    ];
+    if (offTxt) L.push(`非常态：${offTxt}`);
+    L.push('</period_profile>');
+    return L.join('\n');
 }
 
 /** 还没推演过时的占位面板 */

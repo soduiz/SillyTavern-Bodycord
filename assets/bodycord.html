@@ -1651,7 +1651,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
          就是单纯没进聊天；别再把这两个概念混在一起 ✗ */
 
   // 面板自己的构建标记：用来确认到底加载了哪一版文件（拿到缓存的旧文件时一眼能看出来）
-  var PANEL_BUILD = '2026-11-11-2';
+  var PANEL_BUILD = '2026-11-12-11';
   // 界面上不显示它，但留个查询口 —— 报 BUG 时能确认加载的是哪一版 ✓
   try{ window.__bodycordPanelBuild = PANEL_BUILD; }catch(e){}
 
@@ -2510,6 +2510,10 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
         color: map['颜色'] || '—',
         texture: map['质地'] || '—',
         pain: map['痛经'] || '—',
+        // ★ 2026-11-11（第三批）：原来的「经期症状」拆成常态 / 非常态两行；
+        //   老快照里还是「经期症状」⇒ 读不到常态就退回它（历史楼层照样看得见 ✓）
+        items: map['常态'] || map['经期症状'] || '—',
+        off: map['非常态'] || '',
         desc: map['经期症状'] || '—'
       });
     }
@@ -4222,8 +4226,10 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
       '</div>'
     );
     // ★★ 生理监测并回概览 ✓：这一页就是"看身体状态"的地方 ⇒ 读数并进来，
-    //   侧栏那个频道去掉了（内容薄、单开一页不值当 ✓）。⚠️ 没有生理数据时**整块不出现**（别塞一句"暂无" ✗）
-    if(currentPeriods && currentPeriods.length) parts.push(renderPeriodPanel());
+    //   侧栏那个频道去掉了（内容薄、单开一页不值当 ✓）。
+    //   ★ 2026-11-11：没有经期数据也照样放一块、写「不适用」——
+    //     整块消失会被当成吞数据（她的口径：直接写不适用就行 ✓）
+    parts.push(renderPeriodPanel());
     // ⚠️ 这里**不要** push `renderStageBlock()`（透视那块）——
     //   插画只在「透视」频道那一页出现（数据同源 ✓）
     return parts.join('');
@@ -4292,14 +4298,29 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
           '<div><div class="field-label">颜色</div><div class="field-value">'+periodColorSwatch(pp.color)+'<span>'+safe(pp.color)+'</span></div></div>' +
           '<div><div class="field-label">质地</div><div class="field-value">'+safe(pp.texture)+'</div></div>' +
           '<div><div class="field-label">痛经</div><div class="field-value"><span class="bc-pain '+periodPainClass(pp.pain)+'">'+safe(pp.pain)+'</span></div></div>' +
-          '<div><div class="field-label">经期症状</div><div class="field-value">'+safe(pp.desc)+'</div></div>' +
+          '<div><div class="field-label">常态</div><div class="field-value">'+safe(pp.items || '无')+'</div></div>' +
+          (pp.off && pp.off !== '—' ? '<div><div class="field-label">非常态</div><div class="field-value">'+safe(pp.off)+'</div></div>' : '') +
         '</div>' +
       '</div>' +
     '</div>';
   }
   function renderPeriodPanel(){
     if(!currentPeriods || !currentPeriods.length){
-      return '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>暂无生理数据</div>';
+      // ★ 2026-11-11：没有经期数据也**不放空**，写「不适用」——
+      //   整块消失会被当成吞数据（她的口径：直接写不适用就行 ✓）
+      return '<div class="msg-block">' +
+        '<div class="block-head">' +
+          '<div class="block-avatar period">'+ICO.period+'</div>' +
+          '<span class="block-author">生理</span>' +
+          '<span class="block-tag period">生理</span>' +
+          '<span class="block-time">—</span>' +
+        '</div>' +
+        '<div class="embed-panel period">' +
+          '<div class="fields-grid">' +
+            '<div><div class="field-label">经期</div><div class="field-value">不适用（当前没有经期记录）</div></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
     }
     return currentPeriods.map(function(pp){
       var dayNum = String(pp.day).replace(/[^0-9]/g,'') || '—';
@@ -4322,8 +4343,12 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
             '<div><div class="field-label">痛经</div><div class="field-value"><span class="bc-pain '+periodPainClass(pp.pain)+'">'+safe(pp.pain)+'</span></div></div>' +
           '</div>' +
           '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">' +
-            '<div class="field-label">经期症状</div>' +
-            '<div class="field-value" style="font-weight:500;line-height:1.7;white-space:pre-wrap">'+safe(pp.desc)+'</div>' +
+            '<div class="field-label">常态</div>' +
+            '<div class="field-value" style="font-weight:500;line-height:1.7;white-space:pre-wrap">'+safe(pp.items || '无')+'</div>' +
+            ((pp.off && pp.off !== '—')
+              ? ('<div class="field-label" style="margin-top:8px">非常态</div>' +
+                 '<div class="field-value" style="font-weight:500;line-height:1.7;white-space:pre-wrap">'+safe(pp.off)+'</div>')
+              : '') +
           '</div>' +
         '</div>' +
       '</div>';

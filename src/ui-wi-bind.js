@@ -28,6 +28,9 @@ import {
 
 const PAGE_BOOKS = 14;
 const PAGE_ENTRIES = 20;
+// ★ 2026-11-12（她截图问过这里点选之后为什么没有分页、直接一个大列表）——
+//   角色卡那两份清单（选描述 / 从角色卡建角色）当初漏了分页，现在跟世界书条目同一个量 ✓
+const PAGE_CARDS = 20;
 
 /** 分页切片（越界自动夹回来 ✓） */
 function pageSlice(all, page, per) {
@@ -292,6 +295,7 @@ export function openCardPicker(key, onDone) {
             const q = h('input', { class: 'bc-input', placeholder: '搜索角色卡名字…' });
             const host = h('div');
             const list = allCards();
+            let page = 1;
             const paintList = () => {
                 clear(host);
                 const kw = q.value.trim().toLowerCase();
@@ -300,7 +304,9 @@ export function openCardPicker(key, onDone) {
                     host.appendChild(h('div', { class: 'bc-empty', text: list.length ? '没有匹配的角色卡' : '没读到角色卡' }));
                     return;
                 }
-                for (const c of hit) {
+                const { items, cur, total } = pageSlice(hit, page, PAGE_CARDS);
+                page = cur;
+                for (const c of items) {
                     host.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
                         h('span', { class: 'bc-textpair' },
                             h('span', { class: 'bc-label', text: c.name }),
@@ -314,8 +320,16 @@ export function openCardPicker(key, onDone) {
                         }),
                     ));
                 }
+                if (total > 1) {
+                    host.appendChild(h('div', { class: 'bc-row' },
+                        button('上一页', () => { page = cur - 1; paintList(); }, { disabled: cur <= 1 }),
+                        h('span', { class: 'bc-hint', text: `第 ${cur} / ${total} 页（共 ${hit.length} 张）` }),
+                        button('下一页', () => { page = cur + 1; paintList(); }, { disabled: cur >= total }),
+                    ));
+                }
             };
-            q.addEventListener('input', paintList);
+            // 换搜索词 ⇒ 回第 1 页（跟在第 3 页搜会看到空列表 ✗）
+            q.addEventListener('input', () => { page = 1; paintList(); });
             body.appendChild(h('div', { class: 'bc-row bc-search-row' }, q));
             body.appendChild(host);
             paintList();
@@ -365,6 +379,7 @@ export function openCardBuildTargets(onDone) {
             const q = h('input', { class: 'bc-input', placeholder: '搜索角色卡名字…' });
             const host = h('div');
             const list = allCards();
+            let page = 1;
             const paintList = () => {
                 clear(host);
                 const kw = q.value.trim().toLowerCase();
@@ -373,7 +388,9 @@ export function openCardBuildTargets(onDone) {
                     host.appendChild(h('div', { class: 'bc-empty', text: list.length ? '没有匹配的角色卡' : '没读到角色卡' }));
                     return;
                 }
-                for (const c of hit) {
+                const { items, cur, total } = pageSlice(hit, page, PAGE_CARDS);
+                page = cur;
+                for (const c of items) {
                     const on = sel.has(c.name);
                     const exists = targetList().some((t) => String(t.key) === c.name);
                     host.appendChild(h('div', {
@@ -392,8 +409,16 @@ export function openCardBuildTargets(onDone) {
                         ),
                     ));
                 }
+                if (total > 1) {
+                    host.appendChild(h('div', { class: 'bc-row' },
+                        button('上一页', () => { page = cur - 1; paintList(); }, { disabled: cur <= 1 }),
+                        h('span', { class: 'bc-hint', text: `第 ${cur} / ${total} 页（共 ${hit.length} 张）` }),
+                        button('下一页', () => { page = cur + 1; paintList(); }, { disabled: cur >= total }),
+                    ));
+                }
             };
-            q.addEventListener('input', paintList);
+            // 换搜索词 ⇒ 回第 1 页（不然勾选状态还在，但视野跳到别的页 ✗）
+            q.addEventListener('input', () => { page = 1; paintList(); });
             body.appendChild(h('div', { class: 'bc-row bc-search-row' }, q));
             body.appendChild(host);
             paintStatus();

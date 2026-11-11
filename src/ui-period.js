@@ -127,7 +127,7 @@ export function periodSettingsBlock(targetKey, repaint) {
     }, { min: 1, max: cap });
     daysInput.classList.add('bc-period-days');
 
-    const capTip = '最多第 ' + cap + ' 天'
+    const capTip = '插件按它算经期，最多第 ' + cap + ' 天'
         + (ovu !== null ? '（第 ' + Math.max(1, ovu - 1) + ' 天起是排卵窗口）' : '');
 
     box.appendChild(field('经期天数',

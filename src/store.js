@@ -852,16 +852,19 @@ export function setPeriodPrefsOf(key, patch) {
 setPeriodPrefsReader((key) => periodPrefsOf(key));
 
 // ---------------------------------------------------------------------------
-// ★★ 2026-11-12（她定的）：NPC 的经量 / 痛经**第一次进经期时掷一次**，之后一直用它
+// ★★ 2026-11-12（她定的）：NPC 的**经期天数 / 经量 / 痛经**第一次进经期时掷一次，之后一直用它
 //
-// 为什么掷：不掷就全是「中 / 轻」，几个人同时来月经，面板和正文读起来一个样
+// 为什么掷：不掷就全是「5 天 / 中 / 轻」，几个人同时来月经，面板和正文读起来一个样
 //   （她 2026-11-09 挑过"预览里每个对象数据都一样"的刺，同一个病根 ✓）
-// 为什么只掷一次：每次随机会让同一个人忽轻忽重，读起来跳；掷一次存住更像体质
-//   （跟「显怀周数第一次随机定、之后不重掷」同一个做法 ✓）
+// 为什么只掷一次：每次随机会让同一个人忽轻忽重、天数忽长忽短，读起来跳；
+//   掷一次存住更像体质（跟「显怀周数第一次随机定、之后不重掷」同一个做法 ✓）
 // ⚠️ 只给非 {{user}} 的人掷：她自己会去设置里填 ✓
 // ⚠️ 已经有 periodPrefs 的人一律不动（老存档里手配过的 NPC 不会被覆盖 ✓）
+// ⚠️ 只在这个周期开头那几天掷（第 1~3 天）：老存档里一个已经在经期中段的人，
+//   这时候改天数会让她当场"经期提前结束" ⇒ 宁可等下一个周期再掷 ✓
 const PERIOD_ROLL_FLOW = [['少', 25], ['中', 50], ['多', 25]];
 const PERIOD_ROLL_PAIN = [['无', 20], ['轻', 40], ['中', 30], ['重', 10]];
+const PERIOD_ROLL_DAYS = [3, 4, 5, 6, 7];
 
 function pickWeighted(list, rng = Math.random) {
     const total = list.reduce((n, x) => n + x[1], 0);
@@ -873,8 +876,17 @@ function pickWeighted(list, rng = Math.random) {
     return list[list.length - 1][0];
 }
 
+/** 均匀取一个（给天数用；rng 可注入，自测好断言 ✓） */
+function pickUniform(list, rng = Math.random) {
+    let raw = 0;
+    try { raw = Number(rng()); } catch { raw = 0; }
+    if (!Number.isFinite(raw)) raw = 0;
+    const i = Math.floor(Math.min(Math.max(raw, 0), 0.999999) * list.length);
+    return list[Math.min(i, list.length - 1)];
+}
+
 /**
- * NPC 第一次进经期时把经量 / 痛经掷定并存住（返回这次有没有掷）。
+ * NPC 第一次进经期时把经期天数 / 经量 / 痛经掷定并存住（返回这次有没有掷）。
  * 导出是给自测用的；生产路径在 upsertTargetResult 里调（只在正处经期时才调 ✓）。
  */
 export function rollPeriodTiersOnce(key, rng = Math.random) {
@@ -886,9 +898,14 @@ export function rollPeriodTiersOnce(key, rng = Math.random) {
         const inPeriod = String(t.profile?.phaseId || '') === 'menstrual'
             || /月经期|经期/.test(String(t.profile?.phase || ''));
         if (!inPeriod) return false;
+        // 只在周期开头那几天掷（已经在经期中段的不动，见顶上那条说明 ✓）
+        const day = Number(cycleDayNum(key));
+        if (!Number.isFinite(day) || day < 1 || day > 3) return false;
+        // 天数先按 3~7 掷，再由 setPeriodPrefsOf 按「排卵日减 2」那道夹统一收口 ✓
+        const days = pickUniform(PERIOD_ROLL_DAYS, rng);
         const flow = pickWeighted(PERIOD_ROLL_FLOW, rng);
         const pain = pickWeighted(PERIOD_ROLL_PAIN, rng);
-        return setPeriodPrefsOf(key, { flow, pain });
+        return setPeriodPrefsOf(key, { days, flow, pain });
     } catch { return false; }
 }
 
@@ -2151,9 +2168,18 @@ export function upsertTargetResult(res, opts = {}) {
     //   不该因为模型这轮没报表现就整块消失（她报过"不出现会被当成吞数据" ✓）
     const phaseTxtNow = String(t.profile?.phase || '');
     const inPeriodNow = /月经期|经期/.test(phaseTxtNow);
-    t.period = res.period && typeof res.period === 'object'
+    // ★★ 2026-11-12（她问的：没月经的人会不会被塞月经信息）——
+    //   非月经 / 无月经 / 孕期的人**根本不存在经期** ⇒ 模型就算瞎报一个 period 对象也不收 ✓
+    //   以前只判"模型有没有报"，没判"这个人有没有经期" ⇒ 男角色或非月经族能被塞一份经期读数 ✗
+    const canBleedNow = (() => {
+        try {
+            if (periodModeOf(t.key) !== 'normal') return false;
+            return !pregnantNowTarget(t);
+        } catch { return true; }
+    })();
+    t.period = (canBleedNow && res.period && typeof res.period === 'object')
         ? res.period
-        : (inPeriodNow ? {} : null);
+        : ((canBleedNow && inPeriodNow) ? {} : null);
     // ★ `period.day`（周期第几天）归插件 ——
     //   它手上有周期日（`cycleDayNum(key)`，跟阶段 / 判定 / 喂回都是同一个数 ✓）⇒
     //   契约不再问这一格，这里用插件算出来的值覆盖（AI 报什么都盖掉）；

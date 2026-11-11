@@ -3160,18 +3160,6 @@ export function moduleText(id, targetName = null, mode = null, xeno = false) {
 }
 
 /**
- * 正文里写着的那个「经期天数」，**不夹**（读不到 ⇒ NaN）。
- *
- * 为什么要单独留一个不夹的：面板要能发现"正文写的是 7、实际按 6 算"这件事，
- *   光给夹完的数就看不出来了（那会变成悄悄改数 ✗）。
- */
-export function periodDaysRawOf(targetKey = null) {
-    const text = String(moduleText('period_patch', targetKey) || '');
-    const m = text.match(/- 经期天数：\s*(\d+(?:\.\d+)?)/);
-    return m ? Number(m[1]) : NaN;
-}
-
-/**
  * ★ 经期天数最多能到几天。
  *
  * 为什么要有它：经期最晚得在**排卵窗口前一天**结束 ——
@@ -3227,16 +3215,15 @@ export function setPeriodPrefsReader(fn) {
 export function periodDaysOf(targetKey = null) {
     // ★ 2026-11-11：真相源先看**设置**（「经期表现」卡里点的天数）——
     //   以前只有补丁正文那一行，同一个数写两处必然打架 ✓
+    // ★ 2026-11-12（她：以后没人用老数据了，别再留兜底）：没设过就是 5 天，
+    //   不再去模块文字里找旧的那行「经期天数」✓
     let n = NaN;
     try {
         const p = periodPrefsReader ? periodPrefsReader(targetKey) : null;
         const d = Number(p?.days);
         if (Number.isFinite(d) && d > 0) n = Math.round(d);
-    } catch { /* 读不到设置就走正文兜底 */ }
-    if (!Number.isFinite(n)) {
-        const raw = periodDaysRawOf(targetKey);
-        n = (Number.isFinite(raw) && raw > 0) ? Math.round(raw) : 5;
-    }
+    } catch { /* 读不到就按默认 */ }
+    if (!Number.isFinite(n)) n = 5;
     return Math.max(1, Math.min(n, periodDaysCapOf(targetKey)));
 }
 

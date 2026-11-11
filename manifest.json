@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "soduiz",
-    "version": "2.4（2026-11-12-11）",
+    "version": "2.4（2026-11-12-16）",
     "homePage": "https://github.com/soduiz/SillyTavern-Bodycord",
     "auto_update": false,
     "hooks": {

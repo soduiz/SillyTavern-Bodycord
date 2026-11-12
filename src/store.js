@@ -1880,13 +1880,16 @@ export function upsertTargetResult(res, opts = {}) {
         // ③ 兜底：没有任何同名角色 ⇒ 报真名就是本人（老行为保留 ✓，不然玩家那份会丢）
         if (!key && (rawName === persona || cleanName === persona)) key = USER_KEY;
         // ⚠️⚠️ 这个开关的名字是「**自动模式**发现新的女性角色时自动建档」——
-        //   所以它**只能**在 targetMode === 'auto' 时生效 ✗
+        //   所以它**只能**在自动那两档（auto / autoFemale）时生效 ✗
         //   （默认「仅追踪 {{user}}」+ 这个开关默认是开的
         //     ⇒ 推演只要报出一个新角色名，插件就给他建档 ⇒ 面板切换条里冒出一堆
         //      本来不想跟踪的角色 ✗。开关写着"自动模式"，实现却没管模式 ✓）
-        //   ⇒ 显式要求模式是 auto：别的模式该追谁由 targetNames 说了算。
+        //   ⇒ 显式要求模式是自动那两档：别的模式该追谁由 targetNames 说了算。
         //   ★ 建档用**剥过装饰**的那个名字（治「示例角色（用户本人 / 主控角色）」这种幽灵对象 ✓）
-        if (!key && settings().targetMode === 'auto' && settings().judge.autoCreateTargets) {
+        //   ★ 2026-11-12：「自动追踪女性角色」跟 auto 走同一条建档路，
+        //     性别条件在提示词里（代码不验性别）✓
+        if (!key && (settings().targetMode === 'auto' || settings().targetMode === 'autoFemale')
+            && settings().judge.autoCreateTargets) {
             key = cleanName || rawName;
             autoNew = true;
         }
@@ -2422,7 +2425,19 @@ export function trackingRoster() {
     //   不进推演、不吃 token、**也不占人数上限** ✓（升格之后就回来了 ✓）
     const active = pool;
     if (s.judge.noTargetLimit === true) return active;
-    return active.slice(0, Math.max(1, s.judge.maxTargets || 50));
+    const cap = Math.max(1, s.judge.maxTargets || 50);
+    // ★★ 2026-11-12（自动追踪的"有人能用有人不能用"）——
+    //   以前一律 `slice(0, cap)`，取的是**最早建档**的那批 ⇒ 自动模式新追到的人
+    //   永远排在最后，人数一满就再也进不了名单（档案建了、但从来不推演，界面上看不出来）✗
+    //   ⇒ 自动模式按「最近有动静」排：`updatedAt` 每轮收结果时都会刷新 ✓
+    //   本人固定排第一（关掉追踪本人时 pool 里本来就没有他 ✓）
+    if (s.targetMode === 'auto' || s.targetMode === 'autoFemale') {
+        const head = active.filter(t => t.isUser);
+        const rest = active.filter(t => !t.isUser)
+            .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
+        return [...head, ...rest].slice(0, cap);
+    }
+    return active.slice(0, cap);
 }
 
 // ---------------------------------------------------------------------------

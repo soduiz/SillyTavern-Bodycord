@@ -174,7 +174,7 @@ const CONTRACT_TEMPLATE = `你必须只输出一个 JSON 对象，结构如下�
   ],
   "newFaces": [
     {
-      "name": "本轮剧情里出现过、又不在「追踪对象名单」里的名字。照剧情里的写法写，不要加括号说明",
+      "name": "本轮剧情里出现过、又不在「追踪对象名单」里的名字。照剧情里的写法写，不要加括号说明@@NEWFACE_TRACK_NOTE@@",
       "race": "这个人的种族。优先看世界书设定 / 角色描述 / 名单里写的设定，那里写明了就以它为准；没写明再按剧情线索判。判不出来就留空，不要编",
       "race_source": "上面那个种族是怎么来的，只填这三个词之一：设定（世界书 / 角色描述 / 名单设定里明写了真相）／推断（设定没写，从剧情或角色卡推的）／存疑（材料里确实没写、也推不出来）",
       "why": "@@NEW_FACE_WHY_ENUM@@，只填这个词"
@@ -184,7 +184,7 @@ const CONTRACT_TEMPLATE = `你必须只输出一个 JSON 对象，结构如下�
 @@BODY_EXPERIENCED@@
   "targets": [
     {
-      "name": "对象名字。玩家本人一律写 {{user}}；别的对象照「追踪对象名单」里的名字写，名字后面括号里的说明不要抄",
+      "name": "对象名字。玩家本人一律写 {{user}}；别的对象照「追踪对象名单」里的名字写，名字后面括号里的说明不要抄@@AUTO_TARGET_NOTE@@",
       "present": true,
 @@TAGS_FIELD@@
       "cot": "本轮的推演过程，分点写。基准几类是：时间锚定 / 结算检查 / 防护判定 / 状态演化 / 是否触发受精或着床判定 / 玩家自定义覆盖项；各规则模块还会另外指定它要写哪几行，一并写上。未涉及的就写「不触发」。孕期对象另外加一行「胎数与显怀」：先写你从【上一轮状态】的「胎儿」那一行读到的胎数（单胎 / 双胎 / 三胎…，不许默认成单胎），再写【上一轮状态】的「显怀」那一行给的是已显怀还是未显怀、row2 要不要写肚子（没有那一行时才自己按孕周和胎数判；孕周没跳时间就是「周期 · 怀孕状态」那个数，跳了就是上面加完的那个数）。这一轮正文如果把时间跳到了第二天或更晚，孕周用「周期 · 怀孕状态」那个数加上跳过的天数（7 天算一周、不满一周按天算），按加完的周数判显怀与身体状态，不要拿跳之前的周数判。这一轮要先把加法在 cot 里写出来，写成三步：第 A 天 ＋ 跳过天数 ＝ 第 B 天 ＝ 孕 X 周+Y 天（A 就是「周期 · 怀孕状态」括号里那个天数），写完再判显怀。",
@@ -335,6 +335,19 @@ function buildContract(roster = []) {
     try {
         out = out.replace(/@@DATE_EXAMPLE@@/g, formatFictionDate({ y: 1, m: 1, d: 1 }, activeCalendarNow()));
     } catch { out = out.replace(/@@DATE_EXAMPLE@@/g, '1年01月01日'); }
+    // ★★ 2026-11-12：自动追踪模式下，新角色**必须写进 targets 才会被追** ——
+    //   以前模板里 targets.name 写着「别的对象照名单里的名字写」，而末尾【自动追踪提示】
+    //   又说「可以在 targets 里额外增加一条记录」，两句话直接打架 ⇒ 模型各挑一半：
+    //   守规矩的只往 newFaces 报名字（那里只建轻档、永远不进推演），敢越界的才进 targets
+    //   ⇒ 同一版插件，有人能被自动追、有人不能，换模型结果也不一样 ✗
+    //   现在按模式把话说死：自动模式点名"新角色写 targets"，其他模式不提这件事 ✓
+    const _autoMode = (() => { try { return settings().targetMode === 'auto' || settings().targetMode === 'autoFemale'; } catch { return false; } })();
+    out = out.replace(/@@AUTO_TARGET_NOTE@@/g, _autoMode
+        ? '；自动追踪模式下，按【自动追踪提示】新加的角色也写在这里，而且这一条要写完整'
+        : '');
+    out = out.replace(/@@NEWFACE_TRACK_NOTE@@/g, _autoMode
+        ? '。这一格只登记名字和种族，不会开始追踪；要开始追踪的新角色按【自动追踪提示】写进 targets'
+        : '。这一格只登记名字和种族，不会建身体档案');
     // ★ 钟点 ——
     //   历法那档是「**不记钟点**」时**整行不问**（省 token ✓，也免得模型瞎编 ✓）
     try {
@@ -1933,8 +1946,22 @@ export function buildJudgeMessages(roster, pool, presetText = '', rejudge = [], 
         '【本轮骰值】',
         poolPrompt(pool) || '（本轮无骰值）',
         '',
-        s.targetMode === 'auto'
-            ? `【自动追踪提示】\n除了名单上的对象，如果最近正文里出现了新的角色、且该角色的身体状态值得建档追踪，可以在 targets 里额外增加一条记录（本轮最多新增 ${Math.max(0, (s.judge.maxTargets || 50) - roster.length)} 个）。没有就只输出名单上的对象。\n${s.autoHints ? '额外规则：' + s.autoHints : ''}`
+        (s.targetMode === 'auto' || s.targetMode === 'autoFemale')
+            ? (() => {
+                // ★ 2026-11-12：以前只说"可以在 targets 里加一条"，但没说不加会怎样，
+                //   也没说 newFaces 只建轻档 ⇒ 模型把新角色写进 newFaces 就以为完事了 ✗
+                //   现在把两条路的结果写清楚，并把名额已满的情况明说（不再静默排不进去）✓
+                // ★ 同一天加的 autoFemale：条件仍然只写在提示词里，代码不验性别 ✓
+                const unlimited = s.judge.noTargetLimit === true;
+                const room = unlimited ? null : Math.max(0, (s.judge.maxTargets || 50) - roster.length);
+                const roomTxt = unlimited ? '不限' : String(room);
+                const female = s.targetMode === 'autoFemale';
+                const who = female ? '新的女性角色' : '新的角色';
+                const sexRule = female
+                    ? '只报女性角色：女性、雌性、女性形态都算；男性、雄性和性别不明的人不要报。'
+                    : '';
+                return `【自动追踪提示】\n除了名单上的对象，如果最近正文里出现了${who}、而且这个人的身体状态值得建档追踪，就在 targets 里额外增加一条完整记录（vars、cot、profile 都要写，这一轮发生的身体事实也要写进去），本轮最多新增 ${roomTxt} 个。${sexRule}只把名字写进 newFaces 不会开始追踪：那一格只登记名字和种族，不进推演名单。${(!unlimited && room === 0) ? '名额已经满了，这一轮不要新增。' : ''}没有这种角色就只输出名单上的对象。\n${s.autoHints ? '额外规则：' + s.autoHints : ''}`;
+            })()
             : '',
         '【最近剧情正文（由旧到新）】',
         transcriptBlock(s.judge.historyDepth || 1, s.judge.includeUserMessages !== false, endFloor),

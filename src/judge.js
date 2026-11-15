@@ -4178,7 +4178,12 @@ export async function runJudge({ signal = null, force = false, rejudge = [], all
     for (const item of json.targets) {
         // ★ 2026-10-17：把"这次推演落在哪一楼"传下去 —— 近期性行为清单靠它做到
         //   「每一楼只留一条、重推同一楼就替换那一条」（只替换 ✓）
-        const t = upsertTargetResult(item, { floor: safeLastMessageIndex(), heritageAsked: heritageAskedKeys });
+        //   ★ 2026-11-15：必须传**这一趟推的那一楼**（`judgeFloor`），不是"最后一个正文层"——
+        //     补推老楼层时两者不一样，传错会把替换落到错误的楼层上（那楼的记录被误删 / 这一楼没替换 ✗）
+        const t = upsertTargetResult(item, {
+            floor: Number.isFinite(judgeFloor) ? judgeFloor : safeLastMessageIndex(),
+            heritageAsked: heritageAskedKeys,
+        });
         // ★ 2026-11-09（B 方案）：这里**不再**自动替她记临时映射了。
         //   以前判出来的种族图鉴里没有，就自己挑"最像的一条"借走数值和正文 ——
         //   她既不知道、借错了也看不见 ✗

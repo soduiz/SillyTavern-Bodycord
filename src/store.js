@@ -6645,20 +6645,48 @@ export function applySexEventLog(key, events, opts = {}) {
     } catch { /* 搬不动不影响这一轮 */ }
     const fl = Number.isFinite(Number(opts.floor)) ? Number(opts.floor) : null;
     const fallbackTime = [String(opts.date || '').trim(), String(opts.clk || '').trim()].filter(Boolean).join(' ');
+    // ★★ 2026-11-15（她问「B 我不是以前就让你修过了」后核实）——
+    //   「只替换：每一楼只留一条」在 2026-11-09 合并成一个入口时**丢了**（10-17 那版
+    //   是按楼层先删后加）⇒ 重推同一楼就变成再叠一笔。
+    //   ⇒ 现在补回来：这一轮**真的报来了至少一条**时，先把同一楼原来记的那几条撤掉，
+    //     再按这一轮报的记 ✓；别的楼层一个字不动 ✓。
+    //   ⚠️ 报空 / 报到认不出来 ⇒ **一条都不删**（不动清单；模型漏报不许吞记录 ✗）
+    //   ⚠️ 没有楼层号（老数据 / 导入）⇒ 不参与这条判据 ✓
+    const list = (Array.isArray(events) ? events : []).filter((ev) => ev && typeof ev === 'object'
+        && (String(ev.by || '').trim() || String(ev.note ?? ev.event ?? '').trim()));
+    const norm = list.map((ev) => ({
+        ev,
+        time: String(ev.time || '').trim() || fallbackTime,
+        by: String(ev.by || '').trim(),
+        event: String(ev.note ?? ev.event ?? '').trim(),
+    }));
+    const sameOne = (a, b) => a.time === b.time && a.by === b.by && a.event === b.event;
+    if (norm.length && fl !== null) {
+        try {
+            const bag = sexBag(key);
+            const oldRows = bag.filter((x) => Number(x?.floor) === fl);
+            // 这一轮报的和这一楼原来记的一字不差 ⇒ 什么都不用做（也别删了再加，白折腾）
+            const unchanged = oldRows.length === norm.length
+                && norm.every((one) => oldRows.some((x) => sameOne(x, one)));
+            if (!unchanged) {
+                const kept = bag.filter((x) => Number(x?.floor) !== fl);
+                if (kept.length !== bag.length) {
+                    bag.length = 0;
+                    for (const x of kept) bag.push(x);
+                }
+            }
+        } catch { /* 替换失败不影响这一轮记新的 */ }
+    }
     let added = 0;
-    for (const ev of (Array.isArray(events) ? events : [])) {
-        if (!ev || typeof ev !== 'object') continue;
-        const by = String(ev.by || '').trim();
-        const event = String(ev.note ?? ev.event ?? '').trim();
-        if (!by && !event) continue;
+    for (const one of norm) {
         const ok = addSexEntry({
-            time: String(ev.time || '').trim() || fallbackTime,
-            by,
-            event,
-            protection: ev.protection,
-            amount: ev.amount,
-            in_womb: ev.in_womb,
-            count: ev.count,
+            time: one.time,
+            by: one.by,
+            event: one.event,
+            protection: one.ev.protection,
+            amount: one.ev.amount,
+            in_womb: one.ev.in_womb,
+            count: one.ev.count,
         }, { key, floor: fl });
         if (ok) added++;
     }
@@ -13191,15 +13219,39 @@ export function contactsForPanel(key, more = null) {
     const fromInsem = new Set();
     // ★ 2026-10-23：同一件事在受孕账 + 性行为清单里各有一条 ⇒ 联系人会并排显示两条。
     //   这里按「日期 + 钟点 + 人物」认领：账本里已经有的那一笔，性行为清单里同时间的就跳过 ✓
-    const insemAt = new Map();
+    // ★★ 2026-11-15（她问「A 我不是以前就让你修过了」）——
+    //   10-23 那个键要求**两边都有钟点**；而默认历法不记钟点 ⇒ 账本那条钟点为空、
+    //   清单那条却带着模型自己写的钟点（契约让它写"像 2019年05月16日 15:32"）⇒ 永远对不上，
+    //   同一件事照样显示两条、页头"共 N 次"翻倍 ✗
+    //   ⇒ 认领改成两级，而且**按条数一对一消耗**：
+    //     ① 两边都有钟点、且一模一样 ⇒ 精确认领；
+    //     ② 否则只要「同一天 + 同一个人」⇒ 也认领一条（一天真的做了两次时是两条，
+    //        各自消耗一条，不会被并成一条 ✗）。
+    const insemAt = new Map();      // 人物 -> Map(日期|钟点 -> 还剩几条)
+    const insemDay = new Map();     // 人物 -> Map(日期 -> 还剩几条)
+    const bumpCount = (m, by, k) => {
+        if (!k) return;
+        let one = m.get(by);
+        if (!one) { one = new Map(); m.set(by, one); }
+        one.set(k, (Number(one.get(k)) || 0) + 1);
+    };
+    const takeCount = (m, by, k) => {
+        if (!k) return false;
+        const one = m.get(by);
+        if (!one) return false;
+        const n = Number(one.get(k)) || 0;
+        if (n <= 0) return false;
+        one.set(k, n - 1);
+        return true;
+    };
     for (const x of all) {
         if (String(x.target || '') !== String(want)) continue;
         const by = String(x.by || '').trim() || '未标注';
         fromInsem.add(by);
         const k0 = timeKeyOf(x.depotDate, x.clk);
         if (k0) {
-            if (!insemAt.has(by)) insemAt.set(by, new Set());
-            insemAt.get(by).add(k0);
+            bumpCount(insemAt, by, k0);
+            bumpCount(insemDay, by, String(k0).split('|')[0]);
         }
         if (!mine.has(by)) {
             const t = resolveExistingTargetByName(by);
@@ -13222,8 +13274,16 @@ export function contactsForPanel(key, more = null) {
         //   ⇒ 现在一律只写事件本身，两种人一样对待 ✓
         const hadInsem = fromInsem.has(r.by);
         // ★ 账本里已经有同一时间的那一笔 ⇒ 这条只是同一件事的重复记录，跳过 ✓
+        //   （两级认领见上面那段：精确对不上就按"同一天 + 同一个人"认领一条 ✓）
         const k1 = timeKeyOfText(r.time);
-        if (hadInsem && k1 && insemAt.get(r.by)?.has(k1)) continue;
+        if (hadInsem && k1) {
+            const dayKey = String(k1).split('|')[0];
+            if (takeCount(insemAt, r.by, k1)) {
+                takeCount(insemDay, r.by, dayKey);   // 精确消耗时把"当天"那本也一起消掉 ✓
+                continue;
+            }
+            if (takeCount(insemDay, r.by, dayKey)) continue;
+        }
         if (!mine.has(r.by)) {
             const t = resolveExistingTargetByName(r.by);
             mine.set(r.by, { key: t?.key || '', name: r.by, race: raceOfTarget(t), times: 0, items: [] });

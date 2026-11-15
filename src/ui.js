@@ -49,6 +49,7 @@ import {
     canShiftRecordedDatesBy, refreshDerivedAfterTimeMove,
     postpartumOf, clearPostpartumFor,
     trackModeOf, isTargetLoose, setTrackMode, estrusTargets, estrusInfoOf,
+    captureStateData, markManualEdit,
 } from './store.js';
 // 2026-11-01：上面那排是改数值里的「剧情日期」要用的（直接写时间轴那套现成接口，别另造 ✓）。
 //   ⚠️ 这类说明只能写在 import 的**外面**：括号里出现注释会被 imports 那套自测当成"导入了一个叫 // 的东西" ✗
@@ -1578,7 +1579,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '2.7';
-export const BUILD_STAMP = '2026-11-15-8';
+export const BUILD_STAMP = '2026-11-15-9';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -4504,7 +4505,7 @@ function buildKnownFactsBox(t) {
         }
         const it = recordInsemination(
             { by, note: '手动补录', protection: '内射', guard: '内射' },
-            { target: key, day: Number(dayNow), round: (state().snapshots?.length || 0), sub: '', lifeRoll },
+            { target: key, day: Number(dayNow), round: (state().snapshots?.length || 0), sub: '', lifeRoll, manual: true },
         );
         if (!it) { say(false, '这一笔没记上（这一轮同一个人已经补过一条了）'); return; }
         // ★★ 2026-10-18（手动补的没有增加）——
@@ -5333,6 +5334,24 @@ function openFieldEditor(focusKey) {
     //   （打开修改器就重算 ⇒ 不用为看这一个数再掏一次推演钱 ✓）
     try { refreshCycleFieldsOf(t.key); } catch { /* 算不出来就保留原值 ✓ */ }
 
+    // ★★ 2026-11-15（反馈复查：手改之后，同一楼再推会拿旧账把手改冲掉）——
+    //   这里记的是"玩家这一趟到底动没动过数据"：关窗 / 保存时跟打开那一刻比一次，
+    //   真的变了才打 `manualEditAt`。推演那边靠它判断"这一楼算完之后被手改过"
+    //   ⇒ 不再拿旧检查点回滚，把手改整份冲掉（判据见 judge.js 那段说明）✓
+    //   ⚠️ 用 `captureStateData()`（去掉快照 / 检查点这些"书架"）比对，
+    //     免得推演顺手写的快照被误当成"玩家手改" ✓
+    const stateAtOpen = (() => {
+        try { return JSON.stringify(captureStateData()); } catch { return ''; }
+    })();
+    let manualMarked = false;
+    const noteManualEditIfChanged = () => {
+        if (manualMarked || !stateAtOpen) return;
+        try {
+            if (JSON.stringify(captureStateData()) === stateAtOpen) return;
+            markManualEdit();
+            manualMarked = true;
+        } catch { /* 比不出来就算了，别挡保存 */ }
+    };
     const draft = { ...t.profile };
     const inputs = {};
     let firstFocus = null;
@@ -5351,7 +5370,7 @@ function openFieldEditor(focusKey) {
         width: 860,
         // ★ 减密度：弹窗里也走「？」（改数值和时光机弹窗也需要 ✓）
         help: [
-            '改完点保存，立刻反映到状态面板上。下一次自动推演会以你改过的内容为起点',
+            '改完点保存，立刻反映到状态面板上。之后这一楼再点推演也会保留你改的这份（不会拿这一楼之前的账把手改冲掉）；真正的下一楼推演会以你改过的内容为起点',
             '最上面那块「剧情日期」和它下面的「时间跳跃与修正」动的是「整条时间轴」（一个聊天只有一根），不是当前这个人一个人的；这两块各有自己的按钮，点了就生效，不用等这个弹窗的保存',
             '「数据项六 · 胎儿状态」那一格下面可以按每个胎儿单独填（种族 / 性别 / 致孕方 / 孕期 / 预产期），不用自己记那串格式；已经出生的孩子在悬浮球菜单的「胎儿 / 孩子」里',
             '敏感带那一块改的是这个人当前的敏感带值，不是「初始设定」；初始设定在设置 → 规则补丁 → 敏感带初始设定里',
@@ -5854,6 +5873,8 @@ function openFieldEditor(focusKey) {
             //   ⚠️ 一定要当场算：点完界面一动不动，玩家会以为没生效 ✗（做了要有反馈 ✓）
             const unlockField = (fieldKey, inputEl) => {
                 try { clearProfileFix(t.key, fieldKey); } catch { /* 忽略 */ }
+                // ★ 2026-11-15：交回插件也是玩家亲手动的一次 ⇒ 同一楼重推不许回滚把它冲掉 ✓
+                try { markManualEdit(); } catch { /* 忽略 */ }
                 let ok = false;
                 try { ok = resnapProfileField(t.key, fieldKey); } catch { ok = false; }
                 const now = ok ? String(t.profile?.[fieldKey] ?? '') : '';
@@ -5940,10 +5961,15 @@ function openFieldEditor(focusKey) {
             try { refreshAllFloors(); } catch { /* 忽略 */ }
             refreshAll();
             const lockedCount = FIELD_DEFS.filter((f) => String(profileAtOpen[f.key] ?? '') !== String(draft[f.key] ?? '')).length;
+            // ★ 2026-11-15：这一趟真改过东西 ⇒ 打上"玩家手改"时间戳（推演那边靠它保命）
+            noteManualEditIfChanged();
             window.toastr?.success?.(lockedCount
                 ? `已保存（你改过的 ${lockedCount} 格先听你的；账一变插件就自动接管）`
                 : '已保存');
         },
+        // ★ 2026-11-15：点 ✕ 关窗也要记账 —— 弹窗里有些入口（痕迹 / 记录 / 设为孕 / 日期）
+        //   是点了就生效的，不点"保存"也真的改了数据 ⇒ 这些也得算手改 ✓
+        onClose: () => { noteManualEditIfChanged(); },
     });
 }
 
@@ -6071,10 +6097,16 @@ async function doJudge(rejudge = [], opts = {}) {
         });
         if (r.ok) {
             const names = (r.updated || []).join('、') || '无变化';
-            window.toastr?.success?.(
-                rejudgeKeys.length ? `已按新设定重判：${names}`
-                    : (bfFloor !== null ? `第 ${bfFloor} 楼补推完成：${names}` : `推演完成：${names}`),
-            );
+            // ★ 2026-11-15：这一楼已经算过、之后玩家手改过 ⇒ 推演**故意不重算**
+            //   （重算会先回滚到"这一楼之前"，把刚改的全冲掉）⇒ 说清是保留了手改，不是没跑 ✓
+            if (r.keptManual) {
+                window.toastr?.info?.('这一楼你已经手改过：保留了你的改法，没有重算（要按新设定重算，用设置页的「按新设定重判」）');
+            } else {
+                window.toastr?.success?.(
+                    rejudgeKeys.length ? `已按新设定重判：${names}`
+                        : (bfFloor !== null ? `第 ${bfFloor} 楼补推完成：${names}` : `推演完成：${names}`),
+                );
+            }
             refreshRaw({ force: true });
             commit();
         } else if (r.blocked) {

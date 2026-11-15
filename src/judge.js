@@ -45,7 +45,8 @@ import {
     cycleDayNow, cycleStartDateOf, setCycleDayOf, ensureCycleState,
     beginCycleAfterSettle, drawCycleLenNowOf,
     postpartumOf, postpartumMarkerOf, startPostpartumFor, clearPostpartumFor, handOverPostpartum, inPostpartumOf, conceiveDuringPostpartum,
-    setCheckpoint, checkpointInfo, restoreCheckpoint, hashText,
+    setCheckpoint, checkpointInfo, restoreCheckpoint, hashText, manualEditSeq, syncLastFloorSnapshot,
+    captureManualOverlay, restoreManualOverlay,
     getFloorCandidate, setFloorCandidate, restoreCandidate, bodyLockOf, periodModeOf, traceOnOf, getOvuJudgment,
     captureStateData, restoreStateData, addAchievements, collectReportedAchievements, addChildren, getImpregnatorLocks, isExcluded,
     USER_KEY,
@@ -3674,11 +3675,52 @@ export async function runJudge({ signal = null, force = false, rejudge = [], all
     const judgeSwipe = currentSwipeId(hasBackfill ? judgeFloor : null);
     const judgeHash = hashText(lastMessageText(hasBackfill ? judgeFloor : null));
 
+    // ★★ 2026-11-15（反馈复查：手改数值之后，同一楼再推会把改动冲掉）——
+    //   复查：同一楼重推会先 `restoreCheckpoint()` 整份回滚到「这一楼之前」，
+    //   而那一份是玩家**手改之前**的状态 ⇒ 数值 / 痕迹 / 周期日 / 剧情日期 / 设的孕
+    //   全被静默冲掉，界面看着就是"改了也白改" ✗（项目红线：任何数据都不许吞）
+    //   ⇒ 判据：这一楼**已经算成功过**（有它的候选记录）＋ 之后玩家亲手改过 ＋ 不是"重判"
+    //      ⇒ 不回滚、不重算，保留玩家改完的这一份（改数值那边已经把面板文字同步过了）
+    //   ⚠️ 正文换了（指纹变了）/ 点了「按新设定重判」/ 补推 ⇒ 照常重算 ✓
+    if (!hasBackfill && !rejudgeKeys.length) {
+        try {
+            const cpNow = checkpointInfo();
+            const editSeq = manualEditSeq();
+            const candNow = (judgeFloor >= 0 && judgeHash) ? getFloorCandidate(judgeFloor, judgeHash) : null;
+            // ⚠️ 比的是「候选记录的顺序号」：那一份的时间点 ＝ **这一楼算完**。
+            //   手改在它之后 ⇒ 现在这份状态才是最新的；
+            //   手改在它之前（比如上一趟刚重算完）⇒ 走下面的常规路线 ✓
+            if (cpNow && cpNow.floor === judgeFloor && candNow
+                && editSeq > 0 && editSeq > (Number(candNow.seq) || 0)) {
+                refreshRaw({ force: true });
+                try { syncLastFloorSnapshot(); } catch { /* 忽略 */ }
+                commit();
+                console.log('[Bodycord] 这一楼你手改过：保留你改的那份（不回滚、也不重算）');
+                return {
+                    ok: true, keptManual: true, floor: judgeFloor, updated: [], missed: [],
+                    log: '（这一楼你手改过：保留了你的改法，没有重算）',
+                };
+            }
+        } catch (e) { console.warn('[Bodycord] 手改保护检查失败', e); }
+    }
+
     // ① 这一条候选已经算过 ⇒ 读记录，走人（一次调用都不发）
     //   ⚠️ 带重判名单时**不许走这条捷径**：读出来的记录正是"按旧设定算的那份" ✗
     if (!hasBackfill && !force && !rejudgeKeys.length && judgeFloor >= 0 && judgeHash) {
         try {
-            if (getFloorCandidate(judgeFloor, judgeHash)) {
+            const cand = getFloorCandidate(judgeFloor, judgeHash);
+            if (cand) {
+                // ★ 2026-11-15：记录是**手改之前**存的那份 ⇒ 直接套回去就是把玩家的改动冲掉 ✗
+                //   （典型：改完数值刷新页面 / 切回聊天，自动推演走这条捷径）
+                if (manualEditSeq() > (Number(cand.seq) || 0)) {
+                    refreshRaw({ force: true });
+                    commit();
+                    console.log('[Bodycord] 这条候选的记录是手改之前的，保留玩家改过的这一份');
+                    return {
+                        ok: true, cached: true, keptManual: true, floor: judgeFloor, updated: [], missed: [],
+                        log: '（保留了玩家手改过的那一份，没有拿旧记录盖回去）',
+                    };
+                }
                 restoreCandidate(judgeFloor, judgeHash);
                 refreshRaw({ force: true });
                 console.log('[Bodycord] 这条候选回复已经算过了，直接读记录（不调接口）');
@@ -3698,7 +3740,11 @@ export async function runJudge({ signal = null, force = false, rejudge = [], all
         try {
             const cp = checkpointInfo();
             if (cp && cp.floor === judgeFloor) {
+                // ★ 2026-11-15：回滚是**整份套用** ⇒ 先把玩家的手改层抄下来、回滚完再套回去，
+                //   否则「换了正文再推」会把手改过的几格静默冲掉（项目红线：不许吞数据）✓
+                const manualOv = (() => { try { return captureManualOverlay(); } catch { return null; } })();
                 const back = restoreCheckpoint();
+                if (manualOv) { try { restoreManualOverlay(manualOv); } catch { /* 忽略 */ } }
                 if (back !== null) console.log('[Bodycord] 这一楼换了内容，已回滚到它之前的状态（楼层 ' + back + '）');
                 // ★★ 2026-10-23（她报：刚着床内视图就有胚胎 —— 追下去挖出来的洞）——
                 //   `restoreCheckpoint()` 走的是「整份套用状态」，它会把 `targets` 换成
@@ -4958,8 +5004,13 @@ export async function runJudge({ signal = null, force = false, rejudge = [], all
                 const d2 = fertilityRateTextOf(t.key);
                 if (d2) t.profile.d2 = d2;
             }
-            const d4 = impregnatorTextOf(t.key);
-            if (d4) t.profile.d4 = d4;
+            // ★ 2026-11-15（反馈复查：这一格被自动重算无条件覆盖，手改存不住）——
+            //   `d4` 这一句原来**不看手改修正** ⇒ 玩家在改数值里填的致孕方，
+            //   下一楼推演无条件被插件算的「无」盖掉（d2 / d5 都看了，就漏了这一格 ✗）
+            if (!isProfileFieldFixed(t.key, 'd4')) {
+                const d4 = impregnatorTextOf(t.key);
+                if (d4) t.profile.d4 = d4;
+            }
             // ★★ 2026-10-28（她报：d5 晚一轮 / 快照里还是旧状态）——
             //   d5 的前半截要在**这一轮的 awareness_event 写完之后**再拼一次。
             //   `upsertTargetResult` 排在事件之前 ⇒ 那一步拼出来的是旧状态；

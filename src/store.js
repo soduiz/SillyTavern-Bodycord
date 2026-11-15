@@ -5337,7 +5337,100 @@ const SHELF_KEYS = new Set(['snapshots', 'checkpoint', 'floorCandidates', 'rollb
     // ★ 2026-10-23：**冻结标记不能跟着恢复一起被抹掉** ——
     //   她报"设为未孕后又变回已孕"的真因就在这：`applyStateData` 会把不在记录里的键全删掉，
     //   于是 conceiveHold 被删、孕和提醒又被候选/回滚点带回来 ✗
-    'conceiveHold']);
+    'conceiveHold',
+    // ★ 2026-11-15：「玩家手改过」的记账（顺序号 / 时间戳）也**不跟着回滚** ——
+    //   它是"谁先谁后"的判据，不是内容；跟着回滚就会丢顺序（见 `markManualEdit` 的说明）✓
+    'manualEditAt', 'manualEditSeq', 'editSeq']);
+
+// ---------------------------------------------------------------------------
+// ★★ 玩家手改的记账（2026-11-15，反馈复查：手改过的数据会在同一楼重推时被冲掉）
+//
+// 病根：同一楼重推会先 `restoreCheckpoint()` 整份回滚到「这一楼之前」——
+//   那一份是**玩家手改之前**的状态 ⇒ 数值 / 痕迹 / 周期日 / 剧情日期 / 设的孕
+//   全被静默冲掉，界面上就是"又变成没有改之前的样" ✗
+// ⇒ 每次玩家亲手改数据记一个**顺序号**；检查点 / 候选记录也各记一个。
+//   推演那边（judge.js）拿顺序号比"这一楼算完（候选记录）之后玩家有没有再改过"——
+//   有 ⇒ 不再拿旧检查点回滚。
+// ⚠️ 为什么不用 `Date.now()`：同一毫秒内先算完、再手改、再点推演，
+//   时间戳会相等 ⇒ 判不出先后（自测里一跑就复现 ✗）⇒ 用单调递增的顺序号 ✓
+// ---------------------------------------------------------------------------
+
+/** 下一个顺序号（只在"书架"里有，不进快照 / 检查点） */
+function nextEditSeq() {
+    const s = state();
+    const n = (Number(s.editSeq) || 0) + 1;
+    s.editSeq = n;
+    return n;
+}
+
+/** 记一笔「玩家刚手改过数据」（只在玩家动手的地方调 ✓） */
+export function markManualEdit() {
+    const s = state();
+    s.manualEditSeq = nextEditSeq();
+    s.manualEditAt = Date.now();
+    commit();
+}
+
+/** 最近一次手改是什么时候（没改过 ⇒ 0；看看用的时间戳） */
+export function manualEditAt() {
+    return Number(state().manualEditAt) || 0;
+}
+
+/** 最近一次手改的顺序号（没改过 ⇒ 0） */
+export function manualEditSeq() {
+    return Number(state().manualEditSeq) || 0;
+}
+
+/**
+ * 抓一份「玩家手改层」（改数值里那几格的修正 ＋ 敏感带）。
+ *
+ * 为什么要单独抓：`restoreCheckpoint()` / `restoreCandidate()` 是**整份套用**，
+ *   会把 `profileFix` 一起换成旧的那份 ⇒ 玩家手改过的几格跟着没了 ✗
+ *   ⇒ 回滚前后各套一次，让"手改是修正层、不是这一楼算出来的账"这个语义成立 ✓
+ */
+export function captureManualOverlay() {
+    const out = { targets: {} };
+    try {
+        for (const [k, t] of Object.entries(state().targets || {})) {
+            const fix = (t && typeof t.profileFix === 'object' && t.profileFix)
+                ? JSON.parse(JSON.stringify(t.profileFix)) : null;
+            const d9 = (t && t.d9Manual === true)
+                ? { d9: String(t.profile?.d9 ?? ''), seed: String(t.zonesSeed ?? '') } : null;
+            if (fix || d9) out.targets[k] = { fix, d9 };
+        }
+    } catch { /* 抓不到就当没手改 */ }
+    return out;
+}
+
+/** 把手改层套回去（跟 `captureManualOverlay` 成对用；没手改 ⇒ 一条都不动 ✓） */
+export function restoreManualOverlay(ov) {
+    if (!ov || !ov.targets) return 0;
+    let n = 0;
+    try {
+        for (const [k, one] of Object.entries(ov.targets)) {
+            const t = state().targets?.[k];
+            if (!t || !one) continue;
+            if (!t.profile || typeof t.profile !== 'object') t.profile = {};
+            if (one.fix) {
+                t.profileFix = { ...(t.profileFix && typeof t.profileFix === 'object' ? t.profileFix : {}), ...one.fix };
+                // ⚠️ 只把值写回去，**不改基线** —— 之后推演照旧按"账变了没"决定听谁的 ✓
+                for (const f of Object.keys(one.fix)) {
+                    const mine = one.fix[f]?.mine;
+                    if (mine !== undefined) t.profile[f] = String(mine ?? '');
+                }
+                n++;
+            }
+            if (one.d9) {
+                t.d9Manual = true;
+                t.profile.d9 = one.d9.d9;
+                if (one.d9.seed !== undefined) t.zonesSeed = one.d9.seed;
+                n++;
+            }
+        }
+    } catch (e) { console.warn('[Bodycord] 套回手改层失败', e); }
+    if (n) commit();
+    return n;
+}
 
 /** 这个对象的「已孕」那一格是不是 true */
 function _pregFlag(t) {
@@ -5494,6 +5587,8 @@ export function setCheckpoint(floor, swipeId = null) {
         floor: Number(floor),
         swipeId: (swipeId === null || swipeId === undefined) ? null : Number(swipeId),
         at: Date.now(),
+        // ★ 2026-11-15：顺序号 —— 跟玩家的手改比"谁先谁后"（见 `markManualEdit` 那段）✓
+        seq: nextEditSeq(),
         data: cloneStateForRecord(),
     };
     // ★★ 顺手往"回滚点"里也放一份（同一份深拷贝，不额外花内存 ✓）——
@@ -5658,6 +5753,8 @@ export function setFloorCandidate(floor, hash, payload = {}) {
             return o;
         })(),
         at: Date.now(),
+        // ★ 2026-11-15：顺序号 —— "这一楼算完"的先后（手改比它新就不再拿这份盖回去）✓
+        seq: nextEditSeq(),
         data: payload.data || cloneStateForRecord(),
     };
 
@@ -6645,7 +6742,7 @@ export function applySexEventLog(key, events, opts = {}) {
     } catch { /* 搬不动不影响这一轮 */ }
     const fl = Number.isFinite(Number(opts.floor)) ? Number(opts.floor) : null;
     const fallbackTime = [String(opts.date || '').trim(), String(opts.clk || '').trim()].filter(Boolean).join(' ');
-    // ★★ 2026-11-15（她问「B 我不是以前就让你修过了」后核实）——
+    // ★★ 2026-11-15（复查后补回）——
     //   「只替换：每一楼只留一条」在 2026-11-09 合并成一个入口时**丢了**（10-17 那版
     //   是按楼层先删后加）⇒ 重推同一楼就变成再叠一笔。
     //   ⇒ 现在补回来：这一轮**真的报来了至少一条**时，先把同一楼原来记的那几条撤掉，
@@ -7064,6 +7161,8 @@ export function addTraceManually(key, one) {
         acc: 0, used: 0,
         cap: TRACE_LIFE_FACTOR * (Number(traceNightsForLevel(level, k)) || 1),
     });
+    // ★ 2026-11-15：手加的痕迹是玩家的东西 ⇒ 同一楼重推不许回滚把它冲掉 ✓
+    try { markManualEdit(); } catch { /* 忽略 */ }
     commit();
     return true;
 }
@@ -7072,6 +7171,7 @@ export function addTraceManually(key, one) {
 export function clearTraces(key) {
     const s = state();
     s.traces[traceKey(key)] = [];
+    try { markManualEdit(); } catch { /* 忽略 */ }
     commit();
 }
 
@@ -7087,6 +7187,7 @@ export function removeTrace(key, id) {
     if (i < 0) return false;
     list.splice(i, 1);
     s.traces[k] = list;
+    try { markManualEdit(); } catch { /* 忽略 */ }
     commit();
     return true;
 }
@@ -7779,10 +7880,15 @@ export function recordInsemination(ev, opts = {}) {
         const tt = state().targets?.[tk];
         if (tt) {
             if (!tt.profile || typeof tt.profile !== 'object') tt.profile = {};
-            const txt = fertilityRateTextOf(tk);
-            if (txt) tt.profile.d2 = txt;
+            // ★ 2026-11-15：玩家手改过这一格（改数值）⇒ 别拿自动重算的值把它盖回去 ✓
+            if (!isProfileFieldFixed(tk, 'd2')) {
+                const txt = fertilityRateTextOf(tk);
+                if (txt) tt.profile.d2 = txt;
+            }
         }
     } catch { /* 忽略：d2 下一轮还会再算一次 ✓ */ }
+    // ★ 2026-11-15：手动补录这一笔也算"玩家手改过" ⇒ 同一楼重推时不再回滚把它冲掉 ✓
+    if (opts.manual === true) { try { markManualEdit(); } catch { /* 忽略 */ } }
     commit();
     return item;
 }
@@ -7848,10 +7954,15 @@ export function removeInsemination(key) {
         const tt = state().targets?.[tk];
         if (tt) {
             if (!tt.profile || typeof tt.profile !== 'object') tt.profile = {};
-            const txt = fertilityRateTextOf(tk);
-            if (txt) tt.profile.d2 = txt;
+            // ★ 2026-11-15：跟记一笔时同一条规矩 —— 手改过 d2 就别覆盖玩家的值 ✓
+            if (!isProfileFieldFixed(tk, 'd2')) {
+                const txt = fertilityRateTextOf(tk);
+                if (txt) tt.profile.d2 = txt;
+            }
         }
     } catch { /* 忽略 */ }
+    // ★ 2026-11-15：删记录是玩家亲手干的 ⇒ 同一楼重推不许回滚把它带回来 ✓
+    try { markManualEdit(); } catch { /* 忽略 */ }
     commit();
     return true;
 }
@@ -9127,6 +9238,8 @@ export function setProfileFix(key, field, mine, base) {
     } else {
         t.profileFix[f].mine = String(mine ?? '');
     }
+    // ★ 2026-11-15：记一条手改修正 ＝ 玩家亲手改过 ⇒ 同一楼重推不许回滚把它冲掉 ✓
+    try { markManualEdit(); } catch { /* 忽略 */ }
     commit();
     return true;
 }
@@ -13219,7 +13332,7 @@ export function contactsForPanel(key, more = null) {
     const fromInsem = new Set();
     // ★ 2026-10-23：同一件事在受孕账 + 性行为清单里各有一条 ⇒ 联系人会并排显示两条。
     //   这里按「日期 + 钟点 + 人物」认领：账本里已经有的那一笔，性行为清单里同时间的就跳过 ✓
-    // ★★ 2026-11-15（她问「A 我不是以前就让你修过了」）——
+    // ★★ 2026-11-15（复查后补回）——
     //   10-23 那个键要求**两边都有钟点**；而默认历法不记钟点 ⇒ 账本那条钟点为空、
     //   清单那条却带着模型自己写的钟点（契约让它写"像 2019年05月16日 15:32"）⇒ 永远对不上，
     //   同一件事照样显示两条、页头"共 N 次"翻倍 ✗

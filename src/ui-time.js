@@ -15,7 +15,7 @@
  *   · 导入进来的档案只读，看完关掉就没了（不落盘）
  */
 
-import { h, clear, button, modal, askConfirm, textInput } from './dom.js';
+import { h, clear, button, modal, askConfirm, textInput, debounce } from './dom.js';
 import { getCtx } from './st.js';
 import { shortRef, usedNameOf, usedResultOf } from './dice.js';
 import { timeline, snapshots, state, diffForPanel, canRollbackTo, rollbackToFloor, rollbackUndoInfo, undoRollback, dropSnapshot, dropFloorCandidate, pruneOrphanCandidates, identOf, parseAliases, isImportedTarget, stripDateText } from './store.js';
@@ -56,7 +56,7 @@ const FIELD_ORDER = [
 
 const FIELD_DESC = {
     状态标题: '标题', 进度描述: '阶段 / 进度', 次要描述: '时间 / 防护 / 风险', 计算说明: '计算过程',
-    数据项一: '阶段基础率', 数据项二: '累计受孕率', 数据项三: '体质系数', 数据项四: '致孕方',
+    数据项一: '阶段基础率', 数据项二: '累计受孕率', 数据项三: '卵子质量', 数据项四: '致孕方',
     数据项五: '意识状态', 数据项六: '胎儿状态', 数据项七: '泌乳状态', 数据项八: '生产次数',
     数据项九: '敏感带', 状态条一: '生理状态', 状态条二: '身体状况', 状态条三: '近期性行为',
 };
@@ -129,6 +129,8 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
     //   列表长了以后找某一楼很费眼 ⇒ 顶上给一个搜索框：填**楼层号**就只看那一楼；
     //   填**文字**就在快照内容（面板文字 / 剧情时间）里找 ✓ 清空就回到全部 ✓
     let query = '';
+    /** 快照的搜索串缓存（见 searchTextOf；raw 对象换了才重算 ✓） */
+    const _searchCache = new WeakMap();
 
     /**
      * ★★ 账 / 快照改过之后，界面上所有在显示数据的地方都要跟着换（2026-10-17：
@@ -146,6 +148,22 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
         try { onDataChanged?.(); } catch { /* 忽略 */ }
     };
 
+    /**
+     * ★ 2026-11-13：每条快照的搜索串算一次就存着（原来是每次输入都 JSON.stringify 一遍，
+     *   三百条 × 每个字，中文输入法一个词能触发好几次 ⇒ 白烧 CPU ✓）
+     *   存法：WeakMap 认那个 raw 对象，快照对象换了才重算 ✓
+     */
+    const searchTextOf = (it) => {
+        const raw = it && it.raw;
+        if (!raw) return '';
+        let s = _searchCache.get(raw);
+        if (s === undefined) {
+            try { s = JSON.stringify(raw).toLowerCase(); } catch { s = ''; }
+            _searchCache.set(raw, s);
+        }
+        return s;
+    };
+
     /** 过一遍当前搜索框（楼层号 / 关键词两条路 ✓） */
     const shownList = () => {
         const list = currentList();
@@ -155,7 +173,8 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
             const n = Number(q);
             return list.filter((it) => Number(it.楼层) === n);
         }
-        return list.filter((it) => String(it.raw ? JSON.stringify(it.raw) : '').includes(q)
+        const needle = q.toLowerCase();
+        return list.filter((it) => searchTextOf(it).includes(needle)
             || String(it.剧情时间 || '').includes(q));
     };
 
@@ -196,8 +215,12 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
         } catch { return -1; }
     };
 
+    /** 上一回画出来、带 active 的那一行（点新行时只换这两行的类，不重建整张列表 ✓） */
+    let selRowEl = null;
+
     const drawList = () => {
         clear(listHost);
+        selRowEl = null;
         const list = shownList();
 
         if (!list.length) {
@@ -221,7 +244,14 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                 onclick: () => {
                     selected = it;
                     pickedKey = rawKeysOf(it)[0] || '';
-                    drawList();
+                    // ★ 2026-11-13：这里原来 drawList() 整张重画（最多三百行）——
+                    //   列表自己是滚动容器 ⇒ 一清空滚动位置就回顶，翻到下面点一条立刻被打回顶部 ✗
+                    //   ⇒ 只换新旧两行的选中样式，内容那半照旧重画 ✓
+                    try {
+                        if (selRowEl && selRowEl !== row) selRowEl.classList.remove('active');
+                        row.classList.add('active');
+                        selRowEl = row;
+                    } catch { /* 样式没换过去也不影响选中本身 ✓ */ }
                     drawDetail();
                 },
             },
@@ -234,6 +264,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                 ),
             );
             listHost.appendChild(row);
+            if (isSel) selRowEl = row;
         }
     };
 
@@ -351,7 +382,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                 sum2.textContent = '这一轮用了哪些骰子' + `（${jd.used.length} 个）`;
                 det2.appendChild(sum2);
                 for (const u of (jd.used || [])) {
-                    // ★ 跟骰子页同一套短标签（`独立掷 1~7`），原句放进 title——
+                    // ★ 跟骰子页同一套短标签（`独立掷 2~5`），原句放进 title——
                     //   这一块比骰子页还窄，来源长句会直接换行 ✗
                     const refLong = String(u.ref || '');
                     const refShort = shortRef(u.ref);
@@ -607,10 +638,11 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
     const statusTimer = setInterval(() => { try { paintStatus(); } catch { /* 忽略 */ } }, 1000);
 
     // ---- 搜索框：楼层号 / 快照内容 ----
+    // ★ 2026-11-13：停手 200ms 再画（拼音输入一个词能连发好几次 input，画一次就够 ✓）
+    const redrawSoon = debounce(() => { drawHead(); drawList(); }, 200);
     const searchIn = textInput('', (v) => {
         query = v;
-        drawHead();
-        drawList();
+        redrawSoon();
     }, { placeholder: '搜楼层号，或搜快照里的内容（清空＝看全部）' });
 
     // ---- 真倒流：回到某一楼之前 ----

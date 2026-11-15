@@ -425,12 +425,18 @@ export async function renderTemplate(file, data = {}) {
 //   （"这次生成有没有产出消息"由 index.js 的 MESSAGE_RECEIVED / GENERATION_STOPPED 标志判，
 //     不再去问酒馆"是不是在生成" ✓）
 
-/** 提示条 */
-export function toast(msg, type = 'info') {
+/**
+ * 提示条
+ * @param {string} msg 正文（酒馆的 toastr 默认转义 HTML ⇒ 要换行就传 opts.escapeHtml=false ✓）
+ * @param {'info'|'success'|'error'|'warning'} type
+ * @param {object|null} opts toastr 的选项（现在是「多显示几秒」在用，见 index.js 的失败提示 ✓）
+ */
+export function toast(msg, type = 'info', opts = null) {
     try {
         if (window.toastr) {
             const fn = window.toastr[type] || window.toastr.info;
-            fn.call(window.toastr, msg);
+            if (opts) fn.call(window.toastr, msg, '', opts);
+            else fn.call(window.toastr, msg);
             return;
         }
     } catch { /* 忽略 */ }

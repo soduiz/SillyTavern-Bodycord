@@ -23,7 +23,7 @@ import { targetList, displayName, hasConceptionData, USER_KEY, userLabel, userSe
 import { h, clear, button, modal, textArea, textInput, numberInput, select, dropdown, toggle, askConfirm, cardHead, helpButton } from './dom.js';
 import { renderParamFields } from './ui-params.js';
 // ★ 角色基础信息那四格 + 别名备注：**三处共用一份实现**（设置页 / 悬浮球弹窗 / 这里 ✓）
-import { bodyLockRows, identRows } from './ui-settings.js';
+import { bodyLockRows, identRows, isCannotBePregnant } from './ui-settings.js';
 import {
     askArchiveName, loadWorldArchiveInteractive, applyPersonArchiveInteractive,
 } from './ui-archive.js';
@@ -337,18 +337,28 @@ function fieldsCard(handlers) {
     card.appendChild(body);
 
     for (const [gid, gname, keys] of FIELD_GROUPS) {
-        const onCount = keys.filter(isFieldOn).length;
+        // ★ 2026-11-13：点一个开关不再整页重建（原来 handlers.rebuild 会把几十张卡全部重画，
+        //   卡片一多就卡一下，滚动位置和展开状态也一起没了）⇒ 就地改这一行和这组的计数 ✓
+        const countEl = h('span', { class: 'bc-cat-count' });
+        const paintCount = () => { countEl.textContent = `${keys.filter(isFieldOn).length}/${keys.length}`; };
         const grid = h('div', { class: 'bc-field-switches' });
         for (const k of keys) {
             const on = isFieldOn(k);
-            grid.appendChild(h('label', { class: 'bc-field-switch' + (on ? ' on' : '') },
-                toggle(on, (v) => { setFieldOn(k, v); handlers.refresh?.(); handlers.rebuild?.(); }),
+            const label = h('label', { class: 'bc-field-switch' + (on ? ' on' : '') },
+                toggle(on, (v) => {
+                    setFieldOn(k, v);
+                    label.classList.toggle('on', !!v);
+                    paintCount();
+                    handlers.refresh?.();
+                }),
                 h('span', { text: FIELD_LABEL[k] || k }),
-            ));
+            );
+            grid.appendChild(label);
         }
+        paintCount();
         body.appendChild(h('div', { class: 'bc-card-group-title' },
             h('span', { text: gname }),
-            h('span', { class: 'bc-cat-count', text: `${onCount}/${keys.length}` }),
+            countEl,
             h('div', { class: 'bc-spacer' }),
             button('全开', () => { setFieldGroup(keys, true); handlers.rebuild?.(); }),
             button('全关', () => { setFieldGroup(keys, false); handlers.rebuild?.(); }),
@@ -478,14 +488,14 @@ function isGated(mod) {
  * 光看卡片看不出来 ⇒ 把"两个开关谁管谁"写在总开关这张卡上 ✓
  */
 const MODULE_HELP = {
-    // ★ 这张卡下面「精子怎么算」那三行是新加的（2026-10-20）——
-    //   三行长得像三个并列开关，所以「？」里必须把它们的关系讲清 ✓
+    // ★ 这张卡下面「精子怎么算」那两行（2026-11-13 第四批：原来还有第三行「存活期（天）」，
+    //   第一批已经撤掉、存活时间改住图鉴）——两行长得像两个并列开关，所以「？」里必须讲清关系 ✓
     cycle_module: [
-        '卡片下面「精子怎么算」那三行，是同一个问题的三层，不是三个并列的开关',
+        '卡片下面「精子怎么算」那两行，是同一个问题的两层，不是两个并列的开关',
         '精子跨不跨周期：「跨」＝换周期不清空，每批精子到自己的存活期才失效；「不跨」＝进新周期直接把精子清空。这一行相当于选难度，切了要等下一个周期边界才换挡',
-        '存活期多长：只在选「跨」时有用。每批精子在这两个数之间随机决定活几天，每天概率一样，调大最长也不会偷偷改概率',
+        '存活期有多长不在这里设：每批精子能活几天看精子提供方那一族的图鉴（「精子存活时间」那一格），在那一族的范围里每天概率一样；要改就改图鉴里那一格',
         '判定取哪个数：受孕窗口结束时会算一次能不能怀上。「累计所有批次」＝窗口内发生过的都算，哪怕精子后来失效；「仅计算存活批次」＝只算那一刻还活着的精子。两档都不改变界面上显示的累计受孕率，也不会回头重算已经算过的结果',
-        '还有一件事跟那三行无关：累计受孕率是「这一个周期」的，进新周期从 0 重新累计，两档都一样。那一档只决定精子跨不跨周期，不决定这个数字',
+        '还有一件事跟那两行无关：累计受孕率按账算。选「不跨」时它只算这一个周期，进新周期从 0 重新累计；选「跨」时上一个周期留下还活着的精子也一起算进来，跨周期已经失活的不算。',
     ],
     body_trace: [
         '吻痕、指痕这类短期痕迹：记下来、按夜消退、残留一段时间',
@@ -549,50 +559,6 @@ function postpartumCard(H) {
         if (pf) host.appendChild(pf);
         card.appendChild(host);
     }
-    return card;
-}
-
-/**
- * ★ 2026-11-08（第 0 批）：**性特征的总开关**。
- *
- * 她定的口径：不能强制开启，要能关。所以单独一张卡、默认关。
- * 关着时：图鉴条目里不出现「性特征」那一栏，提示词也不会发这一段 ✓
- * 打开后：图鉴条目里出现这一栏；只在有性接触的那一轮发给主模型。
- *
- * ⚠️ 跟产后恢复一样，它不是 modules.js 里的模块（没有要发给 AI 的规则正文），
- *   用虚 id `__sex__` 自己画卡 ✓
- */
-function sexTraitsCard(H) {
-    const s = settings();
-    const on = s.sexTraitsOn === true;
-    const rerender = () => { if (H && H.rebuild) H.rebuild(); };
-    const card = h('div', {
-        class: 'bc-card bc-module-card' + (on ? ' on' : ''),
-        'data-module': '__sex__',
-    });
-    card.appendChild(h('div', { class: 'bc-card-head' },
-        h('span', { class: 'bc-card-title', text: '性特征' }),
-        h('span', { class: 'bc-badge', text: '全局' }),
-        h('div', { class: 'bc-spacer' }),
-        helpButton('性特征', [
-            '打开之后，种族图鉴的每一条里会多出「性特征」这一栏：上面是雄性（兽形写雄性，亚人与兽人写男性），下面是雌性。',
-            '这一段跟正文一样常驻发送，不另设门控。',
-            '关掉这个开关：图鉴里不显示这一栏，也不会发给主模型。已经填过的内容不会删，重新打开还在。',
-            '默认关，不想要的人可以一直不开。',
-        ]),
-        h('div', { class: 'bc-card-toggle' }, toggle(on, (v) => {
-            s.sexTraitsOn = !!v;
-            save();
-            rerender();
-        }))));
-    card.appendChild(h('div', { class: 'bc-card-body' },
-        h('div', {
-            class: 'bc-card-hint' + (on ? '' : ' bc-card-hint-warn'),
-            style: { marginLeft: '0', paddingLeft: '0', marginTop: '0' },
-            text: on
-                ? '已打开：图鉴条目里会出现「性特征」这一栏，跟正文一起常驻发给主模型。'
-                : '已关闭：图鉴里不显示这一栏，也不会发给主模型。要写这一段就把右边开关打开。',
-        })));
     return card;
 }
 
@@ -1298,14 +1264,17 @@ function targetLabel(key) {
 }
 
 /**
- * ★★ 「精子怎么算」这一组（2026-10-20）—— 三个旋钮放在一起、各自标明管什么。
+ * ★★ 「精子怎么算」这一组（2026-10-20）—— 现在**两个**旋钮放在一起、各自标明管什么。
  *
- * 为什么并成一组：这三件是同一个问题的三层，但原来分居卡头和卡身，而且
+ * 为什么并成一组：这两件是同一个问题的两层，但原来分居卡头和卡身，而且
  *   「按精子存活」和「仅存活精子」两个名字读起来像同一件事 ⇒ 会被当成重复开关 ✗
  * 现在的层级（行标签都是 2026-10-20 被打回一轮后换的大白话）：
  *   ① 精子跨不跨周期 …… 跨（自然失效）/ 不跨（进新周期清零）
- *   ② 存活期多长 …… 每批掷几天（只在①选「跨」时有意义）
- *   ③ 判定取哪个数 …… 失效的那几批算不算进判定（累计受孕率 / 只算还活着的批次）
+ *   ② 判定取哪个数 …… 失效的那几批算不算进判定（累计受孕率 / 只算还活着的批次）
+ *
+ * ★ 2026-11-13（精子卵子存活 第一批）：原来这里还有第三层「精子存活期（天）」那一格，
+ *   已经撤掉 —— 存活时间改成按种族图鉴填（每种族的精子能活几天不一样）。
+ *   判定与掷骰要到第二到第四批才接，这一批只是数据层 ✓
  */
 /**
  * ★ 「着床判定什么时候掷」两档（2026-10-20）—— 到着床日才掷（默认）/ 受精时掷。
@@ -1420,7 +1389,6 @@ function spermGroup(handlers) {
         text: '换周期不清空，每批到自己的存活期才失效；不跨的档一到新周期就全部归零',
     }));
     box.appendChild(row);
-    box.appendChild(spermLifeRow(handlers));
     box.appendChild(judgeBasisRow(handlers));
     return box;
 }
@@ -1475,79 +1443,6 @@ function judgeBasisRow(handlers) {
         text: on
             ? '仅改变受孕率的计算方式。修改后从下次判定生效，不追溯已经判过的数据'
             : '只在上面选「跨：自然失效」时有区别（不跨的档没有存活期，两档结果一样）',
-    }));
-    return row;
-}
-
-/**
- * @param {HTMLElement} container
- * @param {{refresh?:Function, rebuild?:Function}} handlers
- */
-/**
- * 精子存活期的范围（最短/最长），只挂在「生理周期模块」卡片上。
- *
- * 要求：做一个最长最短，然后不需要做加权吧？
- *       ★ 2026-10-18：要求随机就是真随机，禁止伪随机 ⇒
- *         这里就是**范围内均匀掷**，每天概率一样；想要更长就把最长填大，但不许暗改概率 ✓
- */
-function spermLifeRow(handlers) {
-    const s = settings();
-    // 不在"按精子存活"模式下就说明它是干嘛的、并压暗（不隐藏，免得人以为没这功能）
-    const on = (s.cycleSettleMode === 'sperm')
-        || (s.cycleSettlePending === 'sperm');
-    const row = h('div', { class: 'bc-inline bc-spermlife' + (on ? '' : ' off') });
-    row.appendChild(h('span', { class: 'bc-label', text: '精子存活期（天）' }));
-
-    const mk = (val, key, ph) => {
-        const inp = h('input', {
-            type: 'number', min: '1', max: '30', step: '1',
-            class: 'bc-num-sm', value: String(val), placeholder: ph,
-            title: key === 'spermLifeMin' ? '最短活几天' : '最长活几天',
-        });
-        inp.onchange = () => {
-            let v = Math.round(Number(inp.value));
-            if (!Number.isFinite(v)) v = key === 'spermLifeMin' ? 1 : 7;
-            v = Math.max(1, Math.min(30, v));
-            const st = settings();
-            st[key] = v;
-            // 顺手保证 min ≤ max（别让用户配出一个空区间）
-            if (Number(st.spermLifeMin) > Number(st.spermLifeMax)) {
-                if (key === 'spermLifeMin') st.spermLifeMax = v;
-                else st.spermLifeMin = v;
-            }
-            inp.value = String(v);
-            save();
-            handlers?.rebuild?.();
-        };
-        return inp;
-    };
-    row.appendChild(mk(s.spermLifeMin ?? 1, 'spermLifeMin', '1'));
-    row.appendChild(h('span', { class: 'bc-num-sep', text: '~' }));
-    row.appendChild(mk(s.spermLifeMax ?? 7, 'spermLifeMax', '7'));
-    // ★★ 每个条目都有自己单独的重置（要的是整个条目，不是单格）——
-    //   这一行是**手写的行**（不是参数面板那种 spec 条目）⇒ 原来一颗「↩」都没有 ✗
-    //   默认值就取 `settings.js` 里那两条的出厂值 ✓（换出厂值要一起改这里）
-    const SPM_DEF = { min: 1, max: 7 };
-    const reset = button('↩', () => {
-        const st = settings();
-        st.spermLifeMin = SPM_DEF.min;
-        st.spermLifeMax = SPM_DEF.max;
-        save();
-        handlers?.rebuild?.();
-    }, { title: '把这一格恢复成默认值（' + SPM_DEF.min + ' ~ ' + SPM_DEF.max + '）' });
-    reset.classList.add('bc-param-reset');
-    // ★ 置灰的判据＝"两个数都等于默认值"（跟参数面板那条同一个口径 ✓）
-    try {
-        reset.disabled = (Number(s.spermLifeMin) === SPM_DEF.min && Number(s.spermLifeMax) === SPM_DEF.max);
-    } catch { /* 忽略 */ }
-    row.appendChild(reset);
-    row.appendChild(h('span', {
-        class: 'bc-hint bc-hint-inline',
-        // ★ 文案口径（2026-10-20 定）：说结果，别说过程 —— 不讲"掷一次""算不算它"，
-        //   直接讲"过期会怎样、会不会扣数"✓
-        text: on
-            ? `每批精子在这两个数之间随机存活。过期失效只影响这次计算，已经累积的受孕率不会扣减`
-            : '只在上面选「跨：自然失效」时有用（不跨的档一到新周期就清零，用不到存活期）',
     }));
     return row;
 }
@@ -1670,7 +1565,8 @@ function personBasicInfoCard(targetKey, rerender) {
     //     长期留在这张卡上的是「种族」那格（她说这一格之后会删掉 ✓）
     bodyLockRows(body, targetKey, { onChange });
     // ★ 2026-10-24：察觉档位（A~E）——这里也能改；玩家自己存全局，别的存本聊天
-    {
+    // ★ 2026-11-13：不能怀孕 ⇒ 藏起来（它是怀孕后才用的，留着会被误会还在发）
+    if (!isCannotBePregnant(targetKey)) {
         const curTier = (() => { try { return awarenessTierIdOf(targetKey); } catch { return ''; } })();
         const tierOpts = [
             ['', '自动（交给 AI 判）'],
@@ -2286,7 +2182,8 @@ export function renderModulesTab(container, handlers = {}) {
     // ★ 2026-11-09：这几页末尾**另挂**了几张全局开关卡（没有正文、不算「模块」）——
     //   页签名必须把它们也说一句，否则页签数字会跟下面数出来的卡片数对不上 ✗
     //   ⚠️ 这个数要跟下面 `pane` 里真正 append 的那几张一致（改一处就一起改 ✓）
-    const EXTRA_SWITCHES = isWorld ? { pregnancy: 1, period: 2 } : {};
+    // ★ 2026-11-13：性特征总开关搬去「种族图鉴」页（她：生理周期那一页不该放性特征）⇒ period 只剩发情期 1 张 ✓
+    const EXTRA_SWITCHES = isWorld ? { pregnancy: 1, period: 1 } : {};
     for (const [id, label] of TABS) {
         // ★ 页签上的"几条 / 多少 tk"必须和**下面真正列出来的**是同一份清单 ✓
         //   ⚠️ 不能写 `MODULES.filter(m => m.cat === id && scoped(m.id))` ✗ —— 那只按视图过滤，
@@ -2350,8 +2247,8 @@ export function renderModulesTab(container, handlers = {}) {
             pane.appendChild(postpartumCard(H));
         }
         if (isWorld && active === 'period') {
-            // ★ 2026-11-08：性特征的总开关（排在发情期前面，跟原来的相对顺序一致 ✓）
-            pane.appendChild(sexTraitsCard(H));
+            // ★ 2026-11-13：性特征总开关搬去「种族图鉴」页的「这一轮会发什么」——
+            //   它管的是图鉴条目里有没有那一栏，放在生理周期页既不对也找不到 ✓
             // ★ 2026-11-08（发情期第 0 批）：发情期总开关 ＋ 自动追踪 ✓
             pane.appendChild(estrusCard(H));
         }

@@ -3,7 +3,8 @@
  *
  * 做三件事（都是纯函数，能单测）：
  *   1) 把这一轮**在场**的对象对到图鉴条目（绑定的 > 名字 / 别名对上的）；
- *   2) 按**阶段**筛段落：日常发介绍和生理，受孕 / 怀孕 / 待孵那几轮才带生育；
+ *   2) 正文四段受一个总开关管（默认不发）；开着时再按**阶段**筛：日常发介绍和生理，
+ *      受孕 / 怀孕 / 待孵那几轮才带繁殖段；
  *      自由补充常驻（有才发）；
  *   3) 拼成一段进系统段的文字，同时给出每条的字数与大概 token（界面拿它做预览）。
  *
@@ -127,10 +128,11 @@ export function buildCodexPlan(targets, opts = {}) {
     const list = Array.isArray(targets) ? targets.filter(Boolean) : [];
     const resolve = typeof opts.resolve === 'function' ? opts.resolve : resolveSendEntry;
     const needRepro = typeof opts.needRepro === 'function' ? opts.needRepro : () => false;
-    // ★ 2026-11-09：发不发「介绍（外貌）」那一段。默认关 ——
-    //   角色卡自己写了外貌时，图鉴再发一份两处会打架。
-    //   只影响 intro 这一段；生理 / 生育 / 补充照发 ✓
-    const introOn = opts.introOn !== undefined ? !!opts.introOn : true;
+    // ★★ 2026-11-13（她定）：**整段正文（介绍 / 生理 / 繁殖 / 补充）**一起管，默认关。
+    //   理由：这四段都是科普与外貌那类小知识，判定只用数值表；角色卡自己写了外貌时
+    //   图鉴再发一份两处还会打架 ⇒ 默认一律不发，玩家想看再打开。
+    //   性特征不在这道闸里（它讲的是结构事实，不是科普）✓
+    const bodyOn = opts.bodyOn !== undefined ? !!opts.bodyOn : true;
     // ★ 2026-11-08：这个对象的性特征借用了哪一条（空 = 跟随它自己绑的那一条 ✓）
     const borrowOf = typeof opts.sexBorrowOf === 'function' ? opts.sexBorrowOf : sexBorrowOf;
     const nameOf = typeof opts.nameOf === 'function'
@@ -218,7 +220,7 @@ export function buildCodexPlan(targets, opts = {}) {
         const segs = [];
         for (const s of CODEX_SEGMENTS) {
             if (s.key === 'repro' && !g.repro) continue;
-            if (s.key === 'intro' && !introOn) continue;   // ★ 介绍（外貌）：默认不发 ✓
+            if (!bodyOn) continue;   // ★ 整段正文：默认不发（只发数值表与性特征）✓
             const text = String(g.entry[s.key] || '').trim();
             if (!text) continue;
             segs.push({ key: s.key, label: s.label, text });

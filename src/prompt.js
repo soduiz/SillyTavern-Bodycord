@@ -230,7 +230,7 @@ export function inConceptionFlow(t) {
 /**
  * ★ 第六批：这个对象这一轮要不要带「生育」那一段（图鉴条目的繁殖受孕正文）。
  *
- * 口径（计划里定的"日常发介绍和生理，受孕、怀孕、分娩那几轮才带繁殖段"）：
+ * 口径（2026-11-13 起四段受一个总开关管、默认不发；开着时日常发介绍和生理，受孕 / 怀孕 / 分娩那几轮才带繁殖段）：
  *   · 已孕 ⇒ 要（含分娩那一轮；分娩完 isPregnant 变 false，自然就不再带）
  *   · 受孕账还在累加（d2 > 0）⇒ 要（受孕窗口 / 受精成功待着床都在这一段）
  *   · 名下有在孵的窝（待孵）⇒ 要（待孵不算怀孕，但破壳前的描写用得上）
@@ -613,6 +613,21 @@ export function zonesWords(raw) {
     return out.join(' · ');
 }
 
+/**
+ * ★ 2026-11-13（2.7 第二批）：预计下次月经**有范围**时的写法（不规律档 / 自定义）。
+ *   为什么单独拿出来：这句话是给模型的实际口径（断哪天会跟账本打架），
+ *   纯粹是拼字符串 ⇒ 拆出来才能直接测（不是为了让谁调它 ✓）
+ * @param {{date:string, dateTo:string, days:number, daysTo:number}} np
+ * @returns {string} 没有 `dateTo` ⇒ 空串（调用方走老写法 ✓）
+ */
+export function nextPeriodRangeLineOf(np) {
+    if (!np || !np.dateTo) return '';
+    return `预计下次月经：${np.date} 到 ${np.dateTo}（距今 ${np.days} 到 ${np.daysTo} 天；`
+        + '说不准是哪一天，这几天里都可能来。'
+        + `跳过的天数不到 ${np.days} 天说明还没来，不小于 ${np.daysTo} 天说明这一跳里来过了；`
+        + '落在中间就别断定是哪一天，正文照常写，别写「第几天」这类数）';
+}
+
 export function templates() {
     const s = settings();
     if (!s.injectTemplates || typeof s.injectTemplates !== 'object') s.injectTemplates = {};
@@ -957,6 +972,11 @@ function targetVars(t) {
                     + `这一段没有月经、也没有排卵窗口，别写「第几天」这类周期数）`;
             }
             if (!periodOn) return '';
+            // ★ 2026-11-13（2.7 第二批）：不规律档给的是**范围**（最早到最晚）——
+            //   内部判定按这一周期已经定下来的长度走，但对外说不准是哪一天。
+            //   ⇒ 正文别替她断定哪天来（断早了会跟账本打架）；跳过了多久才"一定来过"用最晚那一天。
+            //   ⚠️ 规律档（没有 dateTo）一个字不改，跟 2.6 完全一样 ✓
+            if (np.dateTo) return nextPeriodRangeLineOf(np);
             return `预计下次月经：${np.date}（距今 ${np.days} 天；这一轮要是把时间跳到第二天或更晚、`
                 + `跳过的天数不小于这个数，说明这一跳里来过，正文照常写，别写「第几天」这类数）`;
         } catch { return ''; }
@@ -1405,7 +1425,7 @@ export function rebuildInjection() {
     //   （正常操作走不到这里：读取在页面画完就开始了，读一次约几十毫秒 ✓）
     if (builtinReady()) {
         try {
-            const codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, introOn: settings().codexIntroOn === true });
+            const codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, bodyOn: settings().codexIntroOn === true });
             if (codexPlan.text) put(KEY_CODEX, substitute(codexPlan.text));
         } catch (e) { console.warn('[Bodycord] 种族设定那段没发出去（不影响别的注入）', e); }
     }
@@ -1491,7 +1511,7 @@ export function previewInjection() {
     const cxTargets = codexTargets();
     let codexPlan = null;
     try {
-        codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, introOn: settings().codexIntroOn === true });
+        codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, bodyOn: settings().codexIntroOn === true });
     } catch { codexPlan = null; }
     return {
         state: targets.length ? buildStateText(targets) : '（没有追踪对象）',

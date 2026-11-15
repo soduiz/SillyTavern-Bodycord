@@ -12,8 +12,8 @@
  */
 
 import {
-    h, button, section, textArea, textInput, numberInput, dropdown, checkRow, toggle,
-        clear, askConfirm, askText, field, modal,
+    h, button, section, textArea, textInput, numberInput, dropdown, checkRow, toggle, toggleRow,
+        clear, askConfirm, askText, field, modal, scrollTopOf, setScrollTopOf,
 } from './dom.js';
 import {
     CODEX_CATS, CODEX_SPECIES, codexCatLabel, codexSpeciesLabel, scaleOf, rowOf,
@@ -52,6 +52,9 @@ let _species = '';
 /** 列表一页 20 条（2026-11-07 她定的：条目只会越来越多，不能一口气翻到底 ✓） */
 const PAGE_SIZE = 20;
 let _page = 1;
+/** 上一次画的是列表还是详情 + 列表当时滚到哪（重画时把滚动位置放回去，见 _paint ✓） */
+let _lastView = 'list';
+let _listScroll = 0;
 
 const HELP_LIST = [
     '这里是一份可以搜、可以分类的种族目录：名字、其他叫法、四段正文、一张数值表、几段发育描述',
@@ -83,10 +86,20 @@ const SEND_HELP = [
     '只发在场的种族：这一轮在场的那几个对象，各自绑定的那一条（没绑定就按名字 / 其他叫法对上的那一条）',
     '人类也走图鉴条目：人类数据要从规则里剥离，所以这里不因为「是人类」就不发；没有人类在场才不发',
     '按阶段筛：生理天天发；「生育」只在受孕、怀孕、待孵那几轮才带上；「补充」有就常驻',
-    '「介绍（外貌）」默认不发：很多角色卡自己写了外貌，图鉴再发一份两处会打架；想要就打开上面那个开关',
+    '图鉴正文默认不发：介绍 / 生理 / 繁殖 / 补充这四段是科普与外貌那类小知识，判定只用数值表；很多角色卡自己写了外貌，图鉴再发一份两处还会打架。想要就打开上面那个开关',
     '名字对不上图鉴的种族：会发一份「每族一行」的种族目录，不会默认当人类，也不会替你借别的族的数据',
     '条目这段只给主 API（写正文的那个）；推演那边的种族数值走的是数值表，不走这段',
 ];
+
+/**
+ * ★ 2026-11-13：详情页那几张卡在屏幕外时先不做布局（`content-visibility: auto`）。
+ *   为什么：一条详情要建四百来个节点，量出来慢机上点开要七十多毫秒；
+ *   跳过屏幕外那几张卡的布局后同样的机器降到三十毫秒 —— 内容一个字没少，只是晚一步排 ✓
+ */
+function cv(box) {
+    try { box.classList.add('bc-cv'); } catch { /* 老浏览器不认识这个类也不要紧 ✓ */ }
+    return box;
+}
 
 function statusBadges(entry) {
     const out = [];
@@ -114,6 +127,20 @@ function textStatsOf(entry) {
     return { intro, physio, repro, extra, stages, total: intro + physio + repro + extra + stages };
 }
 
+/**
+ * ★ 2026-11-13：整本图鉴的「正文合计」缓存。
+ *   714 条正文全扫一遍要几毫秒，而列表页每重画一次（进出详情、翻页、改一条）都会算 ——
+ *   条目列表本身是缓存的（改图鉴才换新数组）⇒ 认这个数组的身份就够了 ✓
+ */
+let _wordTotalCache = { list: null, n: 0 };
+function wordTotalOf(list) {
+    if (_wordTotalCache.list === list) return _wordTotalCache.n;
+    let n = 0;
+    for (const e of list) n += textStatsOf(e).total;
+    _wordTotalCache = { list, n };
+    return n;
+}
+
 function metaLine(entry) {
     // 分类＝两层：第一层 人类 / 动物 / 亚人 / 兽人，第二层 犬 / 猫 / 猪…（只用来查找 ✓）
     const bits = [codexCatLabel(entry.cat)];
@@ -128,10 +155,13 @@ function metaLine(entry) {
     return bits.join(' · ');
 }
 
-/** 一行「名字」输入（打字不重画 ⇒ 只存不画 ✓） */
-function nameField(entry, onChange) {
+/** 一行「名字」输入（★ 打字不重画 ⇒ 只存不画 ✓）
+ *  ⚠️ 2026-11-13 修：这里原来把 `repaint` 传进来了 ⇒ 每敲一个字整页详情重建、
+ *     刚打的字那个框被销毁换成新的 ⇒ 焦点丢了、第二个字打不进去（典型症状就是「点起来卡」✗）
+ *     名字只在回列表时才要显示，回列表本来就会重画 ✓ */
+function nameField(entry) {
     return field('名字',
-        textInput(entry.name, (v) => { entry.name = v; codexSave(entry); onChange?.(); }, { placeholder: '这一族叫什么' }),
+        textInput(entry.name, (v) => { entry.name = v; codexSave(entry); }, { placeholder: '这一族叫什么' }),
     );
 }
 
@@ -507,10 +537,11 @@ function valueRow(entry, row, repaint) {
         // ★ 2026-11-06：这三行不再让玩家写 D100 区间
         control = diceEditor(row.key, row.text, (v) => { row.text = v; codexSave(entry); }, repaint);
     } else if (row.kind === 'range') {
+        // ★ 2026-11-13（第五批）：倍率类（精子致孕力 / 卵子质量）要能填小数 ⇒ step 跟行定义走 ✓
         const mk = (key) => numberInput(row[key], (v) => {
             row[key] = v === '' ? null : v;
             codexSave(entry);
-        }, { min: 0 });
+        }, { min: 0, step: row.step || 1 });
         control = h('div', { class: 'bc-row' },
             fixedBox(mk('min'), 78),
             h('span', { class: 'bc-hint bc-inline-tip', text: '到' }),
@@ -612,7 +643,7 @@ function breedPicker(entry, row, repaint) {
 /** 混血：把「混血可行性与折算 / 混血组 / 品种 / 混血池」收在一张卡里 ✓
  *  她知道 2026-11-07：混血相关不要散在数值表里、池子也不要离得远 ✓ */
 function mixCard(entry, repaint) {
-    const box = section('混血');
+    const box = cv(section('混血'));
     const body = box.querySelector('.bc-section-body');
     const fields = h('div', { class: 'bc-codex-grid' });
     for (const key of ['breedGroup', 'breed']) {
@@ -694,8 +725,8 @@ const BORROW_HELP = [
     '不能选自己，也不能选已经直接或间接借了这一条的条目（会成环）',
 ];
 
-/** 借用下拉里能选的条目（排掉自己和会成环的） */
-function borrowOptionsFor(entry) {
+/** 借用能选的那些条目（排掉自己和会成环的）—— 交给选择器，一次只画 20 行 ✓ */
+function borrowEntriesFor(entry) {
     const reaches = (fromId, targetId) => {
         let cur = codexEntry(fromId);
         const seen = new Set();
@@ -706,24 +737,41 @@ function borrowOptionsFor(entry) {
         }
         return false;
     };
-    return codexEntries()
-        .filter((e) => e.id !== entry.id && !reaches(e.id, entry.id))
-        .map((e) => [e.id, e.name + (e.status === 'off' ? '（停用）' : '')]);
+    return codexEntries().filter((e) => e.id !== entry.id && !reaches(e.id, entry.id));
 }
 
 /** ★ 第八批第二批：繁殖数据借用（只借数值，不借正文） */
 function borrowCard(entry, repaint) {
-    const box = section('繁殖数据借用', { help: BORROW_HELP });
+    const box = cv(section('繁殖数据借用', { help: BORROW_HELP }));
     const b = box.querySelector('.bc-section-body');
-    b.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
-        dropdown(entry.borrowFrom || '', [['', '不借用'], ...borrowOptionsFor(entry)], (v) => {
-            entry.borrowFrom = String(v || '');
+    const cur = entry.borrowFrom ? codexEntry(entry.borrowFrom) : null;
+    const openPicker = () => openCodexPicker({
+        title: '从图鉴里选一条来借数值',
+        curId: entry.borrowFrom || '',
+        entries: () => borrowEntriesFor(entry),
+        allowClear: true,
+        clearLabel: '不借用',
+        help: BORROW_HELP,
+        onPick: (e) => {
+            entry.borrowFrom = e.id;
             codexSave(entry);
             console.log('[Bodycord] 繁殖数据借用', entry.id, '→', entry.borrowFrom || '不借用');
             repaint();
-        }),
-    ));
-    const cur = entry.borrowFrom ? codexEntry(entry.borrowFrom) : null;
+        },
+        onClear: () => {
+            entry.borrowFrom = '';
+            codexSave(entry);
+            console.log('[Bodycord] 繁殖数据借用', entry.id, '→ 不借用');
+            repaint();
+        },
+    });
+    // ★ 2026-11-13：这里原来是一个「七百多项的下拉」——
+    //   点开要一次建七百个菜单项，慢机上实测卡一百多毫秒，还只能滚不能搜 ✗
+    //   ⇒ 改成点开、搜索、选一条（跟挑种族的那个选择器同一套形状 ✓）
+    const btn = button(cur ? ('现在借用：' + cur.name) : '选一条借用的条目', openPicker, {
+        title: '点开从图鉴里挑一条来借数值',
+    });
+    b.appendChild(h('div', { class: 'bc-row bc-row-wrap' }, btn));
     if (entry.borrowFrom && !cur) {
         b.appendChild(h('div', { class: 'bc-hint', text: '原来借用的条目已经不在图鉴里了，现在没有借到任何数值；空着的项按全局默认算' }));
     } else if (cur) {
@@ -747,7 +795,7 @@ const USAGE_HELP = [
 
 /** ★ 第八批：反查谁在用这一条 */
 function usageCard(entry) {
-    const box = section('谁在用这一条', { help: USAGE_HELP });
+    const box = cv(section('谁在用这一条', { help: USAGE_HELP }));
     const b = box.querySelector('.bc-section-body');
     const list = codexUsageOf(entry.id);
     if (!list.length) {
@@ -780,7 +828,7 @@ function sexCard(entry, touch = null) {
         entry.sexTrait = { surface: '', glans: '', lock: '', node: '', double: '', baculum: '', cloaca: '', delivery: '', male: '', outer: '', clit: '' };
     }
     const s = entry.sexTrait;
-    const card = section('性特征', { help: SEX_HELP });
+    const card = cv(section('性特征', { help: SEX_HELP }));
     // ★ 2026-11-08：这张卡的间距单独一套（她截图说太近）⇒ 挂个专属类，别动全局间距 ✓
     card.classList.add('bc-sex-card');
     const body = card.querySelector('.bc-section-body');
@@ -829,7 +877,7 @@ function paintDetail(container, entry, repaint, onBack) {
         resetBtn.classList.toggle('bc-btn-off', !on);
         resetBtn.title = on ? '' : '这一条现在就是默认的样子';
     };
-    const card = (title, help, ...children) => section(title, ...children, ...(help ? [{ help }] : []));
+    const card = (title, help, ...children) => cv(section(title, ...children, ...(help ? [{ help }] : [])));
 
     container.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
         button('← 返回列表', () => onBack()),
@@ -841,7 +889,7 @@ function paintDetail(container, entry, repaint, onBack) {
     // ---- 基本信息 ----
     const basic = card('基本信息', HELP_DETAIL.slice(0, 2));
     const bB = basic.querySelector('.bc-section-body');
-    bB.appendChild(nameField(entry, repaint));
+    bB.appendChild(nameField(entry));
     // 分类：两层 —— 第一层 人类 / 动物 / 亚人 / 兽人，第二层具体是哪种（犬 / 猫 / 猪…）✓
     const clsGrid = h('div', { class: 'bc-codex-grid' });
     clsGrid.appendChild(field('分类', dropdown(entry.cat, CODEX_CATS, (v) => {
@@ -1050,6 +1098,19 @@ export function renderCodexTab(container, handlers = {}) {    // ⚠️ 设置�
 }
 
 function _paint(container, repaint, handlers) {
+    // ★ 2026-11-13：重画会把整块内容清掉重建 —— 原来滚动位置跟着回顶，
+    //   表现就是「改一个下拉、页面跳一下」（这一跳本身就是「点起来卡」的一半感觉）。
+    //   ⇒ 进详情从顶上开始；详情里重画停在原地；从详情回列表回到原来那一屏 ✓
+    const prevScroll = scrollTopOf(container);
+    const isDetail = !!_openId;
+    let restoreScroll;
+    if (isDetail && _lastView === 'detail') restoreScroll = prevScroll;
+    else if (!isDetail && _lastView === 'detail') restoreScroll = _listScroll;
+    else if (!isDetail) restoreScroll = prevScroll;
+    else restoreScroll = 0;
+    if (!isDetail || _lastView === 'list') _listScroll = prevScroll;   // 记住列表滚到哪（点进详情那一刻也要记 ✓）
+    const done = () => { setScrollTopOf(container, restoreScroll); _lastView = _openId ? 'detail' : 'list'; };
+
     clear(container);
     // ★ 2026-11-09：内置图鉴是用到才读进来的（757KB，不占启动）——
     //   还没读进来时就别画一个"共 0 条"的空图鉴（她会以为数据丢了 ✗），
@@ -1066,6 +1127,7 @@ function _paint(container, repaint, handlers) {
         const entry = codexEntry(_openId);
         if (entry) {
             paintDetail(container, entry, repaint, () => { _openId = ''; repaint(); });
+            done();
             return;
         }
         _openId = '';
@@ -1120,7 +1182,7 @@ function _paint(container, repaint, handlers) {
         filterRow.appendChild(spDd);
     }
     paintFilters();
-    const wordTotal = codexEntries().reduce((n, e) => n + textStatsOf(e).total, 0);
+    const wordTotal = wordTotalOf(codexEntries());
     b.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
         h('span', { class: 'bc-hint', text: `共 ${stats.total} 条 · 内置 ${stats.builtin} · 自建 ${stats.custom} · 改过 ${stats.edited} · 停用 ${stats.off} · 正文合计 ${wordTotal} 字` }),
         h('div', { class: 'bc-spacer' }),
@@ -1185,6 +1247,7 @@ function _paint(container, repaint, handlers) {
         }
     }
     paintList();
+    done();
 }
 
 // ---------------------------------------------------------------------------
@@ -1614,8 +1677,8 @@ function overrideRow(entry, r, draft, refs) {
             if (sameMin && sameMax) delete draft[r.key];
             else draft[r.key] = { min, max };
         };
-        const minI = numberInput(cur.min ?? base.min ?? '', put, { min: 0 });
-        const maxI = numberInput(cur.max ?? base.max ?? '', put, { min: 0 });
+        const minI = numberInput(cur.min ?? base.min ?? '', put, { min: 0, step: r.step || 1 });
+        const maxI = numberInput(cur.max ?? base.max ?? '', put, { min: 0, step: r.step || 1 });
         refs.push(() => { minI.value = base.min ?? ''; maxI.value = base.max ?? ''; });
         box.appendChild(h('div', { class: 'bc-row' },
             fixedBox(minI, 78),
@@ -1650,6 +1713,9 @@ function overrideRow(entry, r, draft, refs) {
 }
 
 /** 给某个对象单独调几项（空着 = 跟随它绑的那一条） */
+// ★ 2026-11-13（第五批）：这四格在「角色基础信息 · 生育数值」里调（同一份 codexOverride）⇒
+//   这里不再重复画，避免两个入口 ✗
+const FERT_NUM_KEYS = new Set(['sperm_power', 'egg_quality', 'sperm_life', 'egg_life']);
 export function openCodexOverrideEditor(key, onDone) {
     const entry = codexEntry(codexIdOf(key));
     if (!entry) return false;
@@ -1664,6 +1730,8 @@ export function openCodexOverrideEditor(key, onDone) {
             '孕期 / 显怀范围 / 着床天数：下一次判定就按新值算',
             '单位 / 混血 / 产后恢复：这几项是文字，怎么读由判定那边决定',
             '周期长度 / 排卵日不在这里调：去「参数面板 → 身体基础参数」，那里就是这个人自己的值',
+            '经期规律度也不在这里调：去「角色基础信息」那张卡的「生育数值」下面，那里是这个人自己的档位',
+            '生殖那四格（卵子质量 / 精子致孕力 / 精子存活 / 卵子存活）也不在这里调：去「角色基础信息」那张卡的「生育数值」，那边有 5 档可选，也是同一个存放位置',
         ],
         onSave: () => {
             setCodexOverride(key, draft);
@@ -1705,8 +1773,14 @@ export function openCodexOverrideEditor(key, onDone) {
                 //   参数面板「身体基础参数」那两格已经是这个人的个人值了，
                 //   再放一份就是两个入口、两份存储互相盖，改哪边都可能对不上 ✗
                 //   ⇒ 数值调整统一收到参数面板那处 ✓
+                // ★ 2026-11-13（第五批）：生殖那四格也交给「角色基础信息 · 生育数值」——
+                //   那边有档位（跟图鉴 / 5 档 / 自定义）和各自的读数，放两份就是两个入口 ✗
                 for (const r of entry.rows) {
                     if (r.key === 'cycle_len' || r.key === 'cycle_ovu') continue;
+                    // ★ 2026-11-13（2.7 第一批）：规律度也交给「角色基础信息」那一处，
+                    //   它存在对象身上（不是 codexOverride）⇒ 这里画了也写不进去 ✓
+                    if (r.key === 'cycle_regular') continue;
+                    if (FERT_NUM_KEYS.has(r.key)) continue;
                     host.appendChild(overrideRow(entry, r, draft, refs));
                 }
             };
@@ -1725,11 +1799,26 @@ export function openCodexOverrideEditor(key, onDone) {
 }
 
 /** 从图鉴里挑一条（搜索名字 / 别名） */
-export function openCodexPicker({ curId = '', onPick, onCustom = null, allowCustom = false, allowClear = false, onClear = null, title = '从图鉴里选一个种族' } = {}) {
+export function openCodexPicker({
+    curId = '', onPick, onCustom = null, allowCustom = false, allowClear = false, onClear = null,
+    title = '从图鉴里选一个种族',
+    // ★ 2026-11-13：可以只拿"一部分条目"来选（繁殖数据借用就是：排掉自己、排掉会成环的）；
+    //   传函数则每次取列表时现算，打开弹窗那一刻不算 ✓
+    entries = null,
+    clearLabel = '清空这一格',
+    help = null,
+} = {}) {
+    const pickPool = () => {
+        try {
+            if (typeof entries === 'function') return entries();
+            if (Array.isArray(entries)) return entries;
+        } catch { /* 取不到就当整本 */ }
+        return codexEntries();
+    };
     modal({
         title,
         width: 560,
-        help: [
+        help: help || [
             '点一行就选它',
             '上面可以按分类、种类收窄，搜索框管名字和其他叫法',
             allowCustom ? '图鉴里没有的在最上面直接打名字；手打的名字不会绑定到条目上' : '直接打字也行，不过手打的名字不会绑定到条目上',
@@ -1753,7 +1842,7 @@ export function openCodexPicker({ curId = '', onPick, onCustom = null, allowCust
             }
             if (allowClear) {
                 top.appendChild(h('div', { class: 'bc-row' },
-                    button('清空这一格', () => {
+                    button(clearLabel, () => {
                         try { onClear?.(); } catch (err) { console.warn('[Bodycord] 清空种族失败', err); }
                         try { close(); } catch { /* 忽略 */ }
                     }, { title: '把这一格清空，改回按图鉴绑定或推演报的种族' })));
@@ -1769,7 +1858,7 @@ export function openCodexPicker({ curId = '', onPick, onCustom = null, allowCust
             // 分类 / 种类跟图鉴列表同一套：先大类、再种类，种类只列这一类里有的（带条数）
             const paintFilters = () => {
                 for (const el of [...filterRow.querySelectorAll('.bc-dd')]) el.remove();
-                const all = codexEntries();
+                const all = pickPool();
                 const catCount = new Map();
                 const spCount = new Map();
                 for (const e of all) {
@@ -1795,7 +1884,7 @@ export function openCodexPicker({ curId = '', onPick, onCustom = null, allowCust
             const draw = () => {
                 clear(listHost);
                 clear(pager);
-                const hit = codexFilter(codexEntries(), q, cat, species);
+                const hit = codexFilter(pickPool(), q, cat, species);
                 if (!hit.length) {
                     listHost.appendChild(h('div', { class: 'bc-empty', text: '没有匹配的条目' }));
                     return;
@@ -1958,28 +2047,35 @@ function bindActions(r, repaint) {
 function sendCard(repaint) {
     const box = section('这一轮会发什么', { help: SEND_HELP });
     const b = box.querySelector('.bc-section-body');
-    // ★ 2026-11-09：介绍（外貌）这一段发不发主 API。默认关：
-    //   角色卡自己写了外貌，图鉴再发一份会打架。
-    //   只影响「介绍」这一段，生理 / 生育 / 补充照发 ✓
+    // ★★ 2026-11-13（她定）：**整段正文**（介绍 / 生理 / 繁殖 / 补充）一起管，默认关。
+    //   这四段是科普与外貌那类小知识，判定只用数值表 ⇒ 默认一律不发，想看再打开。
+    //   性特征与数值表不受这个开关影响 ✓
     const introOn = settings().codexIntroOn === true;
-    b.appendChild(h('div', { class: 'bc-row bc-row-wrap', style: { marginTop: '0' } },
-        toggle(introOn, (v) => {
-            settings().codexIntroOn = !!v;
-            save();
-            repaint?.();
-        }),
-        h('span', { class: 'bc-textpair' },
-            h('span', { class: 'bc-label', text: '发「介绍（外貌）」' }),
-            h('span', {
-                class: 'bc-hint',
-                text: introOn
-                    ? '开：这一族的长相也会发给主 API。角色卡里已经写了外貌的话，两处说法容易打架'
-                    : '关：外貌交给角色卡，只发生理（生育、补充照发）。想让人形族之外的族也由图鉴管长相再打开',
-            }),
-        ),
-    ));
+    // ★ 2026-11-13（她定）：性特征那条提示要跟开关状态一起变 ——
+    //   性特征开关关着时还写「只发数值表与性特征」就是假的 ✓
+    const sexOn = settings().sexTraitsOn === true;
+    // ★ 2026-11-13（她连着两次提醒「间距改一下」）：开关行**不许自己拿 `.bc-row` 拼** ——
+    //   窄屏那条「行里说明独占一行」会把开关挤到上一行、标题和说明各占一行，间距还全乱 ✗
+    //   ⇒ 统一用 `toggleRow`（设置页那套：左边标题＋说明、右边开关、行间有分隔线）✓
+    //   以后再加开关，照这个来，不用一处处调间距 ✓
+    const swGroup = h('div', { class: 'bc-toggle-group' });
+    swGroup.appendChild(toggleRow('发图鉴正文（外貌 / 生理 / 繁殖 / 补充）', introOn,
+        (v) => { settings().codexIntroOn = !!v; save(); repaint?.(); },
+        introOn
+            ? '开：这四段正文也会发给主 API，会和角色卡、世界书的说法重复，也更费 token'
+            : '关：正文不发，只发数值表' + (sexOn ? '与性特征' : '') + '。这四段是科普与外貌那类小知识，判定用不到'));
+    // ★★ 2026-11-13（她定）：**性特征总开关搬到图鉴页**，跟在「发图鉴正文」下面。
+    //   她的理由：它管的就是图鉴条目里有没有「性特征」那一栏，属于图鉴这一页的事，
+    //   放在「生理周期」那一页既对不上也找不到 ✓
+    //   （原来挂在规则补丁 · 世界观 · 生理周期 那一页的最后一屏 ✗）
+    swGroup.appendChild(toggleRow('性特征', sexOn,
+        (v) => { settings().sexTraitsOn = !!v; save(); repaint?.(); },
+        sexOn
+            ? '开：图鉴每一条里会出现「性特征」那一栏，跟数值表一起常驻发给主模型'
+            : '关：图鉴条目不显示这一栏，也不发给主模型。已经填过的内容不会删，重新打开还在；默认关'));
+    b.appendChild(swGroup);
     let plan = null;
-    try { plan = buildCodexPlan(codexTargets(), { needRepro: codexNeedRepro, introOn: settings().codexIntroOn === true }); } catch { plan = null; }
+    try { plan = buildCodexPlan(codexTargets(), { needRepro: codexNeedRepro, bodyOn: settings().codexIntroOn === true }); } catch { plan = null; }
 
     if (!plan || !plan.targetCount) {
         b.appendChild(h('div', { class: 'bc-empty', text: '这个聊天还没有追踪对象' }));

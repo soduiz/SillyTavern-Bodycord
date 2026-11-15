@@ -15,7 +15,7 @@
 
 import { h, button, dropdown, numberInput, textInput, checkRow } from './dom.js';
 import { periodPrefsOf, setPeriodPrefsOf } from './store.js';
-import { periodDaysOf, periodDaysCapOf, bodyCycleParamsOf } from './settings.js';
+import { periodDaysOf, periodDaysCapOf, bodyCycleParamsOf, eggWindowDaysOf } from './settings.js';
 
 const FLOW_OPTS = [['少', '少'], ['中', '中'], ['多', '多']];
 const PAIN_OPTS = [['无', '无'], ['轻', '轻'], ['中', '中'], ['重', '重']];
@@ -87,48 +87,93 @@ export function periodSettingsBlock(targetKey, repaint) {
     const headText = () => `经期 ${periodDaysOf(targetKey)} 天 · 勾选 ${periodPrefsOf(targetKey).items.filter((x) => x.on).length} 项`;
     say.textContent = headText();
 
-    const savePrefs = (patch) => {
+    const savePrefs = (patch, needsRepaint = true) => {
         try { setPeriodPrefsOf(targetKey, patch); } catch { /* 忽略 */ }
-        repaintOnly();
+        // ★ 2026-11-13：只有会改这一块"形状"的项（痛经走势：自定义会多出几天下拉）才重画；
+        //   经量 / 基础痛经只是换了个选中项，重画整块纯属白干 ✓
+        if (needsRepaint) repaintOnly();
     };
 
     // ---- 经期天数 ----
     const cap = periodDaysCapOf(targetKey);
-    const cur = periodDaysOf(targetKey);
+    /** 本周期**实际**按几天算（读的时候夹过；面板读数 / 共几天都用它 ✓） */
+    const effDays = periodDaysOf(targetKey);
+    // ★ 2026-11-14（她拍）：框里放**玩家写的那个数**，不放下限夹过的那份 ——
+    //   上限＝排卵日减 2，排卵日跟着每段掷出的周期长度走 ⇒ 短周期会把它悄悄改小。
+    //   现在写的数原样留着，只在本周期算的时候夹、并且明说「本周期按 X 天」✓
+    const prefDays = (() => {
+        const d = Math.round(Number(prefs0.days));
+        return (Number.isFinite(d) && d >= 1) ? d : 5;
+    })();
+    let days = prefDays;
+    /** 本周期实际几天（简图 / 痛经逐天 / 读数都按这个画 ✓） */
+    const cur = effDays;
     let bp = { cycle: 28, ovu: 14 };
     try { bp = bodyCycleParamsOf(targetKey); } catch { /* 用默认 */ }
-    const len = Math.max(5, Math.min(90, Math.round(Number(bp.cycle) || 28)));
+    // ★ 2026-11-13（2.7 第三批修）：别把周期长度夹到 90 ——
+    //   长周期族（狗 180 / 象 112）和自定义长周期，一夹这条简图上的窗口段就整段落在外面、
+    //   直接不画（看着像"这一族没有窗口"✗）。简图是按比例画的，长度多大都放得下 ✓
+    const len = Math.max(1, Math.round(Number(bp.cycle) || 28));
     const ovu = (bp.ovu === null || bp.ovu === undefined) ? null : Math.round(Number(bp.ovu));
 
     const setDays = (n) => {
+        // ★ 2026-11-14（她拍）：玩家写多少就存多少（只挡 < 1），**不按上限改掉它** ——
+        //   上限会随这一段的周期长度变，以前那道上限会把 5 悄悄写成 4 存进去。
+        //   本周期实际按几天，由 `periodDaysOf` 读的时候夹、下面那行小字说清 ✓
+        const raw = (n === '' || n === null || n === undefined) ? NaN : Number(n);
+        const asked = Math.round(raw);
+        let want = Number.isFinite(asked) ? asked : days;
+        if (want < 1) want = 1;
         // ★ 2026-11-11：天数存进设置（不再往补丁正文里写）—— 同一个数只留一处 ✓
-        try { setPeriodPrefsOf(targetKey, { days: n }); } catch { /* 忽略 */ }
-        repaintOnly();
+        try { setPeriodPrefsOf(targetKey, { days: want }); } catch { /* 忽略 */ }
+        // 自定义痛经那几行是按天数铺的 ⇒ 天数一改就得重建（那是少数人的档位 ✓）
+        if (prefs0.painPattern === 'custom') { repaintOnly(); return; }
+        days = want;
+        // 输入框显示**你写的那个数**（它自己不会因为 max 属性被浏览器夹 ✓）
+        try { daysInput.value = String(days); } catch { /* 忽略 */ }
+        paintDays();
+        // 写的数比本周期上限长 ⇒ 明说「本周期按 X 天」，但你写的数不动 ✓
+        if (days > cap) {
+            say.textContent = `本周期最多第 ${cap} 天`
+                + (ovu !== null ? `（第 ${Math.max(1, ovu - 1)} 天起是排卵窗口）` : '')
+                + `，按 ${Math.min(days, cap)} 天算`;
+        } else {
+            say.textContent = headText();
+        }
     };
 
     const grid = h('div', { class: 'bc-daygrid' });
-    for (let d = 1; d <= cap; d += 1) {
+    const chipEls = [];
+    // ★ 2026-11-13（2.7 第三批修）：芯片只铺到 15 天 ——
+    //   长周期族（狗 180 / 象 112）的 `cap` 是一百多，铺出来一百多颗芯片直接把这一页撑爆；
+    //   真要更长，右边的数字格照样能填（上限还是 cap ✓）
+    const chipMax = Math.min(cap, 15);
+    for (let d = 1; d <= chipMax; d += 1) {
         const chip = h('div', {
             class: 'bc-daychip' + (d <= cur ? ' on' : ''),
             text: String(d),
             title: '经期到第 ' + d + ' 天结束',
         });
         chip.onclick = () => setDays(d);
+        chipEls.push(chip);
         grid.appendChild(chip);
     }
 
     let daysTimer = null;
-    const daysInput = numberInput(cur, (v) => {
+    // 框里一开始放的是**玩家写的那个数**（可能比本周期上限长，下面那行小字会说明 ✓）
+    const daysInput = numberInput(days, (v) => {
         clearTimeout(daysTimer);
         daysTimer = setTimeout(() => {
-            const n = Math.round(Number(v));
-            if (Number.isFinite(n) && n >= 1) setDays(n);
+            // ★ 2026-11-13（扫 BUG）：非数字 / 空 / 0 也要走 setDays（以前直接跳过 ⇒ 框和实际不一致）✓
+            setDays(v);
         }, 500);
-    }, { min: 1, max: cap });
+    }, { min: 1 });
     daysInput.classList.add('bc-period-days');
 
     const capTip = '插件按它算经期，最多第 ' + cap + ' 天'
-        + (ovu !== null ? '（第 ' + Math.max(1, ovu - 1) + ' 天起是排卵窗口）' : '');
+        + (ovu !== null ? '（第 ' + Math.max(1, ovu - 1) + ' 天起是排卵窗口）' : '')
+        + (cap > 15 ? '；比 15 天更长就直接在右边填数字' : '')
+        + (prefDays > cap ? '；你写的是 ' + prefDays + ' 天，这一段周期短，本周期只算到第 ' + cap + ' 天' : '');
 
     box.appendChild(field('经期天数',
         h('div', { class: 'bc-period-valuebox' },
@@ -149,8 +194,38 @@ export function periodSettingsBlock(targetKey, repaint) {
         });
     };
     const bar = h('div', { class: 'bc-cycbar' });
-    bar.appendChild(seg(1, cur, 'bc-cyc-period'));
-    if (ovu !== null) bar.appendChild(seg(ovu - 1, ovu + 1, 'bc-cyc-window'));
+    const periodSeg = seg(1, cur, 'bc-cyc-period');
+    bar.appendChild(periodSeg);
+
+    /**
+     * ★ 2026-11-13：天数一变只改这几处（原来整块重画：最多九十颗 chip 全删了重建，
+     *   点一下卡一下、滚动位置也会跳）✓
+     */
+    function paintDays() {
+        // 这一格亮到「本周期实际算到第几天」—— 写的数比上限长时，亮的还是上限那几颗 ✓
+        const eff = Math.max(1, Math.min(days, cap));
+        for (let i = 0; i < chipEls.length; i += 1) {
+            const on = (i + 1) <= eff;
+            const el = chipEls[i];
+            if (!el) continue;
+            if (on) el.classList.add('on'); else el.classList.remove('on');
+        }
+        try {
+            if (document.activeElement !== daysInput) daysInput.value = String(days);
+        } catch { /* 忽略 */ }
+        try { say.textContent = headText(); } catch { /* 忽略 */ }
+        try {
+            if (periodSeg) {
+                const b = Math.max(1, Math.min(len, eff));
+                periodSeg.style.width = ((b / len) * 100) + '%';
+            }
+        } catch { /* 忽略 */ }
+    }
+    // ★ 2026-11-13（第二批）：窗口尾部按这一族的卵子存活时间铺（人类还是排卵日 +1 ✓）
+    const eggDays = (() => {
+        try { return eggWindowDaysOf(targetKey, len, ovu); } catch { return 1; }
+    })();
+    if (ovu !== null) bar.appendChild(seg(ovu - 1, ovu + eggDays, 'bc-cyc-window'));
     box.appendChild(field('周期简图',
         h('div', { class: 'bc-period-valuebox' },
             bar,
@@ -162,9 +237,9 @@ export function periodSettingsBlock(targetKey, repaint) {
     ));
 
     // ---- 档位 ----
-    box.appendChild(field('经量', inline(dropdown(prefs0.flow, FLOW_OPTS, (v) => savePrefs({ flow: v }))),
+    box.appendChild(field('经量', inline(dropdown(prefs0.flow, FLOW_OPTS, (v) => savePrefs({ flow: v }, false))),
         '这一档决定面板上的流量和颜色怎么写：少、中、多'));
-    box.appendChild(field('痛经', inline(dropdown(prefs0.pain, PAIN_OPTS, (v) => savePrefs({ pain: v }))),
+    box.appendChild(field('痛经', inline(dropdown(prefs0.pain, PAIN_OPTS, (v) => savePrefs({ pain: v }, false))),
         '这一档是基础痛经程度；走势在下面那一格选'));
 
     // 痛经走势：默认逐天减轻；「全程保持」给整个经期都疼的人；自定义可以逐天点 ✓

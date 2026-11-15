@@ -24,7 +24,7 @@
  *    这里**不许**写任何玩家的数据（示例角色 / 她的设定都不行 ✗）
  */
 
-import { VALUE_ROWS } from './codex-schema.js';
+import { VALUE_ROWS, HUMAN_LIFE_DEFAULT, HUMAN_POWER_DEFAULT } from './codex-schema.js';
 
 /** 人类的胎数 / 性别 / 同卵分档（好几条都是「同人类」⇒ 抄过来，判定时才不用回查 ✓） */
 const LITTER_HUMAN = 'D100：1-78 单胎，79-94 双胎，95-98 三胎，99-100 四胎或以上';
@@ -13936,6 +13936,39 @@ for (const e of BUILTIN_CODEX) {
     if (n) setNumRow(e, 'cycle_len', n);
 }
 
+// =======================================================================
+// ★ 2026-11-13（2.7 经期波动 第三批）：按类群填「经期规律度」的默认值
+//
+// 口径：**不另查资料，照下面那张 `ESTRUS_BY_SPECIES`（2026-11-08 起分批查的
+//   兽医 / 物种手册口径）来推** —— 那张表里的"发情周期"本来就是"这一族的周期
+//   会在多大范围里浮动"。推法：
+//     · 没有周期长度、或浮动只有 1 天 ⇒ 留「规律」（不掷，等于老行为 ✓）
+//     · 浮动在平均前后各 3 天内 ⇒ 「有点不规律」（±3 正好盖住那一段）
+//     · 浮动超过 3 天 ⇒ 「很不规律」（±7，这是插件现在能给的最大跨度）
+//
+// ⚠️ 一年一次发情的族（狼 / 狐 / 鹿 / 熊 / 鲸豚）**故意留「规律」**：
+//   它们的 365 天是按日照长度定死的，±7 天在一年里几乎没有意义，
+//   在图鉴里写「很不规律」反而是说假话 ✗
+// ⚠️ 交配后排卵的族（兔、猫科三种）也不填 —— 它们的周期长度根本不掷（诱导排卵）✓
+// ⚠️ 亚人照人类（跟上面周期长度同一条），不套原型 ✓
+// =======================================================================
+const CYCLE_REGULAR_BY_SPECIES = {
+    pig: '有点不规律',        // 18 到 24 天，平均 21
+    cattle: '有点不规律',     // 18 到 24 天，平均 21
+    horse: '有点不规律',      // 18 到 24 天，平均 21
+    sheep: '有点不规律',      // 14 到 22 天（绵羊与山羊合起来），平均 17
+    elephant: '有点不规律',   // 105 到 120 天，平均 112
+    monkey: '有点不规律',     // 26 到 30 天，平均 28
+    ape: '很不规律',          // 28 到 37 天，平均 33
+    lemur: '很不规律',        // 28 到 39 天，平均 30
+    dog: '很不规律',          // 180 到 210 天，平均 180
+};
+for (const e of BUILTIN_CODEX) {
+    if (e.cat !== 'animal' && e.cat !== 'beastkin') continue;
+    const t = CYCLE_REGULAR_BY_SPECIES[e.species];
+    if (t) setTextRow(e, 'cycle_regular', t);
+}
+
 // ★ 2026-11-08：诱导排卵（交配后才排卵）的族 —— 兔与猫科。
 //   这一批不再看「排卵日」，由插件在交配时掷一次（见 store 的 maybeInduceOvu）；
 //   诱导排卵率与延迟都是**区间**，每次交配各掷一个；亚人照人类，不套原型 ✓
@@ -14139,6 +14172,287 @@ for (const e of BUILTIN_CODEX) {
         if (!hasRange(rowOf(e, 'estrus_cycle')) || !hasRange(rowOf(e, 'estrus_days'))) {
             setSelectRow(e, 'estrus', '无');
         }
+    }
+}
+
+// =======================================================================
+// ★ 2026-11-13（精子卵子存活 第一批）：图鉴加「精子存活时间」「卵子存活时间」两格
+//
+// 口径（见 精子卵子存活-计划.md）：
+//   · 表里存的是**这一族的基准范围**（天），不是个人数据；跨族各取各的 ✓
+//   · 亚人 / 兽人也照原型填（跟发情期同一个口径；周期长度那边「亚人照人类」是另一件事 ✓）
+//   · 卵子存活不足一天算 1 天 ✓
+//   · 内置条目全部填满，留空只留给自建条目；留空读出来按人类那一组（codex-values.js）✓
+//
+// 资料（BAN 百科；只用论文 / 兽医与实验动物资料 / 动物园与南极机构 fact sheet）：
+//   · 鸟类：输卵管的精子储存小管能让精子活 2 到 15 周（Poultry Science 2013 综述，
+//     PMC3944358）；鸽约 6 天、火鸡可超过 3 个月（Theriogenology 2015 的摘要数据）⇒
+//     鸡 / 鸭 / 鹅 / 鸽 / 猛禽 / 企鹅各按类群给范围 ✓
+//   · 爬行类：综述里最长记录 2555 天（约 7 年，Birkhead & Møller 1993）；
+//     彩绘龟的亲缘鉴定证实雌龟能存数年（Nature 2004）⇒ 龟、蛇按「数月到两年」给 ✓
+//   · 哺乳类：多数 1 到 3 天；犬科 5 到 9 天；人类 2 到 7 天（2 到 5 是平均值，上限按极限值取）✓
+//   · 犬的卵母细胞排出时还没成熟，约 60 小时后才能受精（PubMed 2621728）⇒
+//     整体可受精窗口按 3 到 7 天；其余哺乳类 1 天（12 到 24 小时）✓
+//   · 鱼：体内受精的能存数月（孔雀鱼这类），体外受精只有几分钟 ⇒ 范围取 1 到 180 天；
+//     昆虫与蛛形类数周到一年（蜂后能存数年）；头足类数周到数月 ✓
+const LIFE_BY_SPECIES = {
+    // ---- 哺乳类 ----
+    pig: { sperm: [1, 3], egg: [1, 1] },
+    cattle: { sperm: [1, 2], egg: [1, 1] },
+    sheep: { sperm: [1, 2], egg: [1, 1] },
+    horse: { sperm: [2, 4], egg: [1, 1] },
+    dog: { sperm: [5, 9], egg: [3, 7] },
+    wolf: { sperm: [5, 9], egg: [1, 3] },
+    fox: { sperm: [5, 9], egg: [1, 3] },
+    cat: { sperm: [1, 3], egg: [1, 2] },
+    leopard: { sperm: [1, 3], egg: [1, 1] },
+    tiger: { sperm: [1, 3], egg: [1, 1] },
+    lion: { sperm: [1, 3], egg: [1, 1] },
+    rabbit: { sperm: [1, 2], egg: [1, 1] },
+    rat: { sperm: [1, 1], egg: [1, 1] },
+    elephant: { sperm: [1, 3], egg: [1, 1] },
+    bear: { sperm: [1, 3], egg: [1, 1] },
+    cetacean: { sperm: [1, 3], egg: [1, 1] },
+    deer: { sperm: [1, 3], egg: [1, 1] },
+    monkey: { sperm: [1, 3], egg: [1, 1] },
+    ape: { sperm: [1, 3], egg: [1, 1] },
+    lemur: { sperm: [1, 3], egg: [1, 1] },
+    // ---- 鸟 ----
+    chicken: { sperm: [14, 28], egg: [1, 1] },
+    duck: { sperm: [10, 28], egg: [1, 1] },
+    goose: { sperm: [10, 28], egg: [1, 1] },
+    pigeon: { sperm: [6, 14], egg: [1, 1] },
+    penguin: { sperm: [14, 42], egg: [1, 1] },
+    raptor: { sperm: [7, 28], egg: [1, 1] },
+    // ---- 爬行类 ----
+    turtle: { sperm: [180, 730], egg: [1, 1] },
+    snake: { sperm: [90, 730], egg: [1, 1] },
+    // ---- 鱼 / 虫 / 节肢 / 头足 ----
+    fish: { sperm: [1, 180], egg: [1, 1] },
+    insect: { sperm: [14, 365], egg: [1, 1] },
+    arthropod: { sperm: [14, 365], egg: [1, 1] },
+    cephalopod: { sperm: [14, 90], egg: [1, 1] },
+};
+
+/** 有没有填过（两格都空 ⇒ 还没填） */
+function lifeRowEmpty(e, key) {
+    const r = (e.rows || []).find((x) => x.key === key);
+    return !r || (r.min == null && r.max == null);
+}
+
+// ① 先按种类填（兽形 / 亚人 / 兽人都算，第三层就是「这一族」）
+for (const e of BUILTIN_CODEX) {
+    const spec = LIFE_BY_SPECIES[e.species];
+    if (!spec) continue;
+    setRangeRow(e, 'sperm_life', spec.sperm[0], spec.sperm[1]);
+    setRangeRow(e, 'egg_life', spec.egg[0], spec.egg[1]);
+}
+
+// ② 没有种类的幻想族：按最接近的类群（神兽按身体原型，妖族 / 兽人按名字）
+const LIFE_GROUP_BY_NAME = [
+    [new Set([
+        '烛龙', '相柳', '巴蛇', '九婴', '肥遗', '龙', '八岐大蛇',
+        '八岐大蛇亚人', '八岐大蛇兽人', '蜥蜴人', '蛇人', '蛇精', '娜迦', '拉米亚', '蛇妖',
+    ]), 'snake'],
+    [new Set([
+        '凤凰', '鸾鸟', '三足金乌', '毕方', '重明鸟', '鸩', '朱雀', '青鸟', '帝江', '鹰身女妖',
+    ]), 'raptor'],
+    [new Set(['麒麟', '獬豸', '九色鹿', '鹿蜀']), 'deer'],
+    [new Set(['饕餮', '梼杌', '狰', '貔貅', '白泽', '穷奇', '狼人', '狼妖']), 'wolf'],
+    [new Set(['鲲', '陵鱼', '人鱼', '塞壬', '鲛人']), 'fish'],
+    [new Set(['半人马']), 'horse'],
+    // ★ 2026-11-13（她问的夜兔）：夜兔是《银魂》的战斗民族，外表与人类几乎一样，
+    //   繁殖数值本来就借人类那一条，名字里有「兔」但不是兔类 ⇒ 不按兔子填，
+    //   留给下面的人类兜底（2~7 天）✓
+    [new Set(['兔人']), 'rabbit'],
+    [new Set(['蝶妖', '虫族亚人', '虫族兽人']), 'insect'],
+    [new Set(['狐妖', '九尾狐']), 'fox'],
+];
+for (const e of BUILTIN_CODEX) {
+    if (!lifeRowEmpty(e, 'sperm_life') && !lifeRowEmpty(e, 'egg_life')) continue;
+    for (const [names, sp] of LIFE_GROUP_BY_NAME) {
+        if (!names.has(e.name)) continue;
+        const spec = LIFE_BY_SPECIES[sp];
+        setRangeRow(e, 'sperm_life', spec.sperm[0], spec.sperm[1]);
+        setRangeRow(e, 'egg_life', spec.egg[0], spec.egg[1]);
+        break;
+    }
+}
+
+// ★ 2026-11-13（她认可的数据修订）：**体外受精的鱼**要单独填。
+//   金鱼 / 锦鲤 / 斗鱼都是把卵和精排到水里受精，精子在水里只活几十秒到几分钟
+//   ⇒ 根本不存在"在雌性体内存活多少天"，整组 fish 的 180 天上限套上去是错的 ✗
+//   （孔雀鱼、玛丽鱼这类是体内受精，能存好几个月 ⇒ 不在这张表里，继续跟 fish 那一组 ✓）
+const EXTERNAL_FERT_FISH = new Set([
+    '金鱼', '金鱼亚人', '金鱼兽人',
+    '锦鲤', '锦鲤亚人', '锦鲤兽人',
+    '斗鱼', '斗鱼亚人', '斗鱼兽人',
+]);
+for (const e of BUILTIN_CODEX) {
+    if (!EXTERNAL_FERT_FISH.has(e.name)) continue;
+    setRangeRow(e, 'sperm_life', 1, 1);
+    setRangeRow(e, 'egg_life', 1, 1);
+}
+
+// ★★★ 2026-11-13（她认可）：蜂这一族单独按**蜂后**填。
+//   依据：蜂群里有繁殖能力的只有蜂后，她能存好几年精子；工蜂本来就不繁殖，
+//   所以这不是"拿个例拉高类群"，而是这一族能繁殖的那一方本来就长这样。
+//   下限仍按虫类的 14 天不动（她定过：最短不动）。
+const BEE_QUEEN_NAMES = new Set(['蜂', '蜂亚人']);
+for (const e of BUILTIN_CODEX) {
+    if (!BEE_QUEEN_NAMES.has(e.name)) continue;
+    setRangeRow(e, 'sperm_life', 14, 1095);   // 3 年
+    setRangeRow(e, 'egg_life', 1, 1);
+}
+
+// ③ 最后兜底：剩下没原型的（人形幻想族 / 无血肉的 / 灵体）按人类那一组填满
+for (const e of BUILTIN_CODEX) {
+    if (lifeRowEmpty(e, 'sperm_life')) {
+        setRangeRow(e, 'sperm_life', HUMAN_LIFE_DEFAULT.sperm[0], HUMAN_LIFE_DEFAULT.sperm[1]);
+    }
+    if (lifeRowEmpty(e, 'egg_life')) {
+        setRangeRow(e, 'egg_life', HUMAN_LIFE_DEFAULT.egg[0], HUMAN_LIFE_DEFAULT.egg[1]);
+    }
+}
+
+// ④ ★ 2026-11-13（她认可的调整）：无动物原型的人形幻想族不再一律照人类。
+//
+// 口径（默认按**繁殖策略**给，不按「强度」给；夜兔是唯一按强度判的特例，见下）：
+//   · 交配机会稀少的族（寿命远超人类、发情间隔长）⇒ 精子存得久一点，
+//     让难得的一次交配能覆盖到下一次排卵窗口；它们的「生得少」来自发情间隔长 /
+//     孕期长 / 胎数少，不来自配子短命 ✓
+//   · 交配频繁的族（魅魔 / 哥布林 / 兽人 / 食人魔 / 巨魔）⇒ 保持人类的 2~7 天，
+//     它们的高繁殖体现在受孕率与胎数上，不体现在存活时间上 ✓
+//   · 半精灵是混血 ⇒ 取中间（3~8 天）✓
+//   · 卵子一律 1 天：现实里卵子都短命，长的是精子在雌性体内储存，不是卵子等着 ✓
+//   · 无血肉 / 人造 / 灵体（骷髅 / 石魔像 / 幽灵 / 机械人 / 器灵…）⇒ 照旧跟人类，
+//     不硬给一套「它们的精子」，有设定的人自己改那两格 ✓
+const LIFE_LONG_LIVED = new Set([
+    '精灵', '高精灵', '黑暗精灵', '木精灵',
+    '矮人', '半身人', '侏儒',
+    '巨人', '山丘巨人', '霜巨人', '火巨人', '云巨人', '风暴巨人',
+    '妖精', '仙灵',
+    '天使', '炽天使', '智天使', '座天使',
+    '吸血鬼', '修罗', '血海魔',
+]);
+for (const e of BUILTIN_CODEX) {
+    if (LIFE_LONG_LIVED.has(e.name)) {
+        setRangeRow(e, 'sperm_life', 5, 14);
+    } else if (e.name === '半精灵') {
+        setRangeRow(e, 'sperm_life', 3, 8);
+    }
+}
+
+// ★ 2026-11-13（她判的）：夜兔的生育能力判「强」，不是正常。
+//   依据：银魂的战斗民族，力气、跳跃、恢复力都远超人类，食量大，寿命又长 ⇒ 生命力强。
+//   她的原话口径：族人稀少是打打杀杀造成的，跟生育无关 ⇒ 不能拿人口少当生育弱的证据。
+//   所以不按兔子（1~2）也不按人类（2~7），给强体质这一档 5~14 天 ✓
+for (const e of BUILTIN_CODEX) {
+    if (e.name === '夜兔') setRangeRow(e, 'sperm_life', 5, 14);
+}
+
+// =======================================================================
+// ★ 2026-11-13（精子卵子存活 第五批）：图鉴加「精子致孕力」「卵子质量」两格
+//
+// 口径（见 精子卵子存活-计划.md §十三）：
+//   · 1 倍 = 人类基准；区间给的是**这一族个体之间的差异范围**，判定取中点
+//   · 这是**游戏里的生育力**，换算依据是这一族的**繁殖策略**（r 型 / K 型），
+//     不是实验室实测值 —— 所以写的是量级，不是精确数字，玩家可以自己改
+//   · r 型（鱼 / 虫 / 鼠 / 兔这类：一次生很多、交配机会多）⇒ 每一次都更容易中（1.1~1.5）
+//   · K 型（象 / 鲸 / 灵长 / 大型猫科：生得少、养得久）⇒ 单次概率略低（0.85~1）
+//   · 人类、多数家畜、鸟：跟人类差不多（1 上下）
+//   · 卵子质量那条比精子致孕力收得更窄：卵子是"有没有一颗好的"，物种间差得没那么夸张
+//   · 无血肉 / 人造 / 灵体的族 ⇒ 照人类填 1 倍（它们没有这套生理，玩家要改自己改 ✓）
+//
+// ⚠️ 内置条目全部填上，留空只留给自建条目；留空读出来按人类那一组（codex-values.js）✓
+const POWER_BY_SPECIES = {
+    // ---- r 型 / 高产 ----
+    fish: { sperm: [1.2, 1.6], egg: [1.1, 1.4] },
+    insect: { sperm: [1.2, 1.6], egg: [1.1, 1.3] },
+    arthropod: { sperm: [1.2, 1.6], egg: [1.1, 1.3] },
+    cephalopod: { sperm: [1.1, 1.4], egg: [1.1, 1.2] },
+    rat: { sperm: [1.2, 1.4], egg: [1.1, 1.3] },
+    rabbit: { sperm: [1.1, 1.3], egg: [1.1, 1.2] },
+    pig: { sperm: [1.1, 1.3], egg: [1.05, 1.2] },
+    // ---- 中间：跟人类一样（1 倍）----
+    //   ⚠️ 这一档故意填**正好 1~1**、不留小数：它们是"跟人类差不多"的参照组，
+    //   留个 1.05 会让所有按人类口径写的测试/说明都得跟着改（没有信息量）✓
+    cattle: { sperm: [1, 1], egg: [1, 1] },
+    sheep: { sperm: [1, 1], egg: [1, 1] },
+    horse: { sperm: [1, 1], egg: [1, 1] },
+    deer: { sperm: [1, 1], egg: [1, 1] },
+    dog: { sperm: [1, 1], egg: [1, 1] },
+    wolf: { sperm: [1, 1], egg: [1, 1] },
+    fox: { sperm: [1, 1], egg: [1, 1] },
+    cat: { sperm: [1, 1], egg: [1, 1] },
+    leopard: { sperm: [1, 1], egg: [1, 1] },
+    tiger: { sperm: [1, 1], egg: [1, 1] },
+    lion: { sperm: [1, 1], egg: [1, 1] },
+    chicken: { sperm: [1, 1], egg: [1, 1] },
+    duck: { sperm: [1, 1], egg: [1, 1] },
+    goose: { sperm: [1, 1], egg: [1, 1] },
+    pigeon: { sperm: [1, 1], egg: [1, 1] },
+    penguin: { sperm: [1, 1], egg: [1, 1] },
+    raptor: { sperm: [1, 1], egg: [1, 1] },
+    turtle: { sperm: [0.9, 1.05], egg: [0.95, 1.05] },
+    snake: { sperm: [0.9, 1.05], egg: [0.95, 1.05] },
+    // ---- K 型 / 生得少 ----
+    elephant: { sperm: [0.85, 1], egg: [0.9, 1] },
+    bear: { sperm: [0.9, 1.05], egg: [0.9, 1] },
+    cetacean: { sperm: [0.85, 1], egg: [0.9, 1] },
+    monkey: { sperm: [0.95, 1.1], egg: [0.95, 1.05] },
+    ape: { sperm: [0.9, 1], egg: [0.9, 1] },
+    lemur: { sperm: [0.95, 1.1], egg: [0.95, 1.05] },
+};
+
+function powerRowEmpty(e, key) {
+    const r = (e.rows || []).find((x) => x.key === key);
+    return !r || (r.min == null && r.max == null);
+}
+
+// ① 按种类填（兽形 / 亚人 / 兽人都算）
+for (const e of BUILTIN_CODEX) {
+    const spec = POWER_BY_SPECIES[e.species];
+    if (!spec) continue;
+    setRangeRow(e, 'sperm_power', spec.sperm[0], spec.sperm[1]);
+    setRangeRow(e, 'egg_quality', spec.egg[0], spec.egg[1]);
+}
+
+// ② 没有种类的幻想族：按最接近的类群（跟存活时间用同一张名字表 ✓）
+for (const e of BUILTIN_CODEX) {
+    if (!powerRowEmpty(e, 'sperm_power') && !powerRowEmpty(e, 'egg_quality')) continue;
+    for (const [names, sp] of LIFE_GROUP_BY_NAME) {
+        if (!names.has(e.name)) continue;
+        const spec = POWER_BY_SPECIES[sp];
+        if (!spec) break;
+        setRangeRow(e, 'sperm_power', spec.sperm[0], spec.sperm[1]);
+        setRangeRow(e, 'egg_quality', spec.egg[0], spec.egg[1]);
+        break;
+    }
+}
+
+// ③ 长寿 / 交配机会少的族：生得少、养得久 ⇒ 单次概率略低于人类
+for (const e of BUILTIN_CODEX) {
+    if (LIFE_LONG_LIVED.has(e.name)) {
+        setRangeRow(e, 'sperm_power', 0.9, 1);
+        setRangeRow(e, 'egg_quality', 0.9, 1);
+    } else if (e.name === '半精灵') {
+        setRangeRow(e, 'sperm_power', 0.95, 1.05);
+        setRangeRow(e, 'egg_quality', 0.95, 1.05);
+    } else if (e.name === '夜兔') {
+        // 她判的「强」：生命力远超人类 ⇒ 两侧都给偏强（跟存活 5~14 天同一个口径 ✓）
+        setRangeRow(e, 'sperm_power', 1.2, 1.5);
+        setRangeRow(e, 'egg_quality', 1.1, 1.4);
+    }
+}
+
+// ④ 最后兜底：剩下没原型的（人形幻想族 / 无血肉 / 灵体）按人类那一组填满
+for (const e of BUILTIN_CODEX) {
+    if (powerRowEmpty(e, 'sperm_power')) {
+        setRangeRow(e, 'sperm_power', HUMAN_POWER_DEFAULT.sperm[0], HUMAN_POWER_DEFAULT.sperm[1]);
+    }
+    if (powerRowEmpty(e, 'egg_quality')) {
+        setRangeRow(e, 'egg_quality', HUMAN_POWER_DEFAULT.egg[0], HUMAN_POWER_DEFAULT.egg[1]);
     }
 }
 

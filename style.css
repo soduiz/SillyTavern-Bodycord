@@ -890,6 +890,23 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-dd-host { flex: 1 1 240px; min-width: 0; }
 
 .bc-field { margin-bottom: 12px; }
+/* ★ 2026-11-13（第五批）：生育数值那块的折叠条 ——
+   左边标签、中间当前状态、右边展开按钮；收起来也看得出改过没有 ✓
+   ⚠️ 状态字走自己的类、**故意不挂 `bc-hint`**（跟 `.bc-ident-state` 同一个理由：
+      `.bc-hint` 是"压在每行底下的解释句"，一个读数不该被算进去） */
+.bc-fert-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bc-fert-head > .bc-label { margin: 0; flex: 0 0 auto; }
+.bc-fert-state {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: calc(12px * var(--bc-fs-scale, 1));
+    color: var(--bc-tx-3);
+    line-height: 1.5;
+}
+.bc-fert-head > button { flex: 0 0 auto; }
+.bc-fert-body { margin-top: 10px; }
+.bc-fert-row { margin-bottom: 12px; }
+.bc-fert-row:last-child { margin-bottom: 0; }
 /* ★ 2026-11-01（她截图：开关那一行和下面那格标签贴在一起了）——
    `.bc-inline` 本身只有横向排版、没有下边距 ⇒ 紧跟一个字段时上边距是 0。
    这里跟字段自己的下边距取同一个数（12px），一整页的节奏才一致 ✓
@@ -972,6 +989,14 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-textpair > .bc-hint,
 .bc-textpair > .bc-param-sub { margin-top: 0; }
 
+/* ★★ 2026-11-13（她连着两次提醒「间距改一下」）——
+   一张卡里**连着几行开关**时，一律用 `toggleRow()` 画（就是 `.bc-toggle-row` 那套：
+   左边标题＋说明、右边开关、行间一条分隔线、上下各 9px 内边距）。
+   为什么不能用 `.bc-row` 自己拼：窄屏那条「行里的说明独占一行」会把开关顶到单独一行，
+   标题、说明、开关各占一行，间距也就全乱了 ✗
+   ⇒ 新加开关照这个走，行距不用一处处手调 ✓；这里只补"整组和下面内容留一点空" ✓ */
+.bc-toggle-group { margin-bottom: 6px; }
+
 .bc-model-row { margin-top: 0; }
 .bc-model-row > .bc-input { flex: 1 1 auto; width: auto; min-width: 0; }
 .bc-model-row > .bc-btn { flex: 0 0 auto; }
@@ -1019,6 +1044,13 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 }
 
 .bc-section-body { min-width: 0; }
+
+/* 图鉴详情那几张卡在屏幕外时先不做布局（一条详情的节点数四百左右）。
+   2026-11-13 实测（4 倍降速的浏览器，见 _analysis/_perf-codex.cjs）：
+     点开一条 74 毫秒 → 24 毫秒；详情页总高度 3936 对真实 3908（差不到 1%）。
+   ⚠️ 高度是估的（`auto` 会记住量过的那一次）：估小了滚动条会先短一截、
+      估大了能往下多滚一点 —— 400px 是按这一页十几张卡的平均值挑的，别随手改小 */
+.bc-cv { content-visibility: auto; contain-intrinsic-size: auto 400px; }
 
 /* =========================================================================
    数值卡片（补丁页顶部）
@@ -1153,15 +1185,36 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
    追踪对象
    ========================================================================= */
 .bc-target-list { margin-top: 8px; }
+/* ★ 2026-11-12（她手机截图："这里的文字排版很奇怪"）——
+   这一行原来是**不换行**的 flex：名字那半被挤到只剩一个字的宽度，
+   「用户本人」四个字就竖着排成一列（看着像一条灰条），
+   右边四颗按钮又顶出卡片外面被裁掉 ✗
+   ⇒ 行本身允许换行；名字那半至少留出「一个名字 + 徽章」的宽度，
+     放不下就整块掉到下一行，按钮跟着一起下来 ✓ */
 .bc-target-row {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 8px 10px;
+    flex-wrap: wrap;
     padding: 8px 13px; border-radius: 10px; margin-bottom: 5px;
     background: var(--bc-hover);
 }
 .bc-target-row.active { outline: 1px solid var(--bc-blurple); }
-.bc-target-main { flex: 1 1 auto; }
-.bc-target-name { font-size: calc(13px * var(--bc-fs-scale, 1)); font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.bc-target-actions { display: flex; align-items: center; gap: 6px; }
+/* flex-basis 是"想占多宽"，不是固定宽度 ⇒ 宽屏照样占满剩下的位置 ✓ */
+.bc-target-main { flex: 1 1 170px; min-width: 0; }
+/* 名字与徽章按文字流排：名字太长就正常折行，不会一个字一行地竖着排 ✓
+   （徽章原来是 flex 子项，这里改成行内排，间距用 margin 补） */
+.bc-target-name {
+    font-size: calc(13px * var(--bc-fs-scale, 1)); font-weight: 600;
+    display: block;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+}
+.bc-target-name > .bc-badge { margin-left: 6px; vertical-align: middle; }
+/* ★ 「不在推演名单」：有档案、但这一轮不会发给推演（2026-11-13）
+   玩家报过"明明在追踪对象里、推演却说没有追踪对象"⇒ 这个状态要给个能看见的颜色 */
+.bc-badge-out { background: rgba(229, 164, 31, .2); color: var(--bc-yellow); }
+.bc-root[data-theme="dark"] .bc-badge-out { color: #e0b150; }
+.bc-target-actions { display: flex; align-items: center; gap: 6px; flex: 0 1 auto; flex-wrap: wrap; }
+.bc-target-actions > .bc-btn { flex: 0 0 auto; }
 
 /* 「选角色卡」弹窗每行左边那颗头像（2026-10-28）
    卡多的时候只看名字认不出来，头像才是一眼认得出的那个 ✓
@@ -3628,6 +3681,16 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-spermlife.off {
     opacity: .55;
 }
+/* ★ 2026-11-13（手机 320 宽实测）：这一行是「标签 + 两个数 + ~ + ↩ + 说明」，
+   共 283px 左右，比 320 屏里的可用宽度多出一点点 ⇒ 那颗 ↩（恢复默认）
+   会被挤到自己一行、孤零零地吊在下面 ✗
+   ⇒ 窄屏把数字框收窄一档、间距也收一档，让 ↩ 跟数字待在同一行 ✓ */
+@media (max-width: 420px) {
+    .bc-spermlife { gap: 4px; }
+    .bc-spermlife .bc-num-sm { width: 54px; }
+    .bc-spermlife .bc-label { flex: 0 1 auto; min-width: 0; }
+    .bc-spermlife .bc-param-reset { padding-left: 6px; padding-right: 6px; }
+}
 
 /* ---------------------------------------------------------------------------
    受精判定口径（两档：累计受孕率 / 仅存活精子）
@@ -3970,6 +4033,12 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     .bc-ff-bar { flex-wrap: wrap; }
     .bc-row:has(> .bc-hint) > .bc-hint,
     .bc-ff-bar > .bc-hint { flex: 1 1 100%; }
+    /* ★★ 2026-11-13（她手机截图：数值表那一行「280 到 280 天」被拆成了四行）——
+       上面那条「行里的说明独占一行」只该管**整句说明**；夹在控件中间的短词
+       （到 / 天 / 小时 / 单位）是控件的一部分，必须跟数字并排，
+       不然每行数值就变成「数 / 到 / 数 / 单位」四行，一行占掉半屏 ✗
+       ⚠️ 必须写在上面那条**后面**，并且带 `.bc-inline-tip` 把权重加上去才压得住 ✓ */
+    .bc-row:has(> .bc-hint) > .bc-hint.bc-inline-tip { flex: 0 0 auto; }
     /* ⚠️ 撑开用的小块在折行之后只会白占一行（它本身没内容，却会独占一条空行）⇒
        带说明的那一行里把它藏掉；不带说明的行照旧留着（按钮要贴右边 ✓） */
     .bc-row:has(> .bc-hint) > .bc-spacer { display: none; }
@@ -4378,6 +4447,18 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     user-select: none;
 }
 .bc-daychip:hover { color: var(--bc-tx); }
+/* ★ 2026-11-13：触屏上这一格只有 26×24，一排最多九十来个 ⇒ 手指点下来容易点错天。
+   窄屏 / 没有 hover 的设备给足 44px 的点按区（桌面保持紧凑）✓ */
+@media (max-width: 560px), (hover: none) {
+    .bc-daychip {
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 8px;
+    }
+}
 .bc-daychip.on {
     background: var(--bc-sel-bg);
     border-color: var(--bc-sel-bg);

@@ -136,6 +136,62 @@ export function sexFilled(entry) {
 }
 
 /**
+ * ★ 2026-11-13（精子卵子存活 第一批）：人类那一组的兜底常量。
+ *
+ * 为什么单独留一份：自建种族 / 查不到数据的族，两个存活时间留空 ⇒ **按人类这一组**，
+ *   而不再回到设置页（设置页那两格第一批已经撤掉了 ✓）。
+ * ⚠️ 内置的「人类」那一条也是用这两个数填的（codex-data.js 引它 ⇒ 只有一处事实源 ✓）
+ */
+export const HUMAN_LIFE_DEFAULT = {
+    sperm: [2, 7],   // 精子在体内能活 2 到 7 天（上限是极限值，不是平均值）
+    egg: [1, 1],     // 卵子排出来后能受精 1 天（12 到 24 小时，不足一天算 1 天）
+};
+
+/**
+ * ★ 2026-11-13（精子卵子存活 第五批）：人类那一组的致孕力 / 卵子质量基准。
+ *
+ * 口径：**1 倍 = 人类基准**，其余族在这个数上下浮动。
+ *   · 填的是这一族作为**致孕方 / 孕方**时的基准倍率，不是个人数据；跨族各取各的 ✓
+ *   · 个人那一层（档位或自定义）盖过这里；查不到条目 ⇒ 退回这两个数 ✓
+ *   · 判定时取区间中点（0.8 到 1.2 ⇒ 1.0）；区间只是给「这一族个体的差异范围」留个手，
+ *     不是每天在里面掷 —— 受孕率是固定乘数，不能一轮一个数地飘 ✓
+ */
+export const HUMAN_POWER_DEFAULT = {
+    sperm: [1, 1],   // 精子致孕力 1 倍
+    egg: [1, 1],     // 卵子质量 1 倍
+};
+
+/**
+ * ★ 2026-11-13（第五批）：个人那一层的 5 档（倍率）。
+ *
+ * 它作用在**这一族的基准**上（0.8 到 1.2 倍这一族、选「强」⇒ 1.12）。
+ *   和「存活时间」那五档（0.5 / 0.75 / 1 / 1.5 / 2）不是同一组数字 ——
+ *   生育力的档位拉得更开：最弱也还能怀（0.4），最强不到两倍（1.8）。
+ * ⚠️ 名字只给这一处，params.js（推演判档）/ 面板 / 提示词都读它 ✓
+ */
+export const POWER_TIERS = [
+    ['very_weak', '很弱', 0.4],
+    ['weak', '弱', 0.7],
+    ['standard', '标准', 1],
+    ['strong', '强', 1.4],
+    ['very_strong', '很强', 1.8],
+];
+
+/** 档位词 → 倍率（认不出 / 空 ⇒ 标准 1） */
+export function powerTierFactorOf(text) {
+    const t = String(text ?? '').trim();
+    const hit = POWER_TIERS.find(([id, label]) => id === t || label === t);
+    return hit ? hit[2] : 1;
+}
+
+/** 档位词 → 界面上那个名字（认不出 ⇒ 空串） */
+export function powerTierLabelOf(text) {
+    const t = String(text ?? '').trim();
+    const hit = POWER_TIERS.find(([id, label]) => id === t || label === t);
+    return hit ? hit[1] : '';
+}
+
+/**
  * 数值表的固定项（顺序就是界面上的顺序）。
  *
  * kind：
@@ -153,11 +209,26 @@ export const VALUE_ROWS = [
     //   空着 ⇒ 跟全局（28 / 14），不是"这一族没有周期"。
     { key: 'cycle_len', label: '周期长度', kind: 'number', unit: '天', hint: '这一族有周期时的平均天数；空着 = 跟全局（28 天）' },
     { key: 'cycle_ovu', label: '排卵日', kind: 'number', unit: '第几天', hint: '平均在周期第几天排卵；空着 = 跟全局（14）' },
+    // ★ 2026-11-13（2.7 经期波动 第一批）：这一族的周期长度会不会一段一段地差几天。
+    //   · 这是**族级默认**；每个人还能在自己的「生育数值」里单独改（个人 > 这一条）✓
+    //   · 空着 = 规律（＝老行为：每段一样长，一个字不掷）⇒ 内置条目补默认时自动落到「规律」✓
+    //   · 「自定义」只留给个人那一层（这一族要"最短到最长"，由玩家给），图鉴里不列 ✓
+    { key: 'cycle_regular', label: '经期规律度', kind: 'select', options: ['规律', '有点不规律', '很不规律'], blankAs: '规律', hint: '这一族的周期长度会不会浮动：规律 = 每段一样长；有点不规律 = 平均前后各 3 天；很不规律 = 平均前后各 7 天。空着 = 规律' },
     // ★ 2026-11-08：诱导排卵（兔、猫这类要交配后才排）——
     //   选了「交配后排卵」就不再看上面的排卵日，改由插件在交配时掷一次。
     { key: 'ovu_mode', label: '排卵方式', kind: 'select', options: ['按周期', '交配后排卵'], hint: '按周期 = 上面那个排卵日；交配后排卵 = 兔、猫这类，交配后才会排卵' },
     { key: 'ovu_rate', label: '诱导排卵率', kind: 'range', unit: '%', hint: '只对「交配后排卵」有用：每次交配掷一次会不会排卵；空着 = 80 到 90%' },
     { key: 'ovu_delay', label: '排卵延迟', kind: 'range', unit: '小时', hint: '只对「交配后排卵」有用：交配后多久排卵；空着 = 10 到 13 小时' },
+    // ★ 2026-11-13（精子卵子存活 第一批）：两格按族存，单位**固定「天」**（不跟刻度走）——
+    //   有的族精子能存几个月甚至几年，跟着孕期刻度写会乱 ✓
+    { key: 'sperm_life', label: '精子存活时间', kind: 'range', unit: '天', hint: '这一族的精子在体内能活几天；空着 = 跟人类那一条（2 到 7 天）' },
+    { key: 'egg_life', label: '卵子存活时间', kind: 'range', unit: '天', hint: '卵子排出来后能受精几天，不足一天算 1 天；空着 = 跟人类那一条（1 天）' },
+    // ★ 2026-11-13（第五批）：两个「生育力」基准 —— 都是倍率，1 倍 = 人类基准。
+    //   判定时取区间中点；区间只是给这一族的个体差异留个手，不是每天在里面掷 ✓
+    //   · 精子致孕力＝这一族作为**致孕方**的精子受精力（精子提供方那一族取）
+    //   · 卵子质量＝这一族作为**孕方**的卵子质量（卵子提供方那一族取）
+    { key: 'sperm_power', label: '精子致孕力', kind: 'range', unit: '倍', step: 0.1, hint: '这一族的精子有多容易让人怀上，1 倍 = 人类基准；判定取区间中点。空着 = 跟人类（1 倍）' },
+    { key: 'egg_quality', label: '卵子质量', kind: 'range', unit: '倍', step: 0.1, hint: '这一族的卵子质量，1 倍 = 人类基准；判定取区间中点。空着 = 跟人类（1 倍）' },
     { key: 'preg_in', label: '孕期（体内孕育）', kind: 'range', hint: '最短到最长，按上面的刻度；空着 = 不适用' },
     { key: 'preg_out', label: '孕期（体外孵化）', kind: 'range', hint: '卵生才填；空着 = 不适用' },
     // ★ 2026-11-06（第三批）：着床天数按条目走；空着 = 跟全局设置（默认 6 到 10 天）
@@ -216,8 +287,10 @@ function numOrNull(v) {
 function rowFrom(def, raw) {
     const r = { key: def.key, label: def.label, kind: def.kind };
     if (def.options) r.options = def.options.slice();
+    if (def.blankAs) r.blankAs = def.blankAs;
     if (def.placeholder) r.placeholder = def.placeholder;
     if (def.hint) r.hint = def.hint;
+    if (def.step) r.step = def.step;
     // 单位：range 行的单位默认跟「刻度」走；个别行（着床天数）自己带一个 ✓
     if (def.unit) r.unit = def.unit;
     if (def.kind === 'range') {

@@ -11,7 +11,7 @@
 import {
     PARAM_SPECS, readParams, writeParams, readZoneRows, writeZoneRows, textOf,
     fieldDefaultOf,
-    fertilityCoefOfTier, writeFertilityCoef, awarenessTierNameOf,
+    awarenessTierNameOf,
 } from './params.js';
 import {
     h, clear, button, textInput, numberInput, askConfirm, dropdown, helpButton, askText,
@@ -48,14 +48,11 @@ export function specOf(moduleId) {
  */
 function paramHelpLines(spec) {
     const lines = [spec.desc];
-    // ★ 受孕体质档：说明写进「？」里（页面只留读数 ✓）
+    // ★ 2026-11-13（第五批）：身体补丁这张卡只剩周期长度 / 排卵日 / 种族 ——
+    //   卵子质量与两个存活时间都挪到「角色基础信息」的生育数值块里了，这里不再解释那几格 ✓
     if (spec.moduleId === 'body_base') {
-        lines.push('「日常体质系数」这个角色第一次推演时，推演会按它的角色设定判一个档填进来');
-        // ★ 2026-11-08（她：那五档的说明没用，直接删）—— 那格本来就是填什么算什么，
-        //   把推演的档位词表列出来只会让人以为这格只认那五个数 ✗ ⇒ 不再写 ✓
-        // ⚠️ 「你自己」那一份**没有**这个按钮、推演也不判档
-        //   （见 fertilityNote 首行的 isUserKey 早退）⇒ 别写成"点那一格下面的…"让人去找 ✗
-        lines.push('你自己改过就以你的为准，推演不会再覆盖；对象那一份想交回给推演，点那一格下面的「恢复按设定判」');
+        lines.push('周期长度和排卵日填了只改这个人；清空就跟着这个角色的种族（图鉴那一族的平均值）');
+        lines.push('生育数值（卵子质量 / 精子致孕力 / 两个存活时间）不在这一页：去「角色基础信息」那张卡的「生育数值」里改');
     }
     if (spec.moduleId === 'zones_custom') {
         // ★ 2026-10-15（敏感带再细化一点更好）：这两句**只给玩家看** ——
@@ -68,7 +65,7 @@ function paramHelpLines(spec) {
         lines.push('经期天数怎么用：周期第 1 天到第 N 天算经期，第 N+1 天自动翻走。这个数只在设置里，不读正文写的几天，也不由推演报。');
         lines.push('关掉「经期表现」这条模块，插件照样按这个数算经期；卡在这里也照样能改。');
         lines.push('你自己没设过就按 5 天。其他角色（也就是 NPC）第一次进经期时会自动掷一次天数，3 到 7 天，掷完一直用它，不重掷。');
-        lines.push('天数最多到排卵日减 2 天（交配后排卵的按周期长度减 2），填超了按上限记，不会让经期吞掉排卵窗口。');
+        lines.push('天数最多到排卵日减 2 天（交配后排卵的按周期长度减 1），填超了按上限记，不会让经期吞掉排卵窗口。');
     }
     if (spec.kind === 'list') {
         // ★ ① 别提"窗口最下面那个保存" —— 这张表也会在补丁页的模块卡里渲染，
@@ -127,46 +124,13 @@ function statusEl() {
 }
 
 // ---------------------------------------------------------------------------
-// ★ 「日常体质系数」那一格是谁定的
-//
-// 起因：让 AI 判断受孕体质 —— 角色设定明显很弱（怀孕能力之类的）
-//   或者很强的，AI 可以自己填写这个角色（NPC）的初始体质
-// ⇒ 推演按角色设定判一个档（只报档位词），插件把档换成数值写进这一格。
-//
-// 这里只做两件事：① 把"这个值是谁定的"印成一枚读数；② 给一个交回去的按钮 ✓
-// ⚠️ 用户本人不出这一块 —— 那一份身体补丁存在**全局设置**里、穿所有聊天，
-//   这一期不让推演动它（要动的只是"这个角色的（NPC）初始体质" ✓）
+// ★ 2026-11-13（第五批）：原来的 `fertilityNote`（「日常体质系数」是谁定的）退役 ——
+//   那一格连同它那行读数一起撤掉；卵子质量的档位读数与「恢复跟图鉴」按钮
+//   现在长在「角色基础信息」的生育数值块里（`ui-settings.js` 的 `powerRows`）✓
 // ---------------------------------------------------------------------------
-function fertilityNote(key, baseNow, onChange) {
-    if (!key || isUserKey(key)) return null;
-    const tier = fertilityTierOf(key);
-    const coef = tier ? fertilityCoefOfTier(tier) : null;
-    // 「你改的」= 手改锁开着，或者**文本里的数跟设定判的那个不一样**（含在「全文」里改的 ✓）
-    const drifted = coef !== null ? Number(baseNow) !== coef : Number(baseNow) !== 1;
-    const manual = fertilityManualOf(key) || drifted;
-    const text = manual
-        ? (coef === null ? '你改的' : `你改的（设定判的是 ${coef}）`)
-        : (coef === null ? '还没判（下轮推演按角色设定判）' : `按角色设定判的 ${coef}`);
-    const row = h('div', { class: 'bc-param-note' },
-        h('span', { class: 'bc-badge bc-lock-tag' + (manual ? ' on' : ''), text }));
-    if (manual) {
-        row.appendChild(button('↩ 恢复按设定判', () => {
-            setFertilityManualOf(key, false);
-            if (coef !== null) {
-                writeFertilityCoef(key, coef);      // force：玩家当场点的，直接写回去 ✓
-                window.toastr?.success?.(`已改回设定判的 ${coef}`);
-            } else {
-                writeFertilityCoef(key, 1.0);       // 交回出厂默认，下次推演判完再填 ✓
-                window.toastr?.info?.('已交回推演，下次会按角色设定判一个初值');
-            }
-            onChange?.();
-        }, { title: '这一格交回推演，按角色设定判' }));
-    }
-    return row;
-}
 
 // ---------------------------------------------------------------------------
-// ★ A3：「察觉档位」那一档是谁定的（跟上面 fertilityNote 同一套形状 ✓）
+// ★ A3：「察觉档位」那一档是谁定的
 //
 // 它是角色设定（这个人对自己身体变化察觉得早还是晚）⇒ 推演报一次、插件记住；
 // 之后「该不该怀疑 / 该不该确认」由插件按这张表的区间与孕周自己算 ✓
@@ -256,12 +220,8 @@ function numberFields(spec, targetKey, handlers, status) {
             if (!Object.keys(changed).length) { flash(status, '内容没有变化'); return; }
         }
         const ok = writeParams(spec, targetKey, changed);
-        // ★ 手改锁：玩家**自己动了「日常体质系数」** ⇒ 打个标记，
-        //   此后推演按设定判出来的档只记不写（你自己填的说了算 ✓）
-        if (ok && spec.moduleId === 'body_base' && targetKey && !isUserKey(targetKey)
-            && String(draft.base ?? '') !== String(values.base ?? '')) {
-            setFertilityManualOf(targetKey, true);
-        }
+        // ★ 2026-11-13（第五批）：「日常体质系数」那格退役，手改锁跟着退役 ——
+        //   卵子质量的手改锁在「角色基础信息」的生育数值块里打（那里才是它的入口 ✓）
         // ★ **"没写进去"和"真没变化"是两件事** ——
         //   写回被拒的原因可能是"这几格不合法"（起止倒挂 / 越界，write 会整份不动 ✓）
         //   一律喊"内容没有变化"会让人以为是自己没改 ✗
@@ -367,22 +327,9 @@ function numberFields(spec, targetKey, handlers, status) {
         const racePick = null;
         // ★ 2026-11-11：记下这一格的输入框 —— 提交后若被夹取，要把显示值改回实际值 ✓
         if (input) fieldEls[f.key] = input;
-        // ★「日常体质系数」这一格下面多一行读数（这个值是谁定的 ＋ 交回按钮 ✓）
-        //   ⚠️ 交回按钮改的是**补丁正文**，而面板手上还攥着一份 `draft` —— 两者不同步的话，
-        //     下一次 commit 会把整份 draft 写回去、把刚恢复的值又盖成旧值 ✗
-        //     （"两个事实源"的坑；所以恢复之后要**重读一次**，draft 和输入框一起对齐）
-        const note = (spec.moduleId === 'body_base' && f.key === 'base')
-            ? fertilityNote(targetKey, draft.base, () => {
-                try {
-                    const fresh = readParams(spec, targetKey);
-                    if (fresh && fresh.base !== undefined) {
-                        draft.base = fresh.base;
-                        input.value = fresh.base;
-                    }
-                } catch { /* 忽略 */ }
-                try { handlers?.refresh?.(); } catch { /* 忽略 */ }
-            })
-            : null;
+        // ★ 2026-11-13（第五批）：「日常体质系数」那一格退役（卵子质量接管），
+        //   所以这里不再有"这一格是谁定的"读数；那行读数挪到「角色基础信息」的生育数值块里 ✓
+        const note = null;
         // ★ 给每个条目增加一个单独的重置按键，重置全部要留，
         //   但每个也得单独有重置；只能改数值模式只给那些可以填格子的加，
         //   全文可改模式全部都加）：

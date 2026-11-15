@@ -47,7 +47,7 @@ import { deviceDateKey } from './calendar-events.js';
 import {
     currentDate, calendarEventsForPanel, calendarEventsOn,
     calendarAlertsForPanel, timeUnitNow, dueMarksForPanel, mergeDueByDate,
-    estrusMarksInMonth, targetList, trackModeOf,
+    estrusMarksInMonth, targetList, trackModeOf, displayName, nextPeriodFactOf,
 } from './store.js';
 import { holidayList, holidaysOn, lunarDatesOn, realEventsForPanel, realEventsOn, realAlertsToday, settings } from './settings.js';
 // ★ 农历（做通了 ✓）：节日表里 `lunar` 那条靠它算 ——
@@ -154,7 +154,7 @@ function dueLineText(g) {
 }
 
 /** 下半部分那一整块（哪一天 + 那天的几条 + 「加一条」✓） */
-function dayEditorHtml(dateStr, entries, unit, dueMarks) {
+function dayEditorHtml(dateStr, entries, unit, dueMarks, periodNotes) {
     const rows = entries.map((e) => evRowHtml(e, unit)).join('');
     // ★ 全天 / 具体时间那两颗的位置：
     //   钟点是「不记钟点」时（出厂默认）那两颗压根不画 ⇒ 界面上找不到，也没有一个字说明为什么 ✗
@@ -174,6 +174,11 @@ function dayEditorHtml(dateStr, entries, unit, dueMarks) {
         //   ⚠️ 这块**只读**：预产期是插件算的，不写进日程，日历里也不许编辑它 ✓
         + ((Array.isArray(dueMarks) && dueMarks.length)
             ? ('<div class="bc-cal-duenote">' + mergeDueByDate(dueMarks).map(dueLineText).map(esc).join('　·　') + '</div>')
+            : '')
+        // ★ 2026-11-13（2.7）：这一天落在谁的「预计下次月经」里 ⇒ 在这儿说清是谁、哪一段
+        //   （格子上只写「预计月经」四个字，两个人同一天就分不清了 ✓）
+        + ((Array.isArray(periodNotes) && periodNotes.length)
+            ? ('<div class="bc-cal-pernote">' + periodNotes.map(esc).join('　·　') + '</div>')
             : '')
         + '<div class="bc-cal-day-list">'
         +   (rows ? ('<div class="bc-cal-ev-list">' + rows + '</div>')
@@ -315,6 +320,40 @@ export function calendarViewHtml(opts = {}) {
         }
     } catch { /* 读不到就不标，不影响日历本身 ✓ */ }
 
+    // ---- 预计下次月经（★ 2026-11-13，2.7 第二批）----
+    //   口径：跟状态摘要那一行**同一个数据源**（`nextPeriodFactOf`）——
+    //     · 规律档 ⇒ 一天（单点）
+    //     · 不规律档 / 自定义 ⇒ 一段时间（最早到最晚），日历上画成一条淡色带
+    //   ⚠️ 只聊天里有；产后恢复那一段不算月经（`kind === 'recovery'` 跳过，那是恢复日 ✓）
+    //   ⚠️ 不算日程：这是插件算出来的事实，不写进 calendarEvents ✓（跟预产期一个待遇）
+    const periodSpans = [];
+    try {
+        if (inChat) {
+            for (const t of targetList()) {
+                if (!t || t.present === false) continue;
+                // 轻档 = 只登记名字、什么都不追 ⇒ 不标（跟发情日同一条口径 ✓）
+                if (trackModeOf(t) === 'light') continue;
+                let np = null;
+                try { np = nextPeriodFactOf(t.key); } catch { np = null; }
+                if (!np || np.kind === 'recovery') continue;
+                const a = parseFictionDate(np.date, cal);
+                if (!a) continue;
+                const b = (np.dateTo ? parseFictionDate(np.dateTo, cal) : null) || a;
+                const fromAbs = absDayOf(a.y, a.m, a.d, cal);
+                const toAbs = absDayOf(b.y, b.m, b.d, cal);
+                if (!Number.isFinite(fromAbs) || !Number.isFinite(toAbs)) continue;
+                periodSpans.push({
+                    name: String(displayName(t) || t.name || '').trim() || '（没名字）',
+                    fromAbs: Math.min(fromAbs, toAbs),
+                    toAbs: Math.max(fromAbs, toAbs),
+                    fromStr: String(np.date || ''),
+                    toStr: String(np.dateTo || np.date || ''),
+                    range: !!np.dateTo,
+                });
+            }
+        }
+    } catch { /* 读不到就不标，不影响日历本身 ✓ */ }
+
     // ---- 下半部分正在编辑的是哪一天 ✓ ----
     //   优先外壳记住的那天（点过的那天）；它不在正在看的这一个月时，
     //   落回"今天"（今天就在这个月的话）、否则落回 1 号 ✓
@@ -421,6 +460,13 @@ export function calendarViewHtml(opts = {}) {
         const dueList = dueByDay[d] || [];
         const due = dueList.length ? dueList[0] : null;
         const heat = !!estrusByDay[d];
+        // ★ 2026-11-13（2.7 第二批）：这一天落在谁的预计月经里
+        const absD = periodSpans.length ? absDayOf(y, m, d, cal) : 0;
+        const perHits = periodSpans.length
+            ? periodSpans.filter((sp) => absD >= sp.fromAbs && absD <= sp.toAbs)
+            : [];
+        const perStart = perHits.some((sp) => absD === sp.fromAbs);
+        const perEnd = perHits.some((sp) => absD === sp.toAbs);
         const tips = [];
         if (card) tips.push(String(card.title || ''));
         if (due) {
@@ -428,12 +474,18 @@ export function calendarViewHtml(opts = {}) {
             tips.push(dueLineText(mergeDueByDate(dueList)[0]));
         }
         if (heat) tips.push('发情日');
+        for (const sp of perHits) {
+            tips.push('预计月经：' + sp.name + (sp.range ? ('（' + sp.fromStr + ' 到 ' + sp.toStr + '）') : ('（' + sp.fromStr + '）')));
+        }
         if (!tips.length) tips.push('点一下在下面写日程');
         const cls = 'bc-cal-cell'
             + (isToday ? ' bc-cal-on' : '')
             + (card ? ' bc-cal-mark' : '')
             + (due ? ' bc-cal-hasdue' : '')
             + (heat ? ' bc-cal-hasheat' : '')
+            + (perHits.length ? ' bc-cal-hasperiod' : '')
+            + (perStart ? ' bc-cal-perstart' : '')
+            + (perEnd ? ' bc-cal-perend' : '')
             + (isSel ? ' bc-cal-sel' : '');
         cells += '<div class="' + cls + '" data-cal-day="' + d + '" title="'
             + esc(tips.join('　·　')) + '">'
@@ -442,6 +494,11 @@ export function calendarViewHtml(opts = {}) {
             + (hol ? '<div class="bc-cal-h">' + esc(hol) + '</div>' : '')
             + (due ? '<div class="bc-cal-due">' + (due.egg ? '破壳' : '预产期') + (dueList.length > 1 ? (' ' + dueList.length + ' 胎') : '') + '</div>' : '')
             + (heat ? '<div class="bc-cal-heat">发情</div>' : '')
+            // ★ 只在**这一段的第一天**写两个字「预计」（中间那些天只留淡色带，不然格子挤爆 ✓）
+            //   ⚠️ 为什么不写「预计月经」四个字：格子内宽 37px（320 宽时 31px），
+            //      9.5px 的四个字放不下、会变成「预计…」（她手机上就是那样 ✗）；
+            //      两个字放得下，全称在脚下那行与点开那一天的下半部分里 ✓
+            + (perStart ? '<div class="bc-cal-per">预计</div>' : '')
             + (card ? '<div class="bc-cal-n">' + esc(String(card.label || '').slice(0, 6)) + '</div>' : '')
             + '</div>';
     }
@@ -523,7 +580,7 @@ export function calendarViewHtml(opts = {}) {
     //   ③ 「不跟聊天走」是内部行话，还裹在括号里 ✗
     //   ⇒ 脚注现在只回答"这是哪个日历"（两份各有一个名字 ✓）；"存在哪 / 备份带不走"交给「？」✓
     const foot = inChat
-        ? '<div class="bc-cal-foot">剧情日历：点一个日子就能在下面写日程，有日程的日子圈红圈</div>'
+        ? '<div class="bc-cal-foot">剧情日历：点一个日子就能在下面写日程，有日程的日子圈红圈；粉色的日子是预计的月经（不规律的那几天会连成一段）</div>'
         : '<div class="bc-cal-foot">这是现实日历：按这台设备的今天算，跟剧情日程分开记</div>';
 
     // ★ 跨月：把「前一个 / 这个 / 后一个」连起来（**借一次单月渲染、递归调自己** ✓
@@ -562,12 +619,22 @@ export function calendarViewHtml(opts = {}) {
 
     // ★ 下半部分：点中的那一天就地编辑（**只在默认视图** ✓）
     //   聊天里 = 这个故事那份日程；非聊天 = 现实日历那份（存全局，按设备日期 ✓）
+    /** 这一天落在谁的预计月经里（下半部分那行用；跟格子上是同一份数据 ✓） */
+    const periodNotesOf = (selObj) => {
+        if (!selObj || !periodSpans.length) return [];
+        let absD = 0;
+        try { absD = absDayOf(selObj.y, selObj.m, selObj.d, cal); } catch { absD = 0; }
+        if (!Number.isFinite(absD) || !absD) return [];
+        return periodSpans
+            .filter((sp) => absD >= sp.fromAbs && absD <= sp.toAbs)
+            .map((sp) => '预计月经：' + sp.name + (sp.range ? ('（' + sp.fromStr + ' 到 ' + sp.toStr + '）') : ('（' + sp.fromStr + '）')));
+    };
     let dayBox = '';
     if (sel) {
         if (inChat) {
             const selDate = formatFictionDate(sel, cal);
             if (selDate) {
-                dayBox = dayEditorHtml(selDate, calendarEventsOn(selDate), timeUnitNow(), dueByDay[sel.d] || []);
+                dayBox = dayEditorHtml(selDate, calendarEventsOn(selDate), timeUnitNow(), dueByDay[sel.d] || [], periodNotesOf(sel));
             }
         } else {
             dayBox = realDayEditorHtml(deviceDateKey(sel.y, sel.m, sel.d));

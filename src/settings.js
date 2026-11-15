@@ -887,8 +887,9 @@ export const DEFAULT_SETTINGS = {
     // 待生效的模式：在设置页改了不会立刻生效，等周期边界才换挡 ✓
     // （这是规则相关的，随时切换不对劲 ⇒ 卡在周期边界换挡 ✓）
     cycleSettlePending: '',
-    // ★ 精子存活期（天）：最短 / 最长，掷的时候**范围里均匀随机**
-    //   ⇒ 只让玩家调范围（加权等于插件假装知道精子质量 ✗）
+    // ★ 精子存活时间：住种族图鉴「精子存活时间」那一格（按精子提供方那一族取）——
+    //   2026-11-13（精子卵子存活 第四批）把设置页的全局两格与 `spermLifeMin / spermLifeMax`
+    //   一起删了：每族的精子能活几天本来就不一样，一个全局值套所有人是错的 ✓
     // ★ 易读模式（⚠️ 注释里也**不许**写"这一档适合谁用"这类说法 ✗，只描述字号与对比度）
     //   'normal' = 正常（**默认**，字号与信息密度按标准来）｜'large' = 易读模式（字号整体放大 + 对比度拉到 AAA + 行距放宽）
     // ★ 周期模式（月经 / 非月经）—— 在补丁那里做一个模式切换 ✓
@@ -961,12 +962,11 @@ export const DEFAULT_SETTINGS = {
         //   true = 刷新就重置（默认 ✓）；false = 按现实时间接着走（老行为 ✓）
         resetOnLoad: true,
     },
-    spermLifeMin: 1,
-    spermLifeMax: 7,
     // ★★ 受精判定口径（两档，规则变体不是开关）——
     //   'cumulative' 累计受孕率（**默认**）＝窗口内入过账的批次贡献全部计入，失活的不扣旧贡献
     //   'alive'      仅存活精子 ＝ 只算窗口结束那一刻**还活着**的那几批
-    //   ⚠️ 只换「判定值」这一个数：面板上的累计受孕率（d2）两档都是**累计**，不会跟着变小 ✓
+    //   ⚠️ 只换「判定值」这一个数：面板上的累计受孕率（d2）不跟着这一档变 ✓
+    //      （d2 跟的是**结算方式**：'reset' 只算本周期；'sperm' 本周期＋上一周期还活着的批次）
     //   ⚠️ 只在「按精子存活」结算方式下才有区别（按周期清零没有存活期 ⇒ 两档恒等）
     //   ⚠️ 切换**不重算**已经判过的结果（重算等于改剧情）⇒ 下一次判定才生效 ✓
     judgeBasis: 'cumulative',
@@ -983,7 +983,7 @@ export const DEFAULT_SETTINGS = {
     implantDaysMin: 6,
     implantDaysMax: 10,
     // ★★ 四个基础率：
-    //   **这四个数是受孕率计算的唯一真相源**（阶段基础率 × 体质系数 × 防护系数 里的第一个因子）。
+    //   **这四个数是受孕率计算的唯一真相源**（阶段基础率 × 卵子质量 × 精子致孕力 × 防护系数 里的第一个因子）。
     //   ⚠️ 在**三处**各写一份必打架：`cycleDayInfoOf()`（判定用）、[生理周期模块] 正文、
     //   [身体补丁] 正文 ✗
     //   ⇒ 现在只存这一份：判定直接读它，正文里那几处数字由 `applyCycleRateLines()` 在**发送时**渲染进去
@@ -1019,7 +1019,7 @@ export const DEFAULT_SETTINGS = {
     //   · 填 14 这类 ＝ 恢复期最后这十来天算排卵已恢复（受孕率抬到受孕窗口那一档）
     //   ⚠️ 不影响"恢复期能不能怀"（那一直是能的），只影响最后那几天按多高的基础率算 ✓
     postpartumOvulationDays: 0,
-    // ★ 2026-11-09：图鉴的「介绍（外貌）」这一段发不发主 API。
+    // ★★ 2026-11-13（她定）：图鉴的**整段正文**（介绍 / 生理 / 繁殖 / 补充）发不发主 API。
     //   默认**关**：角色卡自己写了外貌，图鉴再发一份两处会打架；
     //   关着只影响「介绍」那一段，生理 / 生育 / 补充照发 ✓
     codexIntroOn: false,
@@ -1298,6 +1298,21 @@ export const DEFAULT_SETTINGS = {
     userCycleWhileInfertile: false,
     userAwarenessTier: '',           // 玩家自己那份察觉档位（空＝交给 AI 判一次）
     userAwarenessTierManual: false,  // 玩家手选过 ⇒ 锁住，AI 再报也不覆盖
+
+    // ---- ★ 2026-11-13（第五批）：本人那两份生育力档位 ----
+    //   「日常体质系数」退役、「卵子质量」接管之后，本人这一份也要能自己选（全局、穿所有聊天 ✓）。
+    //   空串 = 跟图鉴（这一族基准）；值是 POWER_TIERS 里的档位词。
+    userEggQualityTier: '',
+    userSpermPowerTier: '',
+    userEggQualityManual: false,   // 玩家手选过卵子质量档 ⇒ AI 不再改（本人没有 AI 判档，留着跟 NPC 同一套判据 ✓）
+
+    // ---- ★ 2026-11-13（2.7 经期波动 第一批）：本人那一份「经期规律度」----
+    //   跟上面两条一个道理：本人的东西穿所有聊天 ⇒ 住全局设置；NPC 住本聊天档案 ✓
+    //   空串 = 跟图鉴（这一族那一格，默认「规律」＝老行为 ✓）
+    //   自定义那一档要两格：最短 / 最长；0 = 没填（settings 那边兜 24 到 32 天 ✓）
+    userCycleRegularTier: '',
+    userCycleRegularLo: 0,
+    userCycleRegularHi: 0,
 
     // ---- 已退休：用户本人「属于哪个大类」----
     //   2026-11-06 大类那一格退休（判定只看种族）；2026-11-08 两张人外表也退场了 ⇒
@@ -1946,7 +1961,7 @@ export const FIELD_GROUPS = [
     ['basic', '基础信息', ['title', 'phase', 'sub', 'minor', 'calc'],
         '面板顶部那几行：标题、阶段进度、时间/防护/风险、计算过程'],
     ['items', '数据项 d1~d9', ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9'],
-        '阶段基础率、累计受孕率、体质系数、致孕方、意识状态、胎儿、泌乳、生产次数、敏感带'],
+        '阶段基础率、累计受孕率、卵子质量、致孕方、意识状态、胎儿、泌乳、生产次数、敏感带'],
     ['rows', '状态条 row1~row3', ['row1', 'row2', 'row3'],
         '生理状态、身体状况、近期性行为，这三条是给正文描写看的身体状态描述'],
 ];
@@ -1954,7 +1969,7 @@ export const FIELD_GROUPS = [
 export const FIELD_LABEL = {
     title: '状态标题', phase: '阶段名', sub: '进度（Day / 孕周）',
     minor: '次要描述（时间 / 防护 / 风险）', calc: '计算说明',
-    d1: 'd1 阶段基础率', d2: 'd2 累计受孕率', d3: 'd3 体质系数', d4: 'd4 致孕方',
+    d1: 'd1 阶段基础率', d2: 'd2 累计受孕率', d3: 'd3 卵子质量', d4: 'd4 致孕方',
     d5: 'd5 意识状态', d6: 'd6 胎儿状态', d7: 'd7 泌乳状态', d8: 'd8 生产次数',
     d9: 'd9 敏感带',
     row1: 'row1 生理状态', row2: 'row2 身体状况', row3: 'row3 近期性行为',
@@ -1990,10 +2005,10 @@ export function setFieldGroup(keys, on) {
  *
  * ⚠️ 读 cycleSettleMode（生效中），不读 cycleSettlePending（待生效）✓
  *
- * ★ sperm 那段里的「1~3 天」不能**写死在文案里**：
- *   「精子存活期」在设置里有旋钮（spermLifeMin / spermLifeMax）⇒ 写死就是两处事实源 ✗
- *   ⇒ 改成**发送时按旋钮填充**：旋钮调过，提示词里那个区间跟着变 ✓
- *   ⚠️ 顺序一律从小到大（min>max 由玩家填坏时也自愈 ⇒ 和 judgment.js 的掷骰口径一致 ✓）
+ * ★ 2026-11-13（精子卵子存活 第四批）：sperm 那段**不再写具体天数**。
+ *   以前这里读 `spermLifeMin / spermLifeMax`（全局 1~7 天），现在存活时间住种族图鉴、
+ *   按精子提供方那一族取，一个写在提示词里的全局范围反而是错的（会跟插件掷出来的打架 ✗）。
+ *   模型不需要知道这个数：它只要知道"每批各有各的期限、由系统掷定"就行 ✓
  */
 function spermRuleBlock(settle) {
     if (settle !== 'sperm') {
@@ -2002,20 +2017,14 @@ function spermRuleBlock(settle) {
             '- 进入新周期后，上周期精子全部清零。',
         ].join('\n');
     }
-    const s = settings();
-    const lo = Math.max(1, Math.min(30, Math.round(Number(s.spermLifeMin) || 1)));
-    const hi = Math.max(1, Math.min(30, Math.round(Number(s.spermLifeMax) || 7)));
-    const life = Math.min(lo, hi) === Math.max(lo, hi)
-        ? `${Math.max(lo, hi)} 天`
-        : `${Math.min(lo, hi)}~${Math.max(lo, hi)} 天`;
     // ★ 失活之后"还剩下什么"要看判定口径 ⇒ 这一句分两档写（见 judgeValueRule 那段说明）
     const afterDead = (judgeBasisOf() === 'alive')
-        ? '- 超过存活期限的批次即为「已失活」。它此前贡献过的点数仍然留在累计受孕率里，累计率不会因为失活而变小；但判定时不把它算进去，也不会把它点名成致孕方。'
-        : '- 超过存活期限的批次即为「已失活」。它此前贡献过的点数仍然留在累计受孕率里，累计率不会因为失活而变小；判定时它照样计入判定值，只是不再被点名成致孕方。';
+        ? '- 超过存活期限的批次即为「已失活」：不再点名成致孕方；同一周期里它先前计过的点数仍留在累计受孕率里（这一档判定时不算它）。跨到下一个周期后它不再算进新的累计受孕率。'
+        : '- 超过存活期限的批次即为「已失活」：不再点名成致孕方；同一周期里它先前计过的点数仍留在累计受孕率里（判定时照样算它）。跨到下一个周期后它不再算进新的累计受孕率。';
     return [
-        `- 每批精子有自己的存活期限：内射后存活 ${life}，具体几天由系统掷定，不要自己推算。`,
+        '- 每批精子有自己的存活期限：内射后能活几天按精子提供方那一族的设定定，具体几天由系统掷定，不要自己推算。',
         afterDead,
-        '- 进入新周期后不清零，靠各自的存活期限自然失效。',
+        '- 进入新周期后不清零：还活着的批次继续有效，下一个周期照常参与受精判定（判定按日期算存活，不看周期第几天）。',
     ].join('\n');
 }
 
@@ -2034,10 +2043,11 @@ function judgeValueRule(settle) {
     if (settle !== 'sperm') {
         return `- 判定值取@@TERM:ovulationWindow@@结束那一刻的累计受孕率；${tail}`;
     }
+    const cross = '上一个周期留下、到那一刻还活着的批次也一起算；到那一刻已经失活的跨周期批次不算（它上个周期已经判过）。';
     if (judgeBasisOf() === 'alive') {
-        return `- 判定值只取@@TERM:ovulationWindow@@结束那一刻还在存活期内的那几批的贡献之和；已经失活的批次不计入判定值（它们计过的贡献仍然留在累计受孕率里，只是判定不用它）。${tail}`;
+        return `- 判定值只取@@TERM:ovulationWindow@@结束那一刻还在存活期内的那几批的贡献之和；已经失活的批次不计入判定值（它们计过的贡献仍然留在本周期的累计里，只是判定不用它）。${cross}${tail}`;
     }
-    return `- 判定值取@@TERM:ovulationWindow@@结束那一刻的累计受孕率，失活批次已经计过的贡献照样算在里面；${tail}`;
+    return `- 判定值取@@TERM:ovulationWindow@@结束那一刻的累计受孕率，本周期内失活批次已经计过的贡献照样算在里面；${cross}${tail}`;
 }
 
 /** 按当前模式把模块文案里的占位符换掉 */
@@ -3172,7 +3182,7 @@ export function moduleText(id, targetName = null, mode = null, xeno = false) {
  *   ⇒ 面板写 7、实际按 6 算，两边对不上。
  *   ⇒ 现在夹取只在**这一处**，面板读写与推演共用同一个数 ✓
  *
- * 口径：按周期排卵的 ⇒ 排卵日减 2；交配后排卵（还没掷出排卵日）⇒ 周期长度减 2。
+ * 口径：按周期排卵的 ⇒ 排卵日减 2；交配后排卵（还没掷出排卵日）⇒ 周期长度减 1。
  *   ⚠️ 这两条和 `derive.js` / `cycleDayInfoOf` 里那两句是同一个口径，改一处要顺带看那边 ✓
  */
 export function periodDaysCapOf(targetKey = null) {
@@ -3186,9 +3196,11 @@ export function periodDaysCapOf(targetKey = null) {
         const o0 = (p.ovu === null || p.ovu === undefined) ? NaN : Math.round(Number(p.ovu));
         ovu = (Number.isFinite(o0) && o0 > 0) ? o0 : null;
     } catch { /* 读不到就用默认参数 */ }
-    // 周期长度那一道边界跟 `cycleDayRanges` 一致（5 ~ 90 天）
-    const c = Math.max(5, Math.min(90, cycle));
-    if (ovu === null) return Math.max(1, c - 2);
+    // ★ 2026-11-13（2.7 第三批修）：周期长度**不再压到 90 天** ——
+    //   长周期族（狗 180 / 象 112）和自定义长周期都会在这里被压短，
+    //   结果"经期天数最多能填几天"跟真正用的周期对不上 ✗
+    const c = Math.max(1, cycle);
+    if (ovu === null) return Math.max(1, c - 1);
     return Math.max(1, ovu - 2);
 }
 
@@ -3432,6 +3444,8 @@ function applyBodyRaceName(text, targetKey) {
 
 /**
  * 这个对象的周期长度 / 排卵日（正文个人值 > 图鉴这一族 > 全局 28 / 14 ✓）
+ * ★ 2026-11-13（2.7 经期波动 第一批）：本周期已经记下来的长度（`cycleLenNow`）优先 ——
+ *   不规律档每段长度不同，一个周期内不变；没有那两个字段（老存档 / 规律档）⇒ 跟老行为逐字相同 ✓
  */
 export function bodyCycleParamsOf(targetKey = null) {
     // ⚠️ 用「存着的那份原文」（rebase:false）：判断"这个人有没有单独填数字"必须看原文，
@@ -3440,7 +3454,18 @@ export function bodyCycleParamsOf(targetKey = null) {
     const cx = codexCycleParamsOf(targetKey) || {};
     const cNum = Number(cx.cycle);
     const oNum = Number(cx.ovu);
-    const cycle = own.cycle ?? (Number.isFinite(cNum) && cNum >= 5 ? Math.round(cNum) : 28);
+    let cycle = own.cycle ?? (Number.isFinite(cNum) && cNum >= 5 ? Math.round(cNum) : 28);
+    // ★ 本周期的那两个数（第二批开新周期时写进去的；老存档 / 规律档没有 ⇒ null ✓）
+    let nowLen = null;
+    let nowOvu = null;
+    try {
+        const now = cycleHooks.cycleNow ? cycleHooks.cycleNow(targetKey) : null;
+        const c = Math.round(Number(now?.cycle));
+        if (Number.isFinite(c) && c >= 1) nowLen = c;
+        const o = Math.round(Number(now?.ovu));
+        if (Number.isFinite(o) && o >= 1) nowOvu = o;
+    } catch { nowLen = null; nowOvu = null; }
+    if (nowLen !== null) cycle = nowLen;
     // ★ 2026-11-08：交配后排卵（兔 / 猫这类）⇒ 排卵日不是固定天数，
     //   看本周期有没有**已经触发过**（插件在内射时掷出来，存在对象身上）。
     //   没触发 ⇒ ovu 给 null（各消费方都要认这个"还没排卵"，不是 0 也不是 14）
@@ -3453,6 +3478,11 @@ export function bodyCycleParamsOf(targetKey = null) {
         }
         return { cycle, ovu: null, induced: true, pending: true };
     }
+    // ★ 本周期记下来的排卵日（跟着长度平移算好的那个）
+    if (nowOvu !== null) {
+        const hi = Math.max(1, Math.min(cycle - 2, cycle));
+        return { cycle, ovu: Math.max(1, Math.min(nowOvu, hi)) };
+    }
     if (own.cycle && own.ovu) return { cycle: own.cycle, ovu: own.ovu };
     let ovu = own.ovu ?? (Number.isFinite(oNum) && oNum >= 1 ? Math.round(oNum) : 14);
     // 和参数面板同一道夹：排卵日不能顶到周期尾（否则窗口永不出现 ⇒ 受精判定永不触发 ✗）
@@ -3462,53 +3492,142 @@ export function bodyCycleParamsOf(targetKey = null) {
 }
 
 // ---------------------------------------------------------------------------
-// ★ `d3`（体质系数）的真相源＝身体补丁里那行「日常体质系数」
+// ★ 2026-11-13（2.7 经期波动 第一批）：经期规律度
 //
-// 模块正文自己就这么写着（core 里写着：体质系数以 [身体补丁] 里那一行的值为准 ✓）
-//   ⇒ 插件读的必须是**同一行**，否则面板上的 d3 和实际参与判定/描写的那个数会对不上 ✗
-// 为什么解析放这儿：`params.js` 依赖 `store.js` ⇒ store 不能反过来 import 它（会成环 ✗）
-//   ⇒ 落到 `settings.js`，**正则也导出**、面板那条 spec 用它（**一份解析** ✓）
+// 一个人（不是一族）在**每个周期开始时**掷一次这个周期的长度 —— 这一批只做
+//   「图鉴那一格 + 个人那一档 + 取值」；真正掷、预计日期改范围是第二批 ✓
+//
+// 三个取值层（老规矩：个人 > 这一条 > 全局）：
+//   ① 个人：`targets[key].cycleRegularTier`（本人住全局设置）
+//   ② 图鉴：`cycle_regular` 那一格（空着 = 规律）
+//   ③ 全局：规律（常数，＝老行为：每段一样长、不掷 ✓）
+//
+// 档位 → 长度范围（**平均长度不变**，只在平均上下浮动）：
+//   · 规律         平均长度（不掷）
+//   · 有点不规律  平均 ± 3 天
+//   · 很不规律    平均 ± 7 天
+//   · 自定义      玩家自己填的最短到最长（**不夹**，只挡非数字 / ≤0）
 // ---------------------------------------------------------------------------
 
-/** 「日常体质系数：1.0」这种写法（`:导出了给 params.js 用，别各写一份 ✓） */
-export const BODY_COEF_RE = /日常体质系数[：:]\s*([\d.]+)/;
-/** 老排版：中间没有冒号 ✓ */
-export const BODY_COEF_OLD_RE = /日常体质系数\s*([\d.]+)/;
+/** 规律度四档：[id, 界面上的字, 上下浮动几天（null = 自定义 / 用户自己填）] */
+export const CYCLE_REGULAR_TIERS = [
+    ['regular', '规律', 0],
+    ['slight', '有点不规律', 3],
+    ['strong', '很不规律', 7],
+    ['custom', '自定义', null],
+];
 
-/**
- * 某个对象身体补丁里那行「日常体质系数」的**原文数字**（照它写的形态返回，如 `'1.0'`）。
- * @returns {string} 空串 = 读不出来（调用方自己决定回退，别把原值清了 ✓）
- */
-export function bodyCoefOf(targetKey = null) {
-    // ★ **必须 `{ rebase: false }`** —— 默认那条会把正文
-    //   "套回最新内置那份"，于是玩家自己填的值被读成出厂值（跟参数面板两条读法不一致 ✗）
-    const t = (() => { try { return String(moduleTextRaw('body_base', targetKey, { rebase: false }) || ''); } catch { return ''; } })();
-    const m = t.match(BODY_COEF_RE) || t.match(BODY_COEF_OLD_RE);
-    if (!m) return '';
-    const n = Number(m[1]);
-    return (Number.isFinite(n) && n > 0) ? String(m[1]) : '';
+/** 自定义那一档的全局兜底（个人没填 / 填坏时用） */
+export const CYCLE_REGULAR_CUSTOM_DEFAULT = { lo: 24, hi: 32 };
+
+/** 档位 id 或界面字 → 档位 id（认不出 ⇒ 空串） */
+export function cycleRegularTierIdOf(text) {
+    const t = String(text ?? '').trim();
+    const hit = CYCLE_REGULAR_TIERS.find(([id, label]) => id === t || label === t);
+    return hit ? hit[0] : '';
 }
 
-/** 「排卵日当天临时提升至 1.5」那种写法（跟 `bodyCoefOf` 同一行、一份解析 ✓） */
-export const BODY_PEAK_RE = /排卵日当天临时提升至\s*([\d.]+)/;
-/** 老排版：只认「提升至 X」这一小段 ✓ */
-export const BODY_PEAK_OLD_RE = /提升至\s*([\d.]+)/;
+/** 档位 → 界面上的字（认不出 ⇒ 空串） */
+export function cycleRegularLabelOf(text) {
+    const id = cycleRegularTierIdOf(text);
+    const hit = CYCLE_REGULAR_TIERS.find(([x]) => x === id);
+    return hit ? hit[1] : '';
+}
 
 /**
- * 这个对象**排卵日当天**的体质系数（身体补丁那行括号里的数）。
+ * 这个人的规律度档位（个人 > 图鉴 > 规律）。
+ * @returns {'regular'|'slight'|'strong'|'custom'}
+ */
+export function cycleRegularTierOf(targetKey = null) {
+    let own = '';
+    try { own = cycleHooks.regularTier ? String(cycleHooks.regularTier(targetKey) || '') : ''; } catch { own = ''; }
+    const ownId = cycleRegularTierIdOf(own);
+    if (ownId) return ownId;
+    let cx = '';
+    try { cx = cycleHooks.regularCodex ? String(cycleHooks.regularCodex(targetKey) || '') : ''; } catch { cx = ''; }
+    const cxId = cycleRegularTierIdOf(cx);
+    if (cxId) return cxId;
+    return 'regular';
+}
+
+/** 这个人的**平均**周期长度（不含本周期掷出来的那个数 —— 掷就是在它上下浮动 ✓） */
+function staticCycleLenOf(targetKey = null) {
+    const own = parseBodyCycleRaw(moduleTextRaw('body_base', targetKey, { rebase: false }));
+    const cx = codexCycleParamsOf(targetKey) || {};
+    const cNum = Number(cx.cycle);
+    const cycle = own.cycle ?? (Number.isFinite(cNum) && cNum >= 5 ? Math.round(cNum) : 28);
+    const n = Math.round(Number(cycle));
+    return (Number.isFinite(n) && n >= 1) ? n : 28;
+}
+
+/** 这个人的**平均**排卵日（同样不看本周期掷出来的那个数；夹法和主链一致 ✓） */
+function staticCycleOvuOf(targetKey = null) {
+    const own = parseBodyCycleRaw(moduleTextRaw('body_base', targetKey, { rebase: false }));
+    const cx = codexCycleParamsOf(targetKey) || {};
+    const cycle = staticCycleLenOf(targetKey);
+    const oNum = Number(cx.ovu);
+    const raw = own.ovu ?? (Number.isFinite(oNum) && oNum >= 1 ? Math.round(oNum) : 14);
+    const hi = Math.max(1, Math.min(cycle - 2, cycle));
+    return Math.max(1, Math.min(Math.round(Number(raw) || 14), hi));
+}
+
+/**
+ * ★ 2026-11-13（2.7 第二批）：这一族的**黄体期**多长。
  *
- * 为什么要它：受孕率公式的第二个因子在排卵日会临时抬一档（出厂 1.0 → 1.5），
- *   正文那个例子「20% × 1.5 = 30%」就是这么来的 ⇒ 插件自己算增量时必须拿到它，
- *   不然排卵日那笔会按日常系数少算 ✗
- * @returns {string} 空串 = 读不出来（调用方退回日常系数，别硬套一个数 ✓）
+ * 口径（计划第四节定的）：黄体期视为固定 ＝ 这一族的「平均周期长度 − 平均排卵日」
+ *   （人类 28 − 14 ＝ 14 天）⇒ 本周期长度 L 的排卵日 ＝ L − 黄体期。
+ * 这样长度一变，受孕窗口跟着平移，不会出现「周期 35 天了排卵日还在第 14 天」✓
+ * ⚠️ 读不到排卵日（空着）⇒ 按全局 14，跟主链同一个兜底 ✓
  */
-export function peakCoefOf(targetKey = null) {
-    const t = (() => { try { return String(moduleTextRaw('body_base', targetKey, { rebase: false }) || ''); } catch { return ''; } })();
-    const m = t.match(BODY_PEAK_RE) || t.match(BODY_PEAK_OLD_RE);
-    if (!m) return '';
-    const n = Number(m[1]);
-    return (Number.isFinite(n) && n > 0) ? String(m[1]) : '';
+export function cycleLutealDaysOf(targetKey = null) {
+    const avg = staticCycleLenOf(targetKey);
+    const ovu = staticCycleOvuOf(targetKey);
+    return Math.max(1, avg - ovu);
 }
+
+/**
+ * 本周期长度 L ⇒ 这个周期的排卵日（第几天）。
+ * 夹在 1 到 L − 2（跟主链同一道夹：排卵日不能顶到周期尾，否则窗口永不出现 ✗）
+ */
+export function cycleOvuForLenOf(targetKey = null, len = 0) {
+    const L = Math.max(1, Math.round(Number(len) || 0));
+    const ovu = L - cycleLutealDaysOf(targetKey);
+    return Math.max(1, Math.min(ovu, Math.max(1, L - 2)));
+}
+
+/**
+ * 这个人周期长度的**浮动范围**（第二批照着这个区间掷一次 ✓ / 第三批拿它写读数）。
+ * @returns {{tier:string, avg:number, lo:number, hi:number}}
+ *   `lo === hi` ⇒ 规律档（不掷，就是平均值）
+ */
+export function cycleLenRangeOf(targetKey = null) {
+    const avg = staticCycleLenOf(targetKey);
+    const tier = cycleRegularTierOf(targetKey);
+    const mk = (lo, hi) => ({ tier, avg, lo: Math.min(lo, hi), hi: Math.max(lo, hi) });
+    if (tier === 'custom') {
+        let r = null;
+        try { r = cycleHooks.regularRange ? cycleHooks.regularRange(targetKey) : null; } catch { r = null; }
+        const lo = Math.round(Number(r?.lo));
+        const hi = Math.round(Number(r?.hi));
+        // ★ 她定的：玩家写多少就是多少（不设上界），只挡非数字与 ≤0 ✓
+        if (Number.isFinite(lo) && Number.isFinite(hi) && lo > 0 && hi > 0) return mk(lo, hi);
+        return mk(CYCLE_REGULAR_CUSTOM_DEFAULT.lo, CYCLE_REGULAR_CUSTOM_DEFAULT.hi);
+    }
+    const hit = CYCLE_REGULAR_TIERS.find(([id]) => id === tier);
+    const span = Number(hit?.[2]) || 0;
+    if (!span) return mk(avg, avg);
+    return mk(Math.max(1, avg - span), avg + span);
+}
+
+
+// ---------------------------------------------------------------------------
+// ★ 2026-11-13（第五批）：`bodyCoefOf` / `peakCoefOf` 已经退役
+//
+// 「日常体质系数」那行从身体补丁里删掉了，受孕率公式的第二项改成「卵子质量」
+//   （图鉴 / 个人档位，见上面 `eggQualityOf`）⇒ 这里不再有"从正文里读系数"这条。
+// ⚠️ 老存档正文里如果还留着那行：`skelOf` 会把它整行抹掉，`rebaseNumbers` 会把它丢掉，
+//   下一次套正文就自动消失（不留一个没人读的数在提示词里 ✓）
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // ★ 「这个角色的种族」那格 —— 也就是身体补丁里那行
@@ -3661,8 +3780,113 @@ function cycleRateOf(key) {
     return n;
 }
 
+// ---------------------------------------------------------------------------
+// ★ 2026-11-13（精子卵子存活 第二批）：卵子存活时间 ⇒ 受孕窗口有多长
+//
+// 图鉴那两格里「卵子存活时间」是这一族的范围（最短到最长，天）。窗沿用**最长**那一端：
+//   判定必须等到"这颗卵一定已经失活"之后才做，用最短会提前判、把还在存活期内的行为挡在外面 ✓
+//
+// 但窗口不能顶到结算那天：一个周期走满（周期日 > 周期长度）会先结算、这一轮的判定会被跳过。
+//   ⇒ 窗口最后一天最多到「周期长度减 1」（留一天给过渡期）。
+//
+// ⚠️ 卵子存活按**卵子提供方**那一族取。现在（第二批）判定的对象就是怀的那个人，
+//   所以直接读她自己那一族；海马那种"雌性供卵、雄性怀"的口径排在 2.7+（先不在这里特判）✓
+// ⚠️ settings 不能 import 图鉴那一族（会成环）⇒ 由 codex-values.js 注册进来（跟周期参数同一个做法）✓
+// ---------------------------------------------------------------------------
+
+let eggLifeReader = null;
+/** 注册「这一族卵子存活时间」的读取器（codex-values.js 启动时挂上 ✓） */
+export function setEggLifeReader(fn) {
+    eggLifeReader = typeof fn === 'function' ? fn : null;
+}
+
+/** 这一族卵子存活时间的原样区间（天）；读不到 ⇒ 人类那一条（1 天） */
+export function eggLifeRangeOf(targetKey = null) {
+    const fallback = { lo: 1, hi: 1 };
+    if (!eggLifeReader) return fallback;
+    try {
+        const v = eggLifeReader(targetKey);
+        const a = Math.max(1, Math.round(Number(v?.lo) || 1));
+        const b = Math.max(a, Math.round(Number(v?.hi) || a));
+        return { lo: a, hi: b };
+    } catch { return fallback; }
+}
+
+/** 卵子能受精几天（取范围的上端：等它一定失活才算窗口结束 ✓） */
+export function eggLifeDaysOf(targetKey = null) {
+    return eggLifeRangeOf(targetKey).hi;
+}
+
+/**
+ * 这个窗口实际铺几天 —— 再被「周期长度减 1」夹一道。
+ * @param {string|null} targetKey
+ * @param {number} [cycleLen] 周期长度（不传 ⇒ 不夹）
+ * @param {number|null} [ovuDay] 排卵日（不传 / null ⇒ 不夹：交配后排卵没有固定日号）
+ */
+export function eggWindowDaysOf(targetKey = null, cycleLen = 0, ovuDay = 0) {
+    const base = eggLifeDaysOf(targetKey);
+    const c = Math.round(Number(cycleLen));
+    const o = Math.round(Number(ovuDay));
+    if (!Number.isFinite(c) || c <= 0) return base;
+    if (!Number.isFinite(o) || o <= 0) return base;
+    // 窗口最后一天 = 排卵日 + 天数 ⇒ 最多到周期长度减 1
+    const cap = Math.max(1, c - o - 1);
+    return Math.max(1, Math.min(base, cap));
+}
+
+/**
+ * 受孕窗口最后一天是周期第几天（= 排卵日 ＋ 卵子存活天数）。
+ * 交配后排卵、本周期还没排卵 ⇒ null（这一档本来就没有固定窗口 ✓）
+ */
+export function windowLastDayOf(targetKey = null) {
+    let bp = null;
+    try { bp = bodyCycleParamsOf(targetKey); } catch { return null; }
+    const o = Number(bp?.ovu);
+    if (!Number.isFinite(o) || o <= 0) return null;
+    return o + eggWindowDaysOf(targetKey, bp.cycle, o);
+}
+
+// ---------------------------------------------------------------------------
+// ★ 2026-11-13（精子卵子存活 第五批）：受孕率公式的两侧生育力
+//
+// 公式（2026-11-13 她定的）：基础率 × 卵子质量 × 精子致孕力 × 防护。
+//   · 卵子质量＝孕方那一侧（追踪对象自己的族 / 个人档位）
+//   · 精子致孕力＝致孕方那一侧（**精子提供方**那一族；跨族各取各的 ✓）
+//   · 两个都是倍率，1 = 人类基准；跟存活时间同一套三层取值（个人 > 条目 > 人类）
+// ⚠️ 图鉴那两格是 range（基准 + 范围），判定取区间中点 —— 交给 codex-values 算
+//   `settings` 不能 import 图鉴（会成环）⇒ 由它注册进来（跟卵子存活同一个做法 ✓）
+// ---------------------------------------------------------------------------
+
+let fertilityPowerReader = null;
+/** 注册「这一族的精子致孕力 / 卵子质量」的读取器（codex-values.js 启动时挂上 ✓） */
+export function setFertilityPowerReader(fn) {
+    fertilityPowerReader = typeof fn === 'function' ? fn : null;
+}
+
+function powerValueOf(key, which) {
+    if (!fertilityPowerReader) return 1;
+    try {
+        const v = fertilityPowerReader(key, which);
+        const n = Number(v?.value);
+        return (Number.isFinite(n) && n > 0) ? n : 1;
+    } catch { return 1; }
+}
+
+/** 这个人的卵子质量（倍率，1 = 人类基准） */
+export function eggQualityOf(key = null) {
+    return powerValueOf(key, 'egg');
+}
+
+/** 这个人的精子致孕力（倍率，1 = 人类基准） */
+export function spermPowerOf(key = null) {
+    return powerValueOf(key, 'sperm');
+}
+
 /** 第 N 天属于哪一期 + 那一期的基础率（`derive.js` 与本文件的区间扫描**共用这一处** ✓） */
-export function cycleDayInfoOf(day, ovu, pdays) {
+export function cycleDayInfoOf(day, ovu, pdays, eggDays = 1) {
+    // ★ 2026-11-13（第二批）：受孕窗口 = 排卵日 −1 到 排卵日 ＋ 卵子存活天数。
+    //   卵子 1 天（人类默认）时结果跟以前一模一样：前后各一天、过渡日 +2 ✓
+    const eDays = Math.max(1, Math.round(Number(eggDays) || 1));
     // ★ 2026-11-08：交配后排卵的族**本周期还没排卵** ⇒ 没有窗口、没有黄体，
     //   经期之后一律按卵泡期算（基础率用它自己那一档）。ovu 是 null（不是 0）✓
     const oNum = Number(ovu);
@@ -3674,9 +3898,10 @@ export function cycleDayInfoOf(day, ovu, pdays) {
     // ⚠️ 分支顺序＝`derive.js` 那条 if 链，一个字都别换位 ✓
     if (day <= pdays) return { phaseId: 'menstrual', d1: cycleRateOf('menstrual') + '%' };
     if (day === ovuDay) return { phaseId: 'ovulationDay', d1: cycleRateOf('window') + '%' };
-    if (day === ovuDay - 1 || day === ovuDay + 1) return { phaseId: 'ovulation', d1: cycleRateOf('window') + '%' };
     if (day < ovuDay - 1) return { phaseId: 'follicular', d1: cycleRateOf('follicular') + '%' };
-    if (day === ovuDay + 2) return { phaseId: 'transition', d1: cycleRateOf('transition') + '%' };
+    // 窗口：排卵前一天 到 排卵日 ＋ 卵子存活天数（都算排卵窗口那一档 ✓）
+    if (day <= ovuDay + eDays) return { phaseId: 'ovulation', d1: cycleRateOf('window') + '%' };
+    if (day === ovuDay + eDays + 1) return { phaseId: 'transition', d1: cycleRateOf('transition') + '%' };
     return { phaseId: 'luteal', d1: '不适用' };
 }
 
@@ -3711,8 +3936,17 @@ function fmtDayRange(from, to) {
  * 参数读不到（玩家把正文改得没有锚点了）⇒ 落到出厂默认 28 / 14 / 5，照样给出合理日号 ✓
  * 参数挤得没有某一段（周期特别短）⇒ 那一段给「本周期没有这一段」，不编日期 ✓
  */
-export function cycleDayRanges(cycle, ovu, periodDays) {
-    const c = Math.max(5, Math.min(90, Math.round(Number(cycle) || 28)));
+export function cycleDayRanges(cycle, ovu, periodDays, eggDays = 1) {
+    // ★ 2026-11-13（2.7 第三批修）：**不再把周期长度夹到 90 天以内**
+    //   以前这里把周期长度夹在 5 到 90 天，可图鉴里狗 180 / 象 112 / 狼 365
+    //   都是真的，玩家自定义也能写任意天数（她定的"不夹"）⇒ 夹了会出现
+    //   「排卵日在第 166 天、受孕窗口却写第 87 到 89 天」这种正文跟判定打架的日号 ✗
+    //   ⚠️ 同时把逐天扫描换成按边界算：周期 600 天也只是几次判断，不会扫 600 遍 ✓
+    const c = Math.max(1, Math.round(Number(cycle) || 28));
+    // ★ 2026-11-14（扫 BUG）：窗口铺几天要在**交配后排卵那一支之前**算好 ——
+    //   那一支以前写死「三天 / 第 2 天 / 第 3 天」，而判定用的是「排卵日 ＋ 这一族的卵子存活天数」
+    //   ⇒ 猫（卵子存活 2 天）判定按 4 天窗口走、正文却写三天，正文和判定差一天 ✗
+    const e = Math.max(1, Math.round(Number(eggDays) || 1));
     // ★ 2026-11-08：交配后排卵的族本周期还没排卵 ⇒ 没有固定日号可说，
     //   窗口那几段给一句描述（不是编一个"第13到15天"出来 ✗）
     const oRaw = (ovu === null || ovu === undefined || ovu === '') ? NaN : Number(ovu);
@@ -3721,9 +3955,9 @@ export function cycleDayRanges(cycle, ovu, periodDays) {
         const out = {};
         out.menstrual = fmtDayRange(1, p);
         out.follicular = p < c ? fmtDayRange(p + 1, c) : '本周期没有这一段';
-        out.window = '交配后排卵那天起三天';
-        out.transition = '排卵后第 2 天';
-        out.luteal = '排卵后第 3 天到周期结束';
+        out.window = `交配后排卵，从排卵前一天到排卵后第 ${e} 天`;
+        out.transition = `排卵后第 ${e + 1} 天`;
+        out.luteal = `排卵后第 ${e + 2} 天到周期结束`;
         return out;
     }
     const o = Math.max(1, Math.min(Math.round(oRaw), Math.max(1, c - 2)));
@@ -3731,10 +3965,19 @@ export function cycleDayRanges(cycle, ovu, periodDays) {
     /** 「排卵日」和「窗口」在正文里算一段 ⇒ 归到同一个键 ✓ */
     const bucketOf = (info) => (info.phaseId === 'ovulation' || info.phaseId === 'ovulationDay')
         ? 'window' : info.phaseId;
+    // 只有这几个日子会换段（跟 `cycleDayInfoOf` 那条 if 链一一对应 ✓）
+    const marks = [...new Set([1, c + 1, p + 1, o - 1, o, o + 1, o + e + 1, o + e + 2]
+        .map((x) => Math.round(Number(x)))
+        .filter((x) => Number.isFinite(x) && x >= 1 && x <= c + 1))]
+        .sort((a, b) => a - b);
     const span = {};
-    for (let d = 1; d <= c; d++) {
-        const b = bucketOf(cycleDayInfoOf(d, o, p));
-        if (span[b]) span[b].to = d; else span[b] = { from: d, to: d };
+    for (let i = 0; i < marks.length - 1; i++) {
+        const from = marks[i];
+        const to = marks[i + 1] - 1;
+        if (to < from) continue;
+        const b = bucketOf(cycleDayInfoOf(from, o, p, e));
+        if (span[b]) span[b].to = Math.max(span[b].to, to);
+        else span[b] = { from, to };
     }
     const out = {};
     for (const k of CYCLE_DAY_KEYS) out[k] = span[k] ? fmtDayRange(span[k].from, span[k].to) : '本周期没有这一段';
@@ -3745,15 +3988,23 @@ export function cycleDayRanges(cycle, ovu, periodDays) {
  *  ★ 2026-11-08：`@@CYCLE_LEN@@` / `@@CYCLE_OVU@@` 也在这里填 ——
  *    出厂正文不再写死 28 / 14，发出去之前按「个人值 > 图鉴这一族 > 全局」换成数字 ✓ */
 function applyDayRanges(text, targetKey) {
-    if (text.indexOf('@@DAYS:') < 0 && text.indexOf('@@CYCLE_LEN@@') < 0 && text.indexOf('@@CYCLE_OVU@@') < 0) return text;
+    if (text.indexOf('@@DAYS:') < 0 && text.indexOf('@@CYCLE_LEN@@') < 0
+        && text.indexOf('@@CYCLE_OVU@@') < 0 && text.indexOf('@@EGG_LIFE@@') < 0) return text;
     let cycle = 28, ovu = 14, pdays = 5, induced = false;
     try { const c = bodyCycleParamsOf(targetKey); cycle = c.cycle; ovu = c.ovu; induced = !!c.induced; } catch { /* 读不到就用默认 */ }
     try { pdays = periodDaysOf(targetKey); } catch { /* 读不到就用默认 */ }
-    const ranges = cycleDayRanges(cycle, ovu, pdays);
+    // ★ 2026-11-13（第二批）：受孕窗口的尾部跟着这一族的卵子存活时间走 ✓
+    const eggDays = eggWindowDaysOf(targetKey, cycle, ovu);
+    const ranges = cycleDayRanges(cycle, ovu, pdays, eggDays);
     let out = text;
     for (const k of CYCLE_DAY_KEYS) out = out.split(`@@DAYS:${k}@@`).join(ranges[k]);
     out = out.replace(/@@CYCLE_LEN@@/g, String(cycle));
     out = out.replace(/@@CYCLE_OVU@@/g, induced ? '不固定（交配后排卵）' : String(ovu));
+    // 卵子能受精几天（原文里写「存活 12-24 小时」那一处，改成按这一族的数据说 ✓）
+    if (out.indexOf('@@EGG_LIFE@@') >= 0) {
+        const er = eggLifeRangeOf(targetKey);
+        out = out.replace(/@@EGG_LIFE@@/g, er.lo === er.hi ? `${er.lo} 天` : `${er.lo} 到 ${er.hi} 天`);
+    }
     return out;
 }
 
@@ -4242,7 +4493,7 @@ export function buildAchText() {
  * 两条理由，缺一不可：
  *   ① 会进插件 API 的那批（judge / both）—— 正文被改会直接把判定规则改坏 ✗
  *   ② ★ 身体补丁（body_base）—— 它只发主 API，但正文里**嵌着这个角色的数值**
- *      （周期长度 / 排卵日 / 体质系数 / 种族名，见 params.js 那张数值面板）。
+ *      （周期长度 / 排卵日，见 params.js 那张数值面板）。
  *      正文被改写 ⇒ 数值面板的锚点就没了、那些数字也就改不动了。
  *      ⇒ **身体补丁 body_base 也要锁** ✓
  */
@@ -4287,8 +4538,10 @@ function skelOf(t) {
         //   换成 # 之后，"填了数字"才算数值改动，不会被误判成改了正文而冻结 ✓
         .replace(/@@CYCLE_LEN@@/g, '#')
         .replace(/@@CYCLE_OVU@@/g, '#')
-        .replace(/日常体质系数[：:]?\s*[\d.]+\s*[（(]?\s*[，,]?\s*排卵日当天临时提升至\s*[\d.]+\s*[）)]?/g,
-            '日常体质系数：#（排卵日当天临时提升至 #）')
+        // ★ 2026-11-13（第五批）：「日常体质系数」那行已从身体补丁里退休
+        //   （受孕率公式改用图鉴 / 个人的「卵子质量」）⇒ 老存档正文里还留着的那行
+        //   **整行抹掉**，这样"只改了数值"的老文本和新正文骨架一致，不会被误判成改了正文 ✓
+        .replace(/日常体质系数[^\n]*\n?/g, '')
         // ② 种族名的三种写法统一成「种族：#」
         //   （`{{user}} 为X体质` ⇒ `{{user}} 的种族为X` ⇒ 现在独占一行 `种族：X`）
         .replace(/(\{\{user\}\}\s*)为\s*[^\s，,。]+?\s*(?:女性|男性|雌性|雄性|扶她)?\s*体质/g, '$1的种族为#')

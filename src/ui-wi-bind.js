@@ -80,13 +80,14 @@ function browser({ selected, mode, onToggle, scrollEl, suspect }) {
         const all = allWiBookNames();
         const kw = q.trim().toLowerCase();
         const hit = all.filter((n) => !kw || String(n).toLowerCase().includes(kw));
-        hit.sort((a, b) => {
-            const ra = bookRank(a, pinned, inUse);
-            const rb = bookRank(b, pinned, inUse);
-            if (ra !== rb) return ra - rb;
-            return String(a).localeCompare(String(b), 'zh');
+        // ★ 2026-11-13：原来在 sort 的比较函数里现算 bookRank ⇒ 一次排序要算几十上百遍
+        //   （正是每敲一个字都会走的路径）⇒ 先给每条算一次、再按它排 ✓
+        const ranked = hit.map((n) => ({ n, r: bookRank(n, pinned, inUse) }));
+        ranked.sort((a, b) => {
+            if (a.r !== b.r) return a.r - b.r;
+            return String(a.n).localeCompare(String(b.n), 'zh');
         });
-        return { list: hit, pinned, inUse };
+        return { list: ranked.map((x) => x.n), pinned, inUse };
     }
 
     function paintBooks() {

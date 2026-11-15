@@ -43,7 +43,7 @@ const POOL_HELP = [
 const USED_HELP = [
     '这里显示上一轮推演到底取用了哪几个随机数、分别用在哪个判定上',
     '每一行右边会标明是谁掷的：「引擎取」= 插件 API 按规则从随机数池里取的；「插件掷」= 插件自己掷的（受精判定 / 着床判定 / 着床天数 / 精子存活 / 胎数判定 / 同卵 / 异卵判定 / 子N性别）',
-    '最左边那个标签：「R3」「S1」是从池子里取的第几格；「预设 D5」是清单模式的预设骰；「独立掷 1~7」是插件自己掷的、后面跟的是取值范围（不占池格，鼠标停上去能看到完整来路）',
+    '最左边那个标签：「R3」「S1」是从池子里取的第几格；「预设 D5」是清单模式的预设骰；「独立掷 2~7」是插件自己掷的、后面跟的是取值范围（不占池格，鼠标停上去能看到完整来路，包括按哪一族取的）',
     '「引擎取」的那些会和本轮池子逐个核对：编号不在池子里，会标一个「不在池里」（值不用它报，插件按编号自己去池子里查）',
     '标了「不在池里」的意思是这个数字不是插件给的（模型自己报的），不拦、也不改判定，只是让你看得见',
 ];
@@ -233,7 +233,7 @@ function renderPoolMode(container, ctx) {
     } else {
         for (const u of used) {
             const byPlugin = u.by === 'plugin';
-            // ★ 短标签替代来源长句（`精子存活专用掷（1~7 天，均匀）` ⇒ `独立掷 1~7`）——
+            // ★ 短标签替代来源长句（`精子存活专用掷（2~5 天，均匀，人类）` ⇒ `独立掷 2~5`）——
             //   原句挂进 title，悬停还能看到完整来路 ✓
             const refShort = shortRef(u.ref);
             const refLong = String(u.ref || '');
@@ -306,7 +306,9 @@ function diceRow(e, ctx) {
 
     const exprInput = textInput(e.expr || '1d100', (v) => {
         updateEntry(e.id, { expr: v });
-        ctx?.repaint?.();
+        // ★ 2026-11-13：这里原来整页重画（ctx.repaint）⇒ 每敲一个字输入框被销毁重建、焦点丢，
+        //   第二个字根本打不进去 ✗。这一格只需要就地标一下「写法对不对」✓
+        exprInput.classList.toggle('bad', !parseExpr(v));
     }, { placeholder: '1d100' });
     exprInput.classList.add('bc-dice-expr-input');
     if (!parseExpr(e.expr)) exprInput.classList.add('bad');

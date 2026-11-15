@@ -173,6 +173,37 @@ function contentSame(a, b) {
     return true;
 }
 
+/**
+ * ★ 2026-11-13（她发现新加的那两行在老快照里是空的）：内置条目套覆盖时，数值表要**按 key 合并**，
+ *   不能整表替换。
+ *
+ * 为什么：覆盖存的是**整条快照**，而快照是当年保存那一刻的数值表。后来新加的固定行
+ *   （比如第一批的 `sperm_life` / `egg_life`）不在老快照里 ⇒ 原来 `{ ...b, ...ov }`
+ *   一替换，新行就变成空值（她那边「人类」这一条的快照只有 23 行，少了这两行）。
+ *   ⇒ 覆盖里有的 key 用覆盖，缺的 key 拿内置补上；顺序跟内置一致，自建行接在后面 ✓
+ *   （她要是真删过某一格，删的是值不是行，这里不会被"补回来" ✓）
+ */
+function mergeRows(baseRows, ovRows) {
+    const byKey = new Map();
+    for (const r of (Array.isArray(ovRows) ? ovRows : [])) {
+        if (r && typeof r.key === 'string') byKey.set(r.key, r);
+    }
+    const out = [];
+    const seen = new Set();
+    for (const r of (Array.isArray(baseRows) ? baseRows : [])) {
+        const k = r && typeof r.key === 'string' ? r.key : '';
+        if (!k) continue;
+        seen.add(k);
+        out.push(byKey.get(k) || r);
+    }
+    for (const r of (Array.isArray(ovRows) ? ovRows : [])) {
+        if (!r || typeof r.key !== 'string' || seen.has(r.key)) continue;
+        seen.add(r.key);
+        out.push(r);
+    }
+    return out;
+}
+
 export function codexEntries() {
     // ★ 只在"内置读进来了"的时候才算数：没读进来之前这份结果是**不完整**的，
     // 拿它当缓存会让图鉴一直空着（读进来时 ensureBuiltinCodex 会再作废一次，双保险 ✓）
@@ -181,9 +212,13 @@ export function codexEntries() {
     const out = [];
     for (const b of builtinList()) {
         const ov = c.overrides[b.id];
-        const e = normalizeEntry(ov ? { ...b, ...ov } : b);
+        const merged = ov
+            ? { ...b, ...ov, rows: mergeRows(b.rows, ov.rows) }
+            : b;
+        const e = normalizeEntry(merged);
         e.builtin = true;
-        e.edited = !!ov && !contentSame(ov, b);
+        // 只看内容、不看启停；按合并后的那一份比，免得老快照缺新行被误标成"改过" ✓
+        e.edited = !!ov && !contentSame(merged, b);
         out.push(e);
     }
     for (const cu of c.custom) {

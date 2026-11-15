@@ -6,8 +6,10 @@
  */
 
 import { getChatMetadata, saveChatMetadata, getChatKey, getPersonaName, substitute, getCtx } from './st.js';
-import { settings, save, amenorrheaRateOf, periodDaysOf, periodMode, isNeutralMode, termNameOf, cycleModeLabel, traceNightsMapOf, traceNightsForLevel, getCalendarPreset, CAL_PRESET_BUILTIN, bodyCycleParamsOf, postpartumOvulationDaysOf, windowRateOf, achLenOf, parseZoneRows, serializeZoneRows, zoneParamsOf, bodyCoefOf, peakCoefOf, protCoefOf, cycleDayInfoOf, cycleSettleDayOf, bodyRaceOf, postpartumParamsOf, stageResidueMode, stageCleanMode, contactsHideDead, spermBellyOn, spermBellyTextIn, spermBellyTextOut, spermBellyTextVaginaIn, isModuleOn, awarenessWindowsOf, awarenessUpperOf, fetusCountOf, fetusSexRangeOf, fetusOvumRangeOf, fetusMixRangeOf, fetusDevAllLines, judgeBasisOf, talentTierLabelOf, talentTierTableOf, dominantSourceRangeOf, dominantSourceOf, ovuModeOf, inducedParamsOf, estrusParamsOf, setPeriodPrefsReader, periodDaysCapOf } from './settings.js';
+import { settings, save, amenorrheaRateOf, periodDaysOf, periodMode, isNeutralMode, termNameOf, cycleModeLabel, traceNightsMapOf, traceNightsForLevel, getCalendarPreset, CAL_PRESET_BUILTIN, bodyCycleParamsOf, postpartumOvulationDaysOf, windowRateOf, achLenOf, parseZoneRows, serializeZoneRows, zoneParamsOf, protCoefOf, cycleDayInfoOf, cycleSettleDayOf, bodyRaceOf, postpartumParamsOf, stageResidueMode, stageCleanMode, contactsHideDead, spermBellyOn, spermBellyTextIn, spermBellyTextOut, spermBellyTextVaginaIn, isModuleOn, awarenessWindowsOf, awarenessUpperOf, fetusCountOf, fetusSexRangeOf, fetusOvumRangeOf, fetusMixRangeOf, fetusDevAllLines, judgeBasisOf, talentTierLabelOf, talentTierTableOf, dominantSourceRangeOf, dominantSourceOf, ovuModeOf, inducedParamsOf, estrusParamsOf, setPeriodPrefsReader, periodDaysCapOf, eggWindowDaysOf, windowLastDayOf, eggQualityOf, spermPowerOf, cycleLenRangeOf, cycleOvuForLenOf } from './settings.js';
 import { periodReadoutOf } from './period-readout.js';
+// ★ 2026-11-13：玩家手动清「非常态」之后要立刻重拼面板文字（不然下次刷新前还挂着旧那行 ✓）
+import { buildStatusProfile } from './serialize.js';
 import { cycleHooks } from './cycle-hooks.js';
 import { deriveCycleFields, defaultCycleStartDay, randomCycleStartDay, DIAPAUSE_IMPLANT_DAYS } from './derive.js';
 // ★ 后半段那几个是「自定义历法」：换算都在 fiction-date.js 里，
@@ -410,6 +412,22 @@ export function bodyLockOf(key) {
 }
 
 /**
+ * ★ 2026-11-14（她拍）：这两个对象是不是被玩家**明确锁了**「不能怀孕 / 不能让别人怀孕」。
+ *   只有明确 false 才算；留空 = 不知道，不算 ✓（跟界面那两格同一个口径）
+ *
+ * 用途：推演要求模型报的那几档（卵子质量 / 精子致孕力 / 卵子存活 / 精子存活）——
+ *   界面已经把用不上的那两格收起来了，推演那边却照样问 ⇒ 模型填一个界面永远不显示的值，
+ *   白花 token，还可能被以后改锁定又冒出来 ✗
+ */
+export function isCannotBePregnantOf(key) {
+    try { return bodyLockOf(key).canBePregnant === false; } catch { return false; }
+}
+
+export function isCannotImpregnateOf(key) {
+    try { return bodyLockOf(key).canImpregnate === false; } catch { return false; }
+}
+
+/**
  * 设某个对象的三态值。
  * @param {'canBePregnant'|'canImpregnate'|'isXeno'|'canBearXeno'} field
  * @param {boolean|null} value  null = 恢复"未填"（回到按 AI 判断）
@@ -505,6 +523,20 @@ export function canBePregnantTarget(key) {
         if (rep !== null) return rep;
     } catch { /* 忽略 */ }
     return true;
+}
+
+/**
+ * `d3`（卵子质量）该写什么 —— 2026-11-13（第五批）起它取代「体质系数」。
+ *   · 能怀孕 ⇒ 这个人的卵子质量倍率（个人档位 > 图鉴这一族 > 人类，1 = 人类基准）
+ *   · 不能怀孕 ⇒ 「不适用」（跟基础率同一个口径，没有卵子质量可言 ✓）
+ * @returns {string} 空串 = 真的算不出来（调用方保留原值 ✓）
+ */
+export function d3TextOf(key) {
+    try {
+        if (!canBePregnantTarget(key)) return '不适用';
+        const v = Number(eggQualityOf(key));
+        return (Number.isFinite(v) && v > 0) ? String(Math.round(v * 100) / 100) : '';
+    } catch { return ''; }
 }
 
 /**
@@ -706,29 +738,37 @@ export function removeTempRace(raceText) {
 }
 
 // ---------------------------------------------------------------------------
-// ★ 「受孕体质档」
+// ★ 「受孕体质档」—— 2026-11-13（第五批）起它表示**卵子质量**那一档
 //
-// 让 AI 按角色设定判断受孕体质 —— 设定明显很弱的（怀孕能力之类的）
-//   或者很强的，都由 AI 自己填这个角色（NPC）的初始体质。
+// 让 AI 按角色设定判断生育力 —— 设定明显很弱的（怀孕能力之类的）
+//   或者很强的，都由 AI 判一个档（很弱 / 弱 / 标准 / 强 / 很强）。
 //
-// 它 = 身体补丁里那行「日常体质系数」，由推演**按角色设定判一个档**填初值。
+// 它不再写进身体补丁正文：「日常体质系数」那格已退役，公式改用
+//   「卵子质量 = 这一族基准 × 档位倍率」实时算 ⇒ 换绑种族会跟着变 ✓
 //   · 只判一次（这个对象定过档就不再问 ⇒ 省 token、也不会一轮一个数地飘 ✓）
 //   · 玩家手改过 ⇒ 记 `fertilityManual`，AI 一律不再覆盖（照敏感带那套"手改锁" ✓）
-//   · **只管 NPC**：用户本人那份是全局设置、穿所有聊天，这一版不动它 ✓
+//   · **只管 NPC**：用户本人那份是全局设置（`userEggQualityTier`），推演不动它 ✓
 // 存哪：本聊天的 `targets[key]`（跟 xenoClass / bodyLock 一个待遇 ✓）
 // ---------------------------------------------------------------------------
 
-/** AI 给这个对象判的受孕体质档（'' = 还没判过） */
+/** AI 给这个对象判的受孕体质档（'' = 还没判过）。★ 2026-11-13 起它＝**卵子质量**那一档 */
 export function fertilityTierOf(key) {
     if (!key) return '';
+    // ★ 2026-11-13（第五批）：本人那一份存**全局设置**（跟身体补丁 / 能不能怀孕一个待遇 ✓）
+    if (isUserKey(key)) return String(settings().userEggQualityTier || '');
     return String(state().targets?.[key]?.fertilityTier || '');
 }
 
 /** 记下 AI 判的档（定过就不再问 ✓） */
 export function setFertilityTierOf(key, tier) {
+    const v = String(tier ?? '').trim();
+    if (isUserKey(key)) {
+        if (v) settings().userEggQualityTier = v; else delete settings().userEggQualityTier;
+        save();
+        return true;
+    }
     const t = state().targets?.[key];
     if (!t) return false;
-    const v = String(tier ?? '').trim();
     if (v) t.fertilityTier = v; else delete t.fertilityTier;
     commit();
     return true;
@@ -737,13 +777,47 @@ export function setFertilityTierOf(key, tier) {
 /** 玩家手改过这一格没有（改过 ⇒ AI 不许再覆盖 ✓） */
 export function fertilityManualOf(key) {
     if (!key) return false;
+    if (isUserKey(key)) return !!settings().userEggQualityManual;
     return state().targets?.[key]?.fertilityManual === true;
 }
 
 export function setFertilityManualOf(key, on) {
+    if (isUserKey(key)) {
+        if (on) settings().userEggQualityManual = true; else delete settings().userEggQualityManual;
+        save();
+        return true;
+    }
     const t = state().targets?.[key];
     if (!t) return false;
     if (on) t.fertilityManual = true; else delete t.fertilityManual;
+    commit();
+    return true;
+}
+
+/**
+ * ★ 2026-11-13（第五批）：**精子致孕力**那一档（致孕方那一侧）。
+ *
+ * 它跟卵子质量分开存：一个人可能"很能让人怀、自己怀不上"。
+ *   · 推演不判它（契约里没有这一格）⇒ 只有玩家选；默认'' = 跟图鉴这一族基准 ✓
+ *   · 本人存全局设置、其他对象存本聊天档案（跟别的一样 ✓）
+ */
+export function spermPowerTierOf(key) {
+    if (!key) return '';
+    if (isUserKey(key)) return String(settings().userSpermPowerTier || '');
+    const t = state().targets?.[key];
+    return String(t?.spermPowerTier || '');
+}
+
+export function setSpermPowerTierOf(key, tier) {
+    const v = String(tier ?? '').trim();
+    if (isUserKey(key)) {
+        if (v) settings().userSpermPowerTier = v; else delete settings().userSpermPowerTier;
+        save();
+        return true;
+    }
+    const t = state().targets?.[key];
+    if (!t) return false;
+    if (v) t.spermPowerTier = v; else delete t.spermPowerTier;
     commit();
     return true;
 }
@@ -828,10 +902,11 @@ export function periodPrefsOf(key) {
 export function setPeriodPrefsOf(key, patch) {
     if (!key) return false;
     const next = normPeriodPrefs({ ...periodPrefsOf(key), ...(patch || {}) });
-    // ★ 天数进设置的时候就先夹到上限（设置里存的数永远和推演用的那个一致 ✓）
-    if (next.days) {
-        try { next.days = Math.max(1, Math.min(next.days, periodDaysCapOf(key))); } catch { /* 读不到上限就不夹 */ }
-    }
+    // ★ 2026-11-14（她拍）：这里**不再把天数夹到上限** ——
+    //   上限＝排卵日减 2，而排卵日现在跟着每段掷出的周期长度走 ⇒ 一段短周期会把
+    //   玩家写的 5 天悄悄改成 4 天，而且存进去之后下一段长周期也回不来了 ✗
+    //   ⇒ 设置里**保留玩家写的数**（只挡 < 1）；「本周期实际按几天算」由
+    //     `periodDaysOf` 读的时候夹、面板上一行小字写清 ✓
     try {
         if (isUserKey(key)) {
             const s = settings();
@@ -850,6 +925,140 @@ export function setPeriodPrefsOf(key, patch) {
 
 // ★ 2026-11-11：把「经期设置」的读取器交给 settings（它不能 import store，会成环 ✓）
 setPeriodPrefsReader((key) => periodPrefsOf(key));
+
+// ---------------------------------------------------------------------------
+// ★★ 2026-11-13（经期表现 · 非常态持久化）：
+//
+// 计划 §七.3：模型只报「改哪项、变成什么、为什么」，插件**存下来**、按剧情日期算有效期：
+//   · 默认只到**当天结束**（一次止痛药不该管一整个经期），跨天自动清 ✓
+//   · 模型可以报「药效过了 / 已经好了」提前撤掉（cleared）✓
+//   · 模型明确报「这次经期都会这样」才延长到经期结束（duration: 经期）✓
+//   · 玩家在面板上按「清除」也能清 ✓
+//
+// ⚠️ 为什么不直接存在 `t.period.off` 里：那是**每一轮被模型回包整份替换**的对象
+//   （见 upsertTargetResult）⇒ 单存它下一轮就丢。⇒ 另存一份 `offPersist`（带元数据），
+//   `off` 仍是给面板看的合并结果；下一轮合并时读 offPersist ✓
+//
+// ⚠️ 面板那行「非常态」里**清单外临时冒出来的表现**（period-readout 加的）不进 offPersist：
+//   它是"这一轮正文的镜像"，下一轮没写就该消失，不该按状态留一天 ✓
+// ---------------------------------------------------------------------------
+
+/** 非常态条目的字段清洗（短文本；空串照留 = 没写） */
+function periodOffWordOf(v, max = 60) {
+    return String(v ?? '').trim().slice(0, max);
+}
+
+/**
+ * 把「上一轮还活着的非常态」和「这一轮模型报的」合并。
+ *
+ * @param {Array} prev     上一轮的 `t.period.offPersist`
+ * @param {Array} reported 这一轮模型报的 `res.period.off`
+ * @param {{today?:string, day?:number|null, inPeriod?:boolean}} [opts]
+ *   today＝剧情日期串（判跨天）；day＝周期日（没有日期时的备用判据）；inPeriod＝现在是不是经期
+ * @returns {Array<{what:string,to:string,why:string,until:'day'|'period',untilText:string,dayDate?:string,dayNo?:number}>}
+ */
+export function mergePeriodOff(prev, reported, opts = {}) {
+    const today = String(opts.today || '').trim();
+    const nowDayRaw = Number(opts.day);
+    const nowDay = Number.isFinite(nowDayRaw) ? nowDayRaw : null;
+    const inPeriod = opts.inPeriod !== false;
+    /** 同一天？true/false；判不出来 ⇒ null（退回周期日） */
+    const isSameDay = (d0) => {
+        const s = String(d0 || '').trim();
+        if (!s || !today) return null;
+        try {
+            const back = diffDays(s, today);
+            return Number.isFinite(back) ? back === 0 : null;
+        } catch { return null; }
+    };
+    const out = [];
+    // ① 上一轮那些还没过期的先留下
+    for (const it of (Array.isArray(prev) ? prev : [])) {
+        const what = periodOffWordOf(it?.what);
+        if (!what) continue;
+        const until = it?.until === 'period' ? 'period' : 'day';
+        if (until === 'period') {
+            // 「这次经期都这样」⇒ 只在经期里有效；这一轮已经不在经期了 ⇒ 自动清 ✓
+            if (!inPeriod) continue;
+        } else {
+            const same = isSameDay(it?.dayDate);
+            if (same === false) continue;                       // 已经跨天 ⇒ 清
+            if (same === null) {
+                // 没有剧情日期（或格式认不出）⇒ 用周期日判：日子变了就算跨天 ✓
+                const d0 = Number(it?.dayNo);
+                if (Number.isFinite(d0) && nowDay !== null && d0 !== nowDay) continue;
+            }
+        }
+        const keep = { what, to: periodOffWordOf(it?.to), why: periodOffWordOf(it?.why), until };
+        if (until === 'period') keep.untilText = '这次经期结束';
+        else {
+            keep.untilText = '今天结束';
+            if (it?.dayDate) keep.dayDate = String(it.dayDate);
+            if (it?.dayNo != null) keep.dayNo = Number(it.dayNo);
+        }
+        out.push(keep);
+    }
+    // ② 这一轮报的：覆盖同名的，或新加
+    for (const it of (Array.isArray(reported) ? reported : [])) {
+        const what = periodOffWordOf(it?.what);
+        const cleared = it?.cleared === true || /^(true|1|yes|是)$/i.test(String(it?.cleared ?? '').trim());
+        if (cleared) {
+            // 「药效过了 / 已经好了」⇒ 撤掉这一项；没写 what ＝ 全撤 ✓
+            if (!what) { out.length = 0; continue; }
+            for (let i = out.length - 1; i >= 0; i -= 1) if (out[i].what === what) out.splice(i, 1);
+            continue;
+        }
+        if (!what) continue;
+        const idx = out.findIndex((x) => x.what === what);
+        const prevHit = idx >= 0 ? out[idx] : null;
+        // duration 认「经期 / 周期 / period / cycle」；没写 ⇒ 沿用上一轮的口径（别把延长提前撤掉 ✗）
+        const dur = String(it?.duration ?? it?.until ?? '').trim();
+        const wantPeriod = dur ? /经期|周期|period|cycle/i.test(dur) : (prevHit?.until === 'period');
+        const entry = {
+            what,
+            // 这一轮没写 to / why ⇒ 沿用上一轮的（重报一次不等于把档位改回去 ✓）
+            to: periodOffWordOf(it?.to) || (prevHit?.to || ''),
+            why: periodOffWordOf(it?.why) || (prevHit?.why || ''),
+            until: wantPeriod ? 'period' : 'day',
+        };
+        if (wantPeriod) entry.untilText = '这次经期结束';
+        else {
+            entry.untilText = '今天结束';
+            if (today) entry.dayDate = today;
+            if (nowDay !== null) entry.dayNo = nowDay;
+        }
+        if (idx >= 0) out[idx] = entry; else out.push(entry);
+    }
+    return out;
+}
+
+/** 这一轮合并非常态用的上下文（顺手把剧情日期 / 周期日取出来） */
+function periodOffCtxOf(key, inPeriod, day) {
+    let today = '';
+    try { today = String(currentDate() || ''); } catch { today = ''; }
+    return { today, day, inPeriod };
+}
+
+/**
+ * 玩家在面板上点「清除」：把这个人的经期非常态清掉。
+ *   ⚠️ 只清状态（非常态），**不动经量 / 痛经的基础档**（那是设置里选的 ✓）
+ * @returns {boolean} 真的清了才算 true
+ */
+export function clearPeriodOff(key) {
+    const t = state().targets?.[String(key || '')];
+    if (!t || !t.period || typeof t.period !== 'object') return false;
+    t.period.off = [];
+    t.period.offPersist = [];
+    // 面板读的是 `t.raw`（推演那一步拼好的文字）⇒ 清完要当场重拼一次，
+    //   否则面板再推一次还是旧那行（点「清除」看起来没反应 ✗）
+    try {
+        t.raw = buildStatusProfile(displayName(t) || t.key, t.profile || {}, t.period, {
+            isPregnant: String(t.vars?.Is_Pregnant ?? '').trim().toLowerCase() === 'true',
+        });
+    } catch { /* 拼不出来就等下一轮推演重建 */ }
+    commit();
+    return true;
+}
 
 // ---------------------------------------------------------------------------
 // ★★ 2026-11-12（她定的）：NPC 的**经期天数 / 经量 / 痛经**第一次进经期时掷一次，之后一直用它
@@ -901,8 +1110,13 @@ export function rollPeriodTiersOnce(key, rng = Math.random) {
         // 只在周期开头那几天掷（已经在经期中段的不动，见顶上那条说明 ✓）
         const day = Number(cycleDayNum(key));
         if (!Number.isFinite(day) || day < 1 || day > 3) return false;
-        // 天数先按 3~7 掷，再由 setPeriodPrefsOf 按「排卵日减 2」那道夹统一收口 ✓
-        const days = pickUniform(PERIOD_ROLL_DAYS, rng);
+        // 天数按 3~7 掷，掷完当场按「排卵日减 2」收口再**照存** ——
+        // ⚠️ 2026-11-14：`setPeriodPrefsOf` 不再替玩家夹数了，所以这道夹要在这里做；
+        //   不夹的话掷出来的 7 会一直留着，短周期那几段就按 4、长周期又跳回 7 ✗
+        //   （这是"掷一次、之后一直用它"，不是改玩家写的数 ✓）
+        const rolled = pickUniform(PERIOD_ROLL_DAYS, rng);
+        let days = rolled;
+        try { days = Math.max(1, Math.min(rolled, periodDaysCapOf(key))); } catch { /* 读不到上限就用掷出来的 */ }
         const flow = pickWeighted(PERIOD_ROLL_FLOW, rng);
         const pain = pickWeighted(PERIOD_ROLL_PAIN, rng);
         return setPeriodPrefsOf(key, { days, flow, pain });
@@ -2137,6 +2351,8 @@ export function upsertTargetResult(res, opts = {}) {
                 diapauseWait: diapauseWaitOf(t.key),
                 // ★ 2026-11-08：产后恢复那一段写「产后第 N 天 · 还有 M 天恢复周期」✓
                 postpartum: (() => { try { return postpartumOf(t.key); } catch { return null; } })(),
+                // ★ 2026-11-13（第二批）：受孕窗口按这一族的卵子存活时间铺 ✓
+                targetKey: t.key,
             });
             if (dv) {
                 // ★ 2026-11-10：怀不上只让基础率写「不适用」；阶段有没有看周期模式 ✓
@@ -2180,6 +2396,9 @@ export function upsertTargetResult(res, opts = {}) {
             return !pregnantNowTarget(t);
         } catch { return true; }
     })();
+    // ★ 2026-11-13（经期非常态持久化）：`t.period` 马上要被这一轮回包整份替换 ——
+    //   先把上一轮那份留下，下面的合并要读它存的 offPersist（见 mergePeriodOff ✓）
+    const prevPeriod = (t.period && typeof t.period === 'object' && !Array.isArray(t.period)) ? t.period : null;
     t.period = (canBleedNow && res.period && typeof res.period === 'object')
         ? res.period
         : ((canBleedNow && inPeriodNow) ? {} : null);
@@ -2192,26 +2411,43 @@ export function upsertTargetResult(res, opts = {}) {
         try { rollPeriodTiersOnce(key); } catch { /* 掷不了就退回默认档 */ }
         const cdNow = cycleDayNum(key);
         if (cdNow !== null) t.period.day = `Day${cdNow}`;
+        // ★ 2026-11-13：主面板要「共几天」（经期表现计划 §六.1）——
+        //   经期天数插件本来就有一份（跟判定同一个夹取）⇒ 直接落成这一轮的事实 ✓
+        //   ⚠️ 老快照没有这个字段 ⇒ 面板那边读不到就不显示，不编一个数 ✓
+        try { t.period.totalDays = Number(periodDaysOf(key)) || null; } catch { /* 读不到就保留原值 */ }
         // ★★ 2026-11-11（第三批）：流量 / 颜色 / 质地 / 痛经也归插件 ——
         //   这四格能按「档位 + 第几天」推出来，交给模型每轮猜会飘、还会和设置里的档位对不上 ✗
         //   ⇒ 模型只报「这一轮真的发生了什么」（表现名 + 临时偏离 + 原因），
         //     这里按这个人的设置算成读数，面板读的也是这一份 ✓
         try {
-            const ro = periodReadoutOf(periodPrefsOf(key), t.period);
+            // ★★ 2026-11-13（经期非常态持久化，计划 §七.3）：
+            //   把上一轮还活着的状态和这一轮报的合起来 ⇒ 默认留到今天结束、跨天自动清；
+            //   cleared 提前撤、duration=经期 才延长到经期结束 ✓
+            //   ⚠️ 清单外临时冒出来的表现由 periodReadoutOf 加进 `off`，
+            //     但**不进 offPersist**（那是"这一轮正文的镜像"，不该按状态留一天 ✓）
+            const prevOff = Array.isArray(prevPeriod?.offPersist)
+                ? prevPeriod.offPersist
+                : (Array.isArray(prevPeriod?.off) ? prevPeriod.off : []);   // 老存档：没有 offPersist 就当场那份当基线 ✓
+            const reportedOff = Array.isArray(t.period.off) ? t.period.off : [];
+            const mergedOff = mergePeriodOff(prevOff, reportedOff, periodOffCtxOf(key, inPeriodNow, cdNow));
+            const ro = periodReadoutOf(periodPrefsOf(key), { ...t.period, off: mergedOff });
             t.period.flow = ro.flow;
             t.period.color = ro.color;
             t.period.texture = ro.texture;
             t.period.pain = ro.pain;
             t.period.items = ro.items;
             t.period.off = ro.off;
+            t.period.offPersist = mergedOff;
         } catch { /* 算不出来就保留模型报的那份 */ }
     }
-    // ★ `d3`（体质系数）归插件 —— 真相源就是身体补丁里那行「日常体质系数」✓
-    //   （模块正文自己写着"以 [身体补丁] 里那一行为准" ⇒ 插件读同一行，不会再和它对不上 ✓）
-    //   契约不再问这一格 ⇒ 这里用读到的值覆盖（AI 报什么都盖掉）；**读不到 ⇒ 保留原值** ✓
+    // ★ `d3`（卵子质量）归插件 —— 真相源是图鉴 / 个人档位（第五批起，体质系数退役）
+    //   契约不再问这一格 ⇒ 这里用算出来的值覆盖（AI 报什么都盖掉）；**算不出来 ⇒ 保留原值** ✓
+    //   ★ 不能怀孕的人这一格写「不适用」（跟基础率同一个口径：没有卵子质量可言 ✓）
     if (t.profile && typeof t.profile === 'object') {
-        const coef = bodyCoefOf(key);
-        if (coef) { freshFix.d3 = coef; t.profile.d3 = coef; }
+        try {
+            const v = d3TextOf(key);
+            if (v) { freshFix.d3 = v; t.profile.d3 = v; }
+        } catch { /* 算不出来就保留原值 */ }
     }
     // ★ `d2`（累计受孕率）也归插件 —— 数值与标注都照模块那张表自己算 ✓
     if (t.profile && typeof t.profile === 'object') {
@@ -2281,7 +2517,7 @@ export function upsertTargetResult(res, opts = {}) {
         }
         if (tookBack.length) {
             const who = displayName(t) || key;
-            const label = { d2: '累计受孕率', d3: '体质系数', d4: '致孕方', d5: '意识状态', d8: '生产次数' }[tookBack[0].field] || tookBack[0].field;
+            const label = { d2: '累计受孕率', d3: '卵子质量', d4: '致孕方', d5: '意识状态', d8: '生产次数' }[tookBack[0].field] || tookBack[0].field;
             upsertAlert({
                 kind: 'profileFix', target: key, sub: String(tookBack[0].field), name: who,
                 date: (() => { try { return currentDate() || ''; } catch { return ''; } })(),
@@ -2401,6 +2637,37 @@ export function ensureBaseTargets() {
     }
     if (!state().active) state().active = state().order[0] || null;
     commit();
+}
+
+/**
+ * 把一个人写进「指定对象」那一份名单（只有 single / multi 两档用得上）。
+ *
+ * ★ 2026-11-13（玩家报"明明在追踪对象里、推演说没有追踪对象"）——
+ *   建了档 ≠ 进推演名单：这两档的名字来自 `settings().targetNames`，而手工建档
+ *   **不会**自动写进去 ⇒ 档案在列表里、推演却永远看不到他 ✗
+ *   ⇒ 所有"手工加人"的入口（设置页两个名字框、通用「添加对象」、面板联系人、
+ *     档案行上的「加进名单」）**一律走这里**，一处实现，别再各写一份 ✓
+ *   · single ＝"只追一位"⇒ 换人（跟界面上那个输入框同一套语义）
+ *   · multi  ＝ 追加，已在名单里就不重复
+ * @returns {boolean} 名单有没有被改动（false ⇒ 没变，也不用 save）
+ */
+export function addToTargetNames(name) {
+    const n = String(name || '').trim();
+    if (!n) return false;
+    const s = settings();
+    if (s.targetMode === 'single') {
+        if (String(s.targetNames?.[0] || '') === n) return false;
+        s.targetNames = [n];
+        save();
+        return true;
+    }
+    if (s.targetMode === 'multi') {
+        if ((s.targetNames || []).includes(n)) return false;
+        s.targetNames = [...(s.targetNames || []), n];
+        save();
+        return true;
+    }
+    return false;
 }
 
 /** 本轮该交给推演的追踪对象名单 */
@@ -3966,6 +4233,195 @@ export function setCycleDayOf(key, day, at) {
 }
 
 // ---------------------------------------------------------------------------
+// ★ 2026-11-13（2.7 经期波动 第一批）：经期规律度 ＋ 本周期长度
+//
+// 存哪（她定的「跟 cycleNo 同一处」）：
+//   · `targets[key].cycleRegularTier`  ＝ 个人这一层选的档位 id（'' = 跟图鉴 ✓）
+//   · `targets[key].cycleRegularLo/Hi` ＝ 自定义那一档的最短 / 最长
+//   · `targets[key].cycleLenNow`       ＝ **本周期**掷出来的长度（开新周期时写、整段不变）
+//   · `targets[key].cycleOvuNow`       ＝ 本周期排卵日（＝长度 − 黄体期，算好存着）
+//   本人那一份：档位 / 自定义范围住全局设置（跟「能不能怀孕」「卵子质量档」一个待遇 ✓），
+//   本周期那两个数照旧住聊天里（它们跟着剧情时间走，换聊天就不该带过去 ✓）
+//
+// ⚠️ 老存档没有这些字段 ⇒ 一律回落到静态值（`bodyCycleParamsOf` 那条老路），
+//    = 老行为，一个字不用迁移 ✓
+// ⚠️ 真正"掷"的写入点在第二批（开周期那一处）；这一批只把**读写两头**接好 ✓
+// ---------------------------------------------------------------------------
+
+/** 个人选的规律度档位（'' = 跟图鉴） */
+export function cycleRegularTierOwnOf(key) {
+    if (!key) return '';
+    if (isUserKey(key)) return String(settings().userCycleRegularTier || '');
+    return String(state().targets?.[key]?.cycleRegularTier || '');
+}
+
+/** 个人填的自定义范围（{ lo, hi }；没填 / 填坏 ⇒ null） */
+export function cycleRegularRangeOwnOf(key) {
+    const box = isUserKey(key) ? settings() : (state().targets?.[key] || {});
+    const lo = Number(isUserKey(key) ? box.userCycleRegularLo : box.cycleRegularLo);
+    const hi = Number(isUserKey(key) ? box.userCycleRegularHi : box.cycleRegularHi);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0) return null;
+    return { lo: Math.min(lo, hi), hi: Math.max(lo, hi) };
+}
+
+export function setCycleRegularTierOf(key, tier) {
+    const v = String(tier ?? '').trim();
+    if (isUserKey(key)) {
+        if (v) settings().userCycleRegularTier = v; else delete settings().userCycleRegularTier;
+        save();
+        return true;
+    }
+    const t = state().targets?.[key];
+    if (!t) return false;
+    if (v) t.cycleRegularTier = v; else delete t.cycleRegularTier;
+    commit();
+    return true;
+}
+
+/** 写自定义范围；写成非法值（非数字 / ≤0）⇒ 不写，返回 false（**不替玩家夹数** ✓） */
+export function setCycleRegularRangeOf(key, lo, hi) {
+    const a = Number(lo);
+    const b = Number(hi);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) return false;
+    const nlo = Math.min(a, b);
+    const nhi = Math.max(a, b);
+    if (isUserKey(key)) {
+        settings().userCycleRegularLo = nlo;
+        settings().userCycleRegularHi = nhi;
+        save();
+        return true;
+    }
+    const t = state().targets?.[key];
+    if (!t) return false;
+    t.cycleRegularLo = nlo;
+    t.cycleRegularHi = nhi;
+    commit();
+    return true;
+}
+
+/** 本周期已经记下来的长度 / 排卵日（没记 ⇒ null） */
+export function cycleLenNowOf(key) {
+    const t = state().targets?.[String(key || '')];
+    const c = Math.round(Number(t?.cycleLenNow));
+    if (!Number.isFinite(c) || c < 1) return null;
+    const o = Math.round(Number(t?.cycleOvuNow));
+    return { cycle: c, ovu: (Number.isFinite(o) && o >= 1) ? o : null };
+}
+
+/** 记下本周期的长度 / 排卵日（第二批开新周期时调；ovu 可以不给 ✓） */
+export function setCycleLenNowOf(key, cycle, ovu) {
+    const t = state().targets?.[String(key || '')];
+    if (!t) return false;
+    const c = Math.round(Number(cycle));
+    if (!Number.isFinite(c) || c < 1) return false;
+    t.cycleLenNow = c;
+    const o = Math.round(Number(ovu));
+    if (Number.isFinite(o) && o >= 1) t.cycleOvuNow = o; else delete t.cycleOvuNow;
+    commit();
+    return true;
+}
+
+/** 清掉本周期的长度（换档 / 换绑种族 / 需要重掷时用；清掉 = 回落到静态值 ✓） */
+export function clearCycleLenNowOf(key) {
+    const t = state().targets?.[String(key || '')];
+    if (!t) return false;
+    delete t.cycleLenNow;
+    delete t.cycleOvuNow;
+    commit();
+    return true;
+}
+
+/**
+ * ★★ 2026-11-13（2.7 第二批）：开新周期时**掷一次**这个周期的长度。
+ *
+ * 掷的范围 ＝ `cycleLenRangeOf`（规律档 lo === hi ⇒ 不掷 ✓）；
+ * 排卵日 ＝ 长度 − 黄体期（`cycleOvuForLenOf`），一起存下来 ✓
+ *
+ * 不掷的三种情况（`return null`，并且**把上一段的旧值清掉**）：
+ *   · 无月经档（没有周期）
+ *   · 交配后排卵（长度不掷，排卵由交配触发 —— 那套逻辑一个字不改 ✓）
+ *   · 规律档（lo === hi，每段一样长＝老行为，不许落库 ✓）
+ *
+ * ⚠️ 掷是**真随机**（`Math.random`），不许拿「第几个周期」推算 ✓（她定的）
+ * @returns {{cycle:number, ovu:number}|null}
+ */
+export function drawCycleLenNowOf(key) {
+    try {
+        if (periodModeOf(key) === 'amenorrhea') { clearCycleLenNowOf(key); return null; }
+        if (ovuModeOf(key) === 'induced') { clearCycleLenNowOf(key); return null; }
+        const rg = cycleLenRangeOf(key);
+        const lo = Math.max(1, Math.round(Number(rg?.lo)));
+        const hi = Math.max(lo, Math.round(Number(rg?.hi)));
+        if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+            clearCycleLenNowOf(key);
+            return null;
+        }
+        // ★ 2026-11-13（2.7 第三批修）：**自定义把最短最长填成同一个数**时，
+        //   它就是那个固定长度 —— 以前这里跟规律档一起当"不掷"清掉，结果落回平均
+        //   （人类 28）✗：玩家填 600 到 600，周期却按 28 天走。
+        //   规律档照旧清空不落库（＝老行为 ✓）
+        if (hi <= lo) {
+            if (String(rg?.tier) === 'regular') { clearCycleLenNowOf(key); return null; }
+            let ovu = null;
+            try { ovu = cycleOvuForLenOf(key, lo); } catch { ovu = null; }
+            setCycleLenNowOf(key, lo, ovu);
+            return { cycle: lo, ovu };
+        }
+        const len = lo + Math.floor(Math.random() * (hi - lo + 1));
+        let ovu = null;
+        try { ovu = cycleOvuForLenOf(key, len); } catch { ovu = null; }
+        setCycleLenNowOf(key, len, ovu);
+        return { cycle: len, ovu };
+    } catch { return null; }
+}
+
+/**
+ * ★★ 2026-11-13（2.7 第二批）：结算之后开新周期。
+ *
+ * 做两件事（**顺序不能反**）：
+ *   ① 按**每一段各自的长度**把周期日折回来（不是拿一个值套三段 ✗）——
+ *      时间跳跃一次跨过好几个周期时，中间每一段也各掷一次（她定的）
+ *   ② 给现在这个新周期定长度 / 排卵日（`drawCycleLenNowOf`）
+ *
+ * @param {string} key
+ * @param {number} dayBefore 结算前那一刻的周期日
+ * @returns {{day:number, cycles:number}} 折回来的新周期第几天 / 这一次跨过了几个周期
+ */
+export function beginCycleAfterSettle(key, dayBefore) {
+    let d = Math.max(1, Math.round(Number(dayBefore) || 1));
+    let len = cycleLenOf(key);                 // 刚走完的那一段
+    let cycles = 0;
+    if (d > len) { d -= len; cycles = 1; }
+    // 新周期：先定长度，再看这一跳还剩几天（比新长度还大 ⇒ 又跨了一段）
+    // ⚠️ 2026-11-13（第三批修）：这里原来写死最多 500 段 ——
+    //   1 天周期（自定义 1 到 1）遇上几年的跳跃会超过 500 ⇒ 天数被悄悄截断 ✗
+    //   （她的红线：不许吞数据）⇒ 现在只留一个防死循环的保险，真撞上会在控制台明说，
+    //   剩下的按这一段的长度折回去，不静默丢天数 ✓
+    for (let guard = 1; ; guard++) {
+        if (guard > 20000) {
+            console.warn('[Bodycord] ' + key + ' 这次时间跳跃跨过太多段（>20000），后面按平均长度折回');
+            const step = Math.max(1, len);
+            const extra = Math.max(0, Math.floor((d - 1) / step));
+            cycles += extra;
+            d -= extra * step;
+            break;
+        }
+        drawCycleLenNowOf(key);
+        const cur = cycleLenOf(key);
+        len = cur;
+        if (d <= cur) break;
+        d -= cur;
+        cycles++;
+    }
+    return { day: Math.max(1, Math.min(d, Math.max(1, len))), cycles };
+}
+
+// 注册给 settings.js（那边不能 import 这里，会成环 ✓）
+cycleHooks.regularTier = (key) => cycleRegularTierOwnOf(key);
+cycleHooks.regularRange = (key) => cycleRegularRangeOwnOf(key);
+cycleHooks.cycleNow = (key) => cycleLenNowOf(key);
+
+// ---------------------------------------------------------------------------
 // ★★ 产后恢复（2026-11-08）
 //
 // 为什么要有这一段：分娩那一轮以前是「把周期日拨回第 1 天」——
@@ -4076,6 +4532,8 @@ export function handOverPostpartum(key) {
     const left = diffDays(cur, pp.endDate);
     if (left === null || left > 0) return false;         // 还在恢复期
     setCycleDayOf(key, 1, pp.endDate);                   // 恢复日 ＝ 周期第 1 天
+    // ★ 2026-11-13（2.7 第二批）：恢复日就是新周期的第 1 天 ⇒ 给这一段掷长度
+    try { drawCycleLenNowOf(key); } catch { /* 掷不了就回落静态值 */ }
     clearPostpartumFor(key);
     console.log('[Bodycord] ' + key + ' 的产后恢复走完（' + pp.endDate + ' 起算周期第 1 天）');
     return true;
@@ -4334,6 +4792,31 @@ export function nextPeriodFactOf(key) {
         } catch { ovu = 14; cycleLen = 28; }
         const left = Math.round(cycleSettleDayOf(ovu, cycleLen) - day);
         if (!(left >= 1)) return null;                    // 已经到（或过了）结算点 ⇒ 不假造一个负数 ✓
+        // ★ 2026-11-13（2.7 第二批）：不规律档对外给**范围**（最早到最晚），
+        //   内部判定还是按这个周期已经定下来的长度走。规律档照旧只给一个日子 ✓
+        //   口径：
+        //     · 有点不规律 / 很不规律 ⇒ 以这一段的长度为中，前后各让档位那几天
+        //     · 自定义 ⇒ 玩家自己填的最短到最长（那一段最多 / 最少几天）
+        const rg = (() => { try { return cycleLenRangeOf(key); } catch { return null; } })();
+        if (rg && rg.hi > rg.lo) {
+            let lo = left;
+            let hi = left;
+            if (rg.tier === 'custom') {
+                lo = Math.round(rg.lo) + 1 - day;
+                hi = Math.round(rg.hi) + 1 - day;
+            } else {
+                const span = Math.max(0, Math.round(Number(rg.hi) - Number(rg.avg)));
+                lo = left - span;
+                hi = left + span;
+            }
+            lo = Math.max(1, Math.round(lo));
+            hi = Math.max(lo, Math.round(hi));
+            if (hi > lo) {
+                const d0 = addDays(cur, lo);
+                const d1 = addDays(cur, hi);
+                if (d0 && d1) return { date: d0, days: lo, dateTo: d1, daysTo: hi };
+            }
+        }
         const date = addDays(cur, left);
         if (!date) return null;
         return { date, days: left };
@@ -4407,6 +4890,10 @@ export function ensureCycleState(key) {
     }
     let day = 1;
     try {
+        // ★ 2026-11-13（2.7 第二批）：先给这一段定长度，再在**这一段里**挑起始天
+        //   （顺序反了会挑出一天比新长度还大 ⇒ 下一轮直接结算 ✗）
+        //   规律档 / 无月经 / 交配后排卵 ⇒ 这里不落库，等于老行为 ✓
+        drawCycleLenNowOf(key);
         const rule = cycleStartRuleOf(key);
         day = rule.random ? randomCycleStartDay(key) : defaultCycleStartDay(key, rule.day);
     } catch { day = 1; }
@@ -6213,6 +6700,8 @@ export function refreshCycleFieldsOf(key) {
             diapauseWait: diapauseWaitOf(t.key),
             // ★ 2026-11-08：产后恢复（日期一动完，这一段也要跟着重算 ✓）
             postpartum: (() => { try { return postpartumOf(t.key); } catch { return null; } })(),
+            // ★ 2026-11-13（第二批）：受孕窗口按这一族的卵子存活时间铺 ✓
+            targetKey: t.key,
         });
         if (!dv) return false;
         if (!canBePregnantTarget(t.key)) dv.d1 = '不适用';
@@ -6902,8 +7391,8 @@ export function clearZoneTextOf(key) {
 
 // ★★ A1（2026-10-14）：**增量这一步归插件**
 //
-// 病根：增量 = 阶段基础率 × 体质系数 × 防护系数，而这三个因子插件全都有
-//   （阶段基础率＝cycleDayInfoOf / 体质系数＝身体补丁那行 / 防护系数＝设置里那 8 格）
+// 病根：增量 = 阶段基础率 × 卵子质量 × 精子致孕力 × 防护系数，这些因子插件全都有
+//   （阶段基础率＝cycleDayInfoOf / 两侧生育力＝图鉴或个人档位 / 防护系数＝设置里那 8 格）
 //   ⇒ 以前却让模型去做这个乘法并报一个数回来。算错就是账错，而且面板、判定跟着错 ✗。
 //
 // 现在：模型只报**它判出来的防护情境**（那是只有剧情知道的那半），
@@ -6958,19 +7447,51 @@ export function guardWordOf(text) {
 }
 
 /**
- * 这一笔行为新加几个百分点（= 阶段基础率 × 体质系数 × 防护系数）。
+ * 这个对象能不能让别人怀孕 —— 跟 `canBePregnantTarget` 同一套口径
+ * （玩家锁的三态 > 推演这一轮报的 > 兜底按「能」✓）。
+ * 第五批起它也参与公式：明确「不能让别人怀孕」的致孕方，这一笔不贡献 ✓
+ */
+export function canImpregnateTarget(key) {
+    const k = String(key || '');
+    if (!k) return true;
+    try {
+        const lock = bodyLockOf(k);
+        if (lock && typeof lock.canImpregnate === 'boolean') return lock.canImpregnate;
+    } catch { /* 读不到锁就往下走 ✓ */ }
+    try {
+        const rep = reportedBodyFlagOf(k, 'canImpregnate');
+        if (rep !== null) return rep;
+    } catch { /* 忽略 */ }
+    return true;
+}
+
+/**
+ * 这一笔行为新加几个百分点
+ *   = 阶段基础率 × 卵子质量（孕方）× 精子致孕力（致孕方）× 防护系数。
  *
- * @param {string} targetKey 追踪对象
+ * ★ 2026-11-13（第五批）：公式换掉「体质系数」那一项 ——
+ *   体质系数不再当生育乘数（她定的：生育从体质剥出来，那一格退役）。
+ *   · 卵子质量按**孕方**（追踪对象）取：三层（个人档位 > 图鉴这一族 > 人类）✓
+ *   · 精子致孕力按**精子提供方**取：跨族各取各的（人类女 × 精灵男 ⇒ 精子按精灵）✓
+ *   · 「不能怀孕」⇒ 这一笔贡献 0（账照记，只是不涨；她 2026-11-13 定的口径）✓
+ *   · 致孕方明确「不能让别人怀孕」⇒ 同样 0 ✓
+ *
+ * @param {string} targetKey 追踪对象（孕方）
  * @param {string} guardText 模型报的防护情境（认不出时会退回 note）
  * @param {number|null} day 周期日（拿不到 ⇒ 自己按剧情日期算一次）
  * @param {string} [noteText] 那笔的备注（情境为空时当第二个来源 ✓）
+ * @param {string} [byKey] 这一笔的致孕方（精子提供方；空 ⇒ 按人类基准 ✓）
  * @returns {number|null} null = 真的算不出来（调用方按"这一批没有贡献"处理，别编一个数 ✗）
  */
-export function inseminationGainOf(targetKey, guardText, day, noteText) {
+export function inseminationGainOf(targetKey, guardText, day, noteText, byKey) {
     try {
         const src = String(guardText || '').trim() || String(noteText || '');
         const key = guardKeyOf(src);
         if (!key || key === 'noRisk') return null;
+        // ★ 2026-11-13（第五批）：明说不孕 / 不能致孕 ⇒ 贡献 0（不是"不记这一笔" ✓）
+        if (!canBePregnantTarget(targetKey)) return 0;
+        const by = String(byKey || '').trim();
+        if (by && !canImpregnateTarget(by)) return 0;
         // 周期日 ＋ 这个身体的排卵日 / 经期天数（跟 derive / 判定同一个来源 ✓）
         let d = Number(day);
         if (!Number.isFinite(d)) d = cycleDayNum(targetKey);
@@ -7004,20 +7525,24 @@ export function inseminationGainOf(targetKey, guardText, day, noteText) {
                 base = 0;
             } else {
                 // ① 阶段基础率（黄体期是「不适用」⇒ 这一笔不增加，记 0 ✓）
-                const m = String(cycleDayInfoOf(d, ovu, pdays)?.d1 || '').match(/([\d.]+)/);
+                // ★ 2026-11-13（第二批）：窗口尾部跟着卵子存活时间走 ⇒ 窗口内那几天才算 20% ✓
+                const eggDays = (() => {
+                    try { return eggWindowDaysOf(targetKey, bp.cycle, ovu); } catch { return 1; }
+                })();
+                const m = String(cycleDayInfoOf(d, ovu, pdays, eggDays)?.d1 || '').match(/([\d.]+)/);
                 base = m ? Number(m[1]) : 0;
             }
         }
-        // ② 体质系数（排卵日当天按身体补丁那行临时抬一档，出厂 1.0 → 1.5 ✓）
-        let coef = Number(bodyCoefOf(targetKey));
-        if (!Number.isFinite(coef) || coef <= 0) coef = 1;
-        if (d === ovu) {
-            const peak = Number(peakCoefOf(targetKey));
-            if (Number.isFinite(peak) && peak > 0) coef = peak;
-        }
-        // ③ 防护系数（设置里那 8 格；不合法 ⇒ 出厂值，protCoefOf 自己会兜 ✓）
+        // ② 卵子质量（孕方那一侧）—— 个人档位 > 图鉴这一族 > 人类，1 = 人类基准
+        const eggQ = (() => { try { return eggQualityOf(targetKey); } catch { return 1; } })();
+        // ③ 精子致孕力（致孕方那一侧；没报谁 ⇒ 按人类基准 1）
+        const spermP = (() => {
+            if (!by) return 1;
+            try { return spermPowerOf(by); } catch { return 1; }
+        })();
+        // ④ 防护系数（设置里那 8 格；不合法 ⇒ 出厂值，protCoefOf 自己会兜 ✓）
         const prot = Number(protCoefOf(key));
-        return Math.round(base * coef * (Number.isFinite(prot) ? prot : 1) * 100) / 100;
+        return Math.round(base * eggQ * spermP * (Number.isFinite(prot) ? prot : 1) * 100) / 100;
     } catch { return null; }
 }
 
@@ -7080,7 +7605,7 @@ export function recentRiskForPrompt(targetKey = null) {
         const act = guardWordOf(last.protection || last.note || '内射') || '内射';
         if (whoOk) bits.push(who);
         bits.push(act);
-        // 窗口定位（跟判定同一个口径：窗口最后一天 = 排卵日 +1，过渡日 = +2 ✓）
+        // 窗口定位（跟判定同一个口径：最后一天 = 排卵日 ＋ 卵子存活天数 ✓）
         const dep = Number(last.depositDay);
         let ovu = 14;
         let inducedPending = false;
@@ -7089,15 +7614,17 @@ export function recentRiskForPrompt(targetKey = null) {
             ovu = Math.round(Number(bp?.ovu)) || 14;
             inducedPending = bp.induced === true && bp.pending === true;
         } catch { /* 默认 */ }
+        let winLast = (() => { try { return windowLastDayOf(targetKey); } catch { return null; } })();
+        winLast = Number.isFinite(Number(winLast)) ? Number(winLast) : ovu + 1;
         let tag = '';
         // ★ 无月经没有窗口 ⇒ 不贴「窗口前 / 窗口内 / 窗口已过」
         // ⚠️ 必须**两头都判**：原来只写 `dep <= ovu + 1` ⇒ 窗口**之前**那些天也被贴成「窗口内」，
-        //   玩家会以为那时候怀上的几率已经拉满了 ✗（窗口 = 排卵日前后各一天，跟封窗同一个口径 ✓）
+        //   玩家会以为那时候怀上的几率已经拉满了 ✗（窗口 = 排卵日前一天到排卵日 ＋ 卵子存活天数 ✓）
         // ★ 2026-11-08：交配后排卵的族，这次交配没诱发排卵 ⇒ 贴「还没排卵」，不贴窗口定位
         if (Number.isFinite(dep) && !noCycle0) {
             if (inducedPending) tag = '交配后排卵，还没排卵';
             else if (dep < ovu - 1) tag = '窗口前';
-            else if (dep <= ovu + 1) tag = '窗口内';
+            else if (dep <= winLast) tag = '窗口内';
             else tag = '窗口已过';
         }
         return bits.join(' · ') + (tag ? `（${tag}）` : '');
@@ -7137,7 +7664,7 @@ export function recordInsemination(ev, opts = {}) {
         if (Number.isFinite(fromCaller)) return fromCaller;
         const fromData = numOf(ev?.contrib);
         if (Number.isFinite(fromData)) return fromData;
-        return inseminationGainOf(opts.target, guardSrc, opts.day, ev?.note);
+        return inseminationGainOf(opts.target, guardSrc, opts.day, ev?.note, ev?.by);
     })();
     const item = {
         key,                       // 同一轮+同一人+同一条 note 的去重键
@@ -7149,9 +7676,10 @@ export function recordInsemination(ev, opts = {}) {
         roll: String(ev?.roll || ''),
         note: String(ev?.note || ''),
         conceived: ev?.conceived === true,
-        // ★ 精子存活（可选功能，默认关）：这一批的贡献 + 它能活到第几轮
+        // ★ 精子存活（可选功能，默认关）：这一批的贡献 + 它在体内能活几天
         //   contrib：这次新加几个百分点 —— 由插件算（A1，见上面那段）
-        //   lifeRoll / viableUntil：插件掷 D3（1~3），表示还能参与判定的轮次
+        //   lifeRoll／viableUntil：存活天数（按提供方那一族由插件掷定）／能活到第几个周期日
+        //   （跨周期判活看的是下面那个绝对天数 `viableUntilAbs` ✓）
         contrib: gain,
         // ★ 模型报的防护情境原样留着（面板与排查看它；判定读的是上面那个数 ✓）
         protection: guardSrc,
@@ -7210,13 +7738,11 @@ export function recordInsemination(ev, opts = {}) {
         if (depAbs !== null) item.viableUntilAbs = depAbs + opts.lifeRoll;
     }
     s.insems.push(item);
-    // ★ 超上限 ⇒ 丢最旧的，**并且记账**——
-    //   裁掉多少一个字都不说的话，界面上看着就像"更早的记录本来就不存在" ✗
-    if (s.insems.length > INSEM_CAP) {
-        const cut = s.insems.length - INSEM_CAP;
-        s.insems.splice(0, cut);
-        s.insemsCut = (Number(s.insemsCut) || 0) + cut;
-    }
+    // ★★ 2026-11-13（她拍的：**只裁已经失活的**）——
+    //   账本超上限时只清「确定已经失活」的批次，还活着的批次**一条都不动**。
+    //   为什么以前不行：长命精子的族（蛇、龟这类）最旧那批本来要跨好多年活着，
+    //   按"丢最旧"会把它悄悄吞掉，等于把设定吃掉了 ✗
+    pruneDeadInsems(s);
     // ★★ 2026-10-16（有精子时受孕率为什么是 0）——这一笔进账之后**立刻重算 d2** ✓
     //   以前只在"规范化 profile"那一步算（`store.js` 里 `fertilityRateTextOf` 那一处），
     //   而内射账本往往是在那一步**之后**才写进来的 ⇒ d2 停在旧值（明明有精子却写 0%）✗
@@ -7237,6 +7763,35 @@ export function recordInsemination(ev, opts = {}) {
 export function listInseminations() {
     const s = state();
     return (Array.isArray(s.insems) ? s.insems : []).map((x) => ({ ...x }));
+}
+
+/**
+ * ★★ 2026-11-13（她拍的：只裁已经失活的）——
+ * 账本超上限时**只丢确定已经失活**的批次（从旧到新找）；还活着的、以及
+ * 判不出来死没死的老记录（没有绝对存活截止）**一律不动**。
+ *
+ * 结果：全活着的时候账本会暂时超上限。这是故意的 —— 宁可让聊天文件大一点，
+ *   也不吞掉「还能让人怀上」的那一批（老规矩：任何数据都不许吞 ✓）。
+ * @returns {number} 裁掉了几条（会累加进 `state().insemsCut` 记账）
+ */
+export function pruneDeadInsems(s = state()) {
+    if (!Array.isArray(s.insems) || s.insems.length <= INSEM_CAP) return 0;
+    const nowAbs = (() => { try { return absDayOfDateStr(currentDate()); } catch { return null; } })();
+    if (!Number.isFinite(nowAbs)) return 0;          // 认不出今天是哪天 ⇒ 一条都不裁 ✓
+    const over = s.insems.length - INSEM_CAP;
+    let removed = 0;
+    for (let i = 0; i < s.insems.length && removed < over;) {
+        const raw = s.insems[i]?.viableUntilAbs;
+        const untilAbs = (raw == null || raw === '') ? NaN : Number(raw);
+        if (Number.isFinite(untilAbs) && untilAbs < nowAbs) {
+            s.insems.splice(i, 1);
+            s.insemsCut = (Number(s.insemsCut) || 0) + 1;
+            removed++;
+        } else {
+            i++;
+        }
+    }
+    return removed;
 }
 
 /**
@@ -7285,9 +7840,9 @@ export function removeInsemination(key) {
 //   绝对天数跨周期天然正确；换历法、平移时间轴也都不用管 ✓
 //   ⚠️ 老批次没有这个字段 ⇒ **退回原来的周期日号口径**（老行为一字不变、零迁移 ✓）。
 //
-// ⚠️ 为什么不改 `fertilityThroughDay`（判定值那条）：它先用「入账周期日 > 窗口最后一天」
-//   把上一周期的批次挡掉了（跨周期的批次本来就已经结算过、不该再参与新周期判定 ✓）
-//   ⇒ 那边本来就对，只有"显示 + 有效累计"需要绝对口径 ✓
+// ⚠️ 2026-11-13（第三批）改了口径：`fertilityThroughDay`（判定值那条）**现在也走绝对日期**了 ——
+//   跨周期留下、到窗口末尾还活着的批次要能参与新周期的判定（她确认的能力）；
+//   已经失活的跨周期批次不再参与（上个周期已经判过）。老数据没有绝对天 ⇒ 仍按老口径挡掉 ✓
 // ---------------------------------------------------------------------------
 
 /** 今天（剧情日期）的绝对天；没有剧情日期 / 读不出来 ⇒ null（退回周期日号口径用） */
@@ -7365,6 +7920,28 @@ function cycleStartAbsOf(targetKey) {
 }
 
 /**
+ * ★★ 2026-11-13（精子卵子存活 第三批）：跨周期判定用 —— 这一批在**某个绝对天**还活着吗。
+ *
+ * 跟 `spermBatchState` 的分别：那个回答"**现在**还活着吗"（显示 / 清账用；同周期走周期日号、
+ *   只有跨周期才切绝对天）；这一个回答"**判定那一刻**（窗口最后一天）还活着吗"，
+ *   而且**只认绝对日期** —— 没有存活截止的绝对天就返回 `known:false`，
+ *   让调用方退回原来的周期日号口径（老数据老行为，零迁移 ✓）。
+ *
+ * @param {object} x 一条内射记录
+ * @param {number} atAbs 要比较的绝对天（判定 ＝ 本周期窗口最后一天）
+ * @returns {{known:boolean, alive:boolean, untilAbs:number|null}}
+ */
+function batchAliveAtAbs(x, atAbs) {
+    const cut = Number(atAbs);
+    const raw = x?.viableUntilAbs;
+    const untilAbs = (raw == null || raw === '') ? NaN : Number(raw);
+    if (!Number.isFinite(cut) || !Number.isFinite(untilAbs)) {
+        return { known: false, alive: false, untilAbs: null };
+    }
+    return { known: true, alive: untilAbs >= cut, untilAbs };
+}
+
+/**
  * ★ **待受精精子那一栏**由插件算好喂回去。
  *
  * 为什么该插件干：账本里每批都有「入账的周期日」＋「存活到第几个周期日」，
@@ -7401,17 +7978,24 @@ export function pendingSpermForPrompt(targetKey = null) {
         if (alive.length) {
             const a = alive[alive.length - 1];
             const dep = Number(a.depositDay);
-            if (Number.isFinite(dep) && !noCycle) bits.push(`最近一批第${dep}天入账`);
+            // ★ 2026-11-13（第三批）：这一批如果是**上一个周期**留下的，周期日号会读歪
+            //   ⇒ 改说日期（跨周期也读得懂 ✓）
+            const depAbsA = absDayOfDateStr(a?.depotDate);
+            const crossCycle = (depAbsA !== null && Number.isFinite(Number(startAbs)) && depAbsA < Number(startAbs));
+            if (crossCycle && a.depotDate) bits.push(`最近一批 ${a.depotDate} 入账`);
+            else if (Number.isFinite(dep) && !noCycle) bits.push(`最近一批第${dep}天入账`);
             else if (noCycle && a.depotDate) bits.push(`最近一批 ${a.depotDate} 入账`);
             const st = spermBatchState(a, nowDay, startAbs);
             if (st.abs) {
-                // ★ 这一批属于上一个周期 ⇒ 周期日号会读歪 ⇒ 改说**日期**（跨周期也读得懂 ✓）
                 const untilDate = (() => {
                     try { return addDays(FICTION_DATE_START, st.untilAbs) || ''; } catch { return ''; }
                 })();
                 bits.push(st.alive
                     ? `存活到 ${untilDate}（还有 ${st.left} 天）`
                     : `存活期已过（到 ${untilDate}）`);
+            } else if (crossCycle) {
+                // 老记录（没有存活截止的绝对天）⇒ 周期日号比不了跨周期 ⇒ 只说事实，别编日期
+                bits.push('存活期限按上一周期记着，老记录看不出具体到哪天');
             } else if (st.untilDay === null) {
                 bits.push('没设存活期，一直有效');
             } else if (st.alive) {
@@ -8549,7 +9133,7 @@ export function resnapProfileField(key, field) {
     let v = '';
     try {
         if (f === 'd2') v = fertilityRateTextOf(key);
-        else if (f === 'd3') v = bodyCoefOf(key);
+        else if (f === 'd3') v = d3TextOf(key);
         else if (f === 'd4') v = impregnatorTextOf(key);
         else if (f === 'd5') {
             // 后半截（致孕方知情）是模型报的，交回时从当前值里把它摘出来接着用 ✓
@@ -9364,10 +9948,12 @@ export function mergeTargets(keys, keepKey, opts = {}) {
  *
  * @param {number} nowDay 当前剧情天数（周期 DayX）
  * @param {string} [target] 只看这个追踪对象的批次；不给就是全部
- * @param {{onlyCurrentCycle?:boolean, sinceAt?:number}} [opts]
- *   · `onlyCurrentCycle` ⇒ 只算**本周期**入账的批次
+ * @param {{onlyCurrentCycle?:boolean, crossCycleAlive?:boolean, sinceAt?:number}} [opts]
+ *   · `onlyCurrentCycle` ⇒ 只算**本周期**入账的批次（「不跨」那一档的口径）
+ *   · `crossCycleAlive` ⇒ 「跨」那一档的口径：本周期入账的批次 ＋ **上一个周期留下、
+ *     到此刻还活着的批次**；跨周期已经失活的批次不再算进这个数（它们计过的点数留在
+ *     当时那个周期里）。跨周期这条**只认绝对日期**，没有绝对天的老数据仍按老口径排除 ✓
  *   · `sinceAt` ⇒ 只算这个时间戳之后的批次（无月经档的"判完清零"用 ✓）
- *   （ⓘ 累计受孕率的定义就是"当前周期的受孕率"，两档都一样 ⇒ 面板那两处都传它 ✓）
  * @returns {{viable:number, sum:number, alive:number, dead:number, deadList:Array}}
  */
 export function viableFertility(nowDay, target, opts = {}) {
@@ -9386,13 +9972,23 @@ export function viableFertility(nowDay, target, opts = {}) {
     for (const x of list) {
         const c = Number(x.contrib);
         if (!Number.isFinite(c)) continue;
-        // ★ 只要本周期的批次：跨周期档下账本里会留着上个周期还活着的批次，
-        //   但它们属于上一个周期，不该再算进"这个周期的受孕率" ✓
-        if (opts.onlyCurrentCycle && isPrevCycleBatch(x, String(x.target || target || ''))) continue;
+        // ★ 只要本周期的批次（「不跨」那一档 / 无月经档的旧口径）✓
+        const prevMine = isPrevCycleBatch(x, String(x.target || target || ''));
+        if (opts.onlyCurrentCycle && prevMine) continue;
+        // ★★ 2026-11-13（第三批）：「跨」那一档 —— 上一个周期留下来的批次，
+        //   只在**绝对日期能证明它此刻还活着**时才带进这个数；
+        //   跨周期已失活的、以及没有绝对天的老数据（判不出来）一律不算（老行为不变 ✓）
+        if (opts.crossCycleAlive && prevMine) {
+            const st0 = spermBatchState(x, nowDay, startAbsFor(x.target));
+            if (!(st0.abs && st0.alive)) continue;
+        }
         // ★ 无月经档：只算"上次判完清零之后"的批次（清零只清百分比，账本照留 ✓）
         if (Number(opts.sinceAt) > 0 && Number(x.at || 0) <= Number(opts.sinceAt)) continue;
         // ★ 事后避孕药：这一批到 nowDay 为止被折过几次 ⇒ 折完再累加 ✓
-        const eff = c * pillFactorFor(String(x.target || target || ''), x.depositDay, nowDay);
+        // ★ 跨周期那批：药是按**周期日号**记的，跟上一周期的入账日比不了 ⇒
+        //   它一定发生在当时的药之后 ⇒ 一律按"本周期吃过的药"折（传 null = 不比入账日 ✓）
+        const eff = c * pillFactorFor(String(x.target || target || ''),
+            (opts.crossCycleAlive && prevMine) ? null : x.depositDay, nowDay);
         sum += eff;
         // 注意：必须先判 null/undefined。Number(null) 是 0，
         // 直接 Number() 会让「没开这个功能」的批次被误判成「第 0 轮就过期」✗
@@ -9476,6 +10072,9 @@ export function amenorrheaLedgerOf(key) {
  *      · 'alive' ＝**只算窗口结束那一刻还活着的那几批** —— 已失活的批次不进判定值
  *        （它们已经计过的贡献仍然留在累计受孕率里，只是判定不用它 ✓）
  *   ③ 候选致孕方 = 判定时仍有活精子的那批人（**两档都一样**：死掉的批次不会再当致孕方）✓
+ *   ④ ★ 2026-11-13（第三批）：**跨周期**的批次也参与判定 —— 上一个周期留下、到窗口结束
+ *      那一刻还活着的，照样算进判定值与候选名单；到那一刻已经失活的不算（它上个周期
+ *      已经判过了，本周期不重复算）。这一条只认绝对日期，老数据仍按老口径排除 ✓
  *
  * @param {string} target 只看这个追踪对象的批次
  * @param {number} cutoffDay 截止到周期第几天（含）—— 判定时传「窗口最后一天」
@@ -9490,14 +10089,41 @@ export function fertilityThroughDay(target, cutoffDay, basis) {
     const all = Array.isArray(state().insems) ? state().insems : [];
     // ★ 按对象分账：多对象追踪时不能把别人的批次算进来
     const list = target ? all.filter((x) => String(x.target || '') === String(target)) : all;
+    // ★★ 2026-11-13（第三批）：判定改成**按绝对日期**比 —— 才看得见「上一个周期留下、
+    //   到窗口结束那一刻还活着」的批次（周期日号一切换就重头数，比不了跨周期 ✓）。
+    //   窗口最后一天的绝对天 ＝ 本周期第 1 天的绝对天 ＋ 窗口最后一天（周期日号）。
+    //   拿不到日期 ⇒ cutoffAbs 为 null ⇒ 整段退回原来的周期日号口径（老数据不变 ✓）
+    const startAbs = (() => { try { return cycleStartAbsOf(String(target || '')); } catch { return null; } })();
+    const cutAbs = (Number.isFinite(cut) && Number.isFinite(startAbs)) ? startAbs + cut : null;
     let rate = 0, alive = 0, dead = 0, inWindow = 0;
     const candidates = [];
     for (const x of list) {
         const c = Number(x.contrib);
         if (!Number.isFinite(c)) continue;
+        const d = Number(x.depositDay);
+        const depAbs = absDayOfDateStr(x?.depotDate);
+        const crossCycle = (depAbs !== null && Number.isFinite(startAbs) && depAbs < startAbs);
+        // ★ 跨周期批次：只看「到窗口末尾还活着没有」，有绝对日期的才走这条
+        const atCut = (crossCycle && cutAbs !== null) ? batchAliveAtAbs(x, cutAbs) : null;
+        if (atCut && atCut.known) {
+            // 入账在窗口结束之后（理论上不会跨周期还这样）⇒ 不参与
+            if (depAbs > cutAbs) continue;
+            // 到窗口末尾已经失活 ⇒ 它已经在上个周期的判定里算过，本周期不再算
+            if (!atCut.alive) continue;
+            inWindow++;
+            alive++;
+            // ★ 药按周期日号记，跟上一周期的入账日比不了 ⇒ 跨周期那批一律按
+            //   "本周期吃过的药"折（它一定发生在那些药之后 ✓）
+            rate += c * pillFactorFor(String(x.target || target || ''), null, cut);
+            const who = String(x.by || '').trim();
+            if (who && who !== '未标注' && !/^(未知|unknown)$/i.test(who) && !candidates.includes(who)) {
+                candidates.push(who);
+            }
+            continue;
+        }
+        // ===== 原来的周期日号口径（本周期批次 / 老数据）=====
         // ① 窗口结束之后才发生的 ⇒ 不参与本周期判定
         //   （老数据没有 depositDay ⇒ 认不出来，按"窗口内"处理，宁可宽一点 ✓）
-        const d = Number(x.depositDay);
         if (Number.isFinite(cut) && Number.isFinite(d) && d > cut) continue;
         inWindow++;
         // ② 判定那一刻是否还活着 —— 用来算"几批失活"、候选名单，并按口径决定算不算进判定值
@@ -9598,7 +10224,7 @@ export function fixCalcLeadPhase(key) {
 /**
  * ★★ 「这一轮没有新发生什么」时的计算说明 —— 整句由插件写。
  *
- * 口径：没有新增风险行为 ⇒ 公式只有「阶段基础率 × 体质系数」，
+ * 口径：没有新增风险行为 ⇒ 公式只有「阶段基础率 × 卵子质量」，
  *   累计值不变；判定结果那半照抄插件自己的 d2 标注 / 受精判定原文（不自己造词 ✓）。
  *   时间推进到新的一天、阶段换了 ⇒ 这句话跟着换（不再出现"上一轮那句"✗）。
  *
@@ -9617,7 +10243,7 @@ export function quietCalcTextOf(key, res) {
         && !(String(res?.Cycle_Event || '').trim() && !/^无$/.test(String(res.Cycle_Event).trim()));
     if (!quiet) return '';
     const coef = String(t.profile?.d3 || '').trim();
-    const head = `${phase}基础率${d1}` + (coef ? ` × 体质系数${coef}` : '') + '，本轮无新增性行为';
+    const head = `${phase}基础率${d1}` + (coef && coef !== '不适用' ? ` × 卵子质量${coef}` : '') + '，本轮无新增性行为';
     // ① 有判定结果 ⇒ 直接照抄插件那份（判定值 / 掷出 / 着床日都在里面 ✓）
     const judge = (() => { try { return judgmentForPrompt(key) || ''; } catch { return ''; } })();
     if (judge) return `${head} | ${judge}`;
@@ -9656,12 +10282,20 @@ export function fertilityRateTextOf(key) {
     const pp = (() => { try { return postpartumOf(key); } catch { return null; } })();
     const ppNow = !!(pp && pp.active);
     let sum = 0;
+    let aliveNow = 0;
     try {
         // ★ 无月经档 / 恢复期：只算「上次判完清零之后」的批次（没有周期可言 ✓）
+        // ★★ 2026-11-13（第三批）：两档结算方式的口径分开 ——
+        //   「跨」⇒ 本周期入账的 ＋ 上个周期留下还活着的（跨周期失活的不再算）
+        //   「不跨」⇒ 只算本周期入账的（进新周期全清，本来就是 0 起）
+        const crossMode = (() => { try { return settings().cycleSettleMode === 'sperm'; } catch { return false; } })();
         const vf = (isNoCycle || ppNow)
             ? viableFertility(day, key, { sinceAt: amenorrheaMarkOf(key) })
-            : viableFertility(day, key, { onlyCurrentCycle: true });
+            : (crossMode
+                ? viableFertility(day, key, { crossCycleAlive: true })
+                : viableFertility(day, key, { onlyCurrentCycle: true }));
         if (vf && Number.isFinite(Number(vf.sum))) sum = Number(vf.sum);
+        if (vf && Number.isFinite(Number(vf.alive))) aliveNow = Number(vf.alive);
     } catch { /* 读不到就按 0 */ }
     const pct = `${Math.round(sum * 10) / 10}%`;
     // 能不能怀孕：锁定的三态 > AI 报的那一格 > 兜底"能"（跟 prompt.js 的 canBePregnantPerson 同一口径 ✓）
@@ -9683,7 +10317,10 @@ export function fertilityRateTextOf(key) {
     let phase = '';
     try {
         const bp = bodyCycleParamsOf(key);
-        if (day !== null && bp) phase = cycleDayInfoOf(day, bp.ovu, periodDaysOf(key)).phaseId;
+        if (day !== null && bp) {
+            const eggDays = eggWindowDaysOf(key, bp.cycle, bp.ovu);
+            phase = cycleDayInfoOf(day, bp.ovu, periodDaysOf(key), eggDays).phaseId;
+        }
     } catch { /* 读不到阶段就不往下判 */ }
     const aliveBatch = (() => { try { return viableFertility(day, key).alive > 0; } catch { return false; } })();
     // ★ 窗口的叫法**按这个对象自己的周期模式**走 ——
@@ -9722,10 +10359,12 @@ export function fertilityRateTextOf(key) {
     // ★★ 2026-10-16（有精子时受孕率为什么是 0）——卵泡期这一档原来只看：sum 是不是 0
     //   就写「暂未发生内射」✗ ⇒ 本周期**明明记过内射**（只是还没进窗口）时也这么说 ✗
     //   ⇒ 判据改成"**本周期有没有内射记录**"，措辞跟窗口内那一档对齐 ✓
+    // ★ 2026-11-13（第三批）：「跨」那一档里，上一周期留下还活着的精子也要算"有精子"——
+    //   不然明明体内有活精子，面板却说"暂未发生内射"✗
     const hasInsem = (() => {
         try { return listInseminations().some((x) => !isPrevCycleBatch(x, key)); }
         catch { return false; }
-    })();
+    })() || aliveNow > 0;
     if (hasInsem) {
         return aliveBatch
             ? `${pct}（待受精精子存活中，尚未进入${win}）`
@@ -9795,8 +10434,11 @@ export function postpartumRecoveryForPrompt(key) {
  *
  * 只按精子存活模式 / 吃过事后药时给。目的是让 AI 照抄进 d2，免得它自己另算一个总数 ✗
  * ★★ 报的数永远是**累计**（＝d2 那一格），**不是判定值** —— 判定口径两档都只影响"判定那一刻拿哪个数"，
- *   累计受孕率本身不会因为精子失活而变小（那正是"数字莫名其妙变少"的由来 ✗）
- *   ⇒ 失活批次只用一句括号说明"还留在累计里、判定用不用"（按当前口径写 ✓）
+ *   不影响这个数本身 ✓
+ * ★ 2026-11-13（第三批）：两档结算方式下这个数的账不太一样 ——
+ *   「不跨」⇒ 本周期入账的都算（同周期失活也不退回去）；
+ *   「跨」⇒ 本周期入账的都算 ＋ 上一个周期留下还活着的（跨周期失活的会从这个数里退出）。
+ *   ⇒ 失活批次只用一句括号说明（按当前口径写 ✓）
  * ⚠️ 返回值是**提示词文本** ⇒ 不许提「插件」、不许加粗、不许描述性破折号 ✓
  *
  * @param {number} nowDay 当前剧情天数
@@ -9806,10 +10448,13 @@ export function postpartumRecoveryForPrompt(key) {
 export function effectiveFertilityForPrompt(nowDay, target) {
     let vf;
     const _noCycle = (() => { try { return periodModeOf(target) === 'amenorrhea'; } catch { return false; } })();
+    const crossMode = (() => { try { return settings().cycleSettleMode === 'sperm'; } catch { return false; } })();
     try {
         vf = _noCycle
             ? viableFertility(nowDay, target, { sinceAt: amenorrheaMarkOf(target) })
-            : viableFertility(nowDay, target, { onlyCurrentCycle: true });
+            : (crossMode
+                ? viableFertility(nowDay, target, { crossCycleAlive: true })
+                : viableFertility(nowDay, target, { onlyCurrentCycle: true }));
     } catch { return ''; }
     if (!vf || !vf.alive) return '';
     // ★ 两档的说法不一样：累计档它照样进判定值，仅存活档它不进（写错会带歪计算说明 ✗）
@@ -11322,14 +11967,25 @@ export function markConceivedInsems(key, windowLast) {
             return 0;
         }
         // ② 合格批次：窗口内、判定时还活着、真内射、致孕方对得上
+        // ★ 2026-11-13（第三批）：跨周期留下、到窗口末尾还活着的批次也可能就是中的那一笔
+        //   ⇒ 按绝对日期放进来（判据与 `fertilityThroughDay` 同一条）；老数据仍按老口径排除 ✓
+        const startAbs = (() => { try { return cycleStartAbsOf(String(key || '')); } catch { return null; } })();
+        const cutAbs = (Number.isFinite(limit) && limit > 0 && Number.isFinite(startAbs)) ? startAbs + limit : null;
         const pool = [];
         for (const it of s.insems) {
             if (String(it?.target || '') !== String(key || '')) continue;
-            if (isPrevCycleBatch(it, key)) continue;
-            const d = Number(it?.depositDay);
-            if (Number.isFinite(d) && Number.isFinite(limit) && limit > 0 && d > limit) continue;
-            const u = Number(it?.viableUntil);
-            if (Number.isFinite(u) && Number.isFinite(limit) && limit > 0 && u < limit) continue;
+            const depAbs = absDayOfDateStr(it?.depotDate);
+            const crossCycle = (depAbs !== null && Number.isFinite(startAbs) && depAbs < startAbs);
+            if (crossCycle) {
+                const al = (cutAbs !== null) ? batchAliveAtAbs(it, cutAbs) : { known: false };
+                if (!al.known || !al.alive) continue;
+            } else {
+                if (isPrevCycleBatch(it, key)) continue;
+                const d = Number(it?.depositDay);
+                if (Number.isFinite(d) && Number.isFinite(limit) && limit > 0 && d > limit) continue;
+                const u = Number(it?.viableUntil);
+                if (Number.isFinite(u) && Number.isFinite(limit) && limit > 0 && u < limit) continue;
+            }
             const guard = String(it?.protection || it?.guard || '').trim();
             if (/^(前液接触|外部摩擦|无套外射|完好无损|短效避孕药)$/.test(guard)) continue;
             if (!names.has(String(it?.by || '').trim())) continue;
@@ -11339,7 +11995,14 @@ export function markConceivedInsems(key, windowLast) {
             if (cleared) commit();
             return 0;
         }
-        pool.sort((a, b) => (Number(b.depositDay) || 0) - (Number(a.depositDay) || 0)
+        // ★ 取"最晚入账"那一笔：跨周期批次和本周期批次混在一起时，周期日号不能直接比
+        //   ⇒ 有日期的按绝对天比，没有的才退回周期日号（老数据老口径 ✓）
+        const orderOf = (it) => {
+            const a = absDayOfDateStr(it?.depotDate);
+            if (a !== null) return a;
+            return Number(it?.depositDay) || 0;
+        };
+        pool.sort((a, b) => orderOf(b) - orderOf(a)
             || (Number(b.round) || 0) - (Number(a.round) || 0));
         pool[0].conceived = true;
         commit();
@@ -12356,8 +13019,9 @@ export function vitalsForPrompt(key) {
             if (periodModeOf(k) === 'normal') {
                 const d = cycleDayNum(k);
                 if (d) {
-                    const { ovu } = bodyCycleParamsOf(k);
-                    phase = cycleDayInfoOf(d, ovu, periodDaysOf(k)).phaseId || '';
+                    const bp = bodyCycleParamsOf(k);
+                    phase = cycleDayInfoOf(d, bp.ovu, periodDaysOf(k),
+                        eggWindowDaysOf(k, bp.cycle, bp.ovu)).phaseId || '';
                 }
             }
         } catch { /* 忽略 */ }

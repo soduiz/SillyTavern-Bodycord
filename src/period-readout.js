@@ -80,7 +80,12 @@ export function periodReadoutOf(prefs = {}, raw = {}) {
             if (what === '经量' && PERIOD_FLOW_SERIES[to]) flow = to;
             else if (what === '痛经' && PAIN_LV.includes(to)) pain = to;
         }
-        off.push({ what, to, why });
+        const entry = { what, to, why };
+        // ★ 2026-11-13（非常态持久化）：条目上带着「到什么时候」，面板要一起写出来 ✓
+        //   （老数据 / 这一轮临时冒出来的清单外表现没有这个字段 ⇒ 照旧只写原因）
+        const untilText = String(it?.untilText ?? '').trim();
+        if (untilText) entry.untilText = untilText;
+        off.push(entry);
     }
 
     const color = String(prefs.color || '').trim() || periodColorOf(flow);
@@ -108,7 +113,7 @@ export function periodReadoutOf(prefs = {}, raw = {}) {
     return { day, flow, color, texture, pain, items, off };
 }
 
-/** 面板上那一行文字：非常态怎么显示（没写原因就只写是什么） */
+/** 面板上那一行文字：非常态怎么显示（没写原因就只写是什么；有到期就写「到什么时候」） */
 export function periodOffText(off = []) {
     return (Array.isArray(off) ? off : [])
         .map((x) => {
@@ -116,8 +121,10 @@ export function periodOffText(off = []) {
             if (!what) return '';
             const to = String(x?.to ?? '').trim();
             const why = String(x?.why ?? '').trim();
+            const until = String(x?.untilText ?? '').trim();
             const core = to ? (what + '变' + to) : what;
-            return why ? (core + '（' + why + '）') : core;
+            const tail = [why, until ? ('到' + until) : ''].filter(Boolean).join('，');
+            return tail ? (core + '（' + tail + '）') : core;
         })
         .filter(Boolean)
         .join('、');

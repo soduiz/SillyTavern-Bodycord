@@ -12,6 +12,8 @@ import { settings, save, TARGET_MODES, ICON_SLOTS, customIcons, setCustomIcon,
     spermBellyTextVaginaIn, setSpermBellyTextVaginaIn, SPERM_BELLY_TIERS,
     stageTextOverride, setStageTextOverride, resetStageTextOverrides, customStageTextCount,
     periodMode, cycleModeLabel, isNeutralMode, childrenToMain, setChildrenToMain,
+    cycleLenRangeOf, cycleRegularTierOf, cycleRegularTierIdOf, cycleRegularLabelOf, ovuModeOf,
+    bodyCycleParamsOf,
     stageTextOnly, setStageTextOnly,
     borrowOnFor, setBorrowOnFor, borrowFromFor, setBorrowFromFor,
     stageFetusOn, setStageFetusOn, stageCuts, setStageCuts,
@@ -42,7 +44,7 @@ import {
     bodyLockOf, setBodyLockField, USER_KEY, reportedBodyFlagOf, raceJudgeOf, setRaceManualOf,
     awarenessTierIdOf, setAwarenessTierIdOf,
     identOf, setIdentField, mergeTargets, setPeriodModeOf, periodModeOf, cycleModeBadgeOf, parseAliases,
-    childrenOf, trackingRoster,
+    childrenOf, trackingRoster, addToTargetNames,
     activeCalendarNow, setCalendar, applyCalendarPreset, timeUnitNow,
     storyDateTimeNow, dateMode, shiftDateForward, shiftDateBackward, shiftDateBackwardFull, exportOnlyStateDates, applyRelDates, setPendingRelDates, FICTION_DATE_START,
     inRealChat, inChatPage, currentDate,
@@ -51,6 +53,10 @@ import {
     timeJumpSkipsBody, setTimeJumpSkipsBody, timeJumpSkipsBodyManual, setTimeJumpSkipsBodyAuto,
     timeJumpExceptKeys, setTimeJumpExceptKeys, findTargetByReportedName,
     SPERM_TIERS, SPERM_TIER_LABEL,
+    spermPowerTierOf, setSpermPowerTierOf, fertilityTierOf, setFertilityTierOf,
+    fertilityManualOf, setFertilityManualOf,
+    cycleRegularTierOwnOf, setCycleRegularTierOf, cycleRegularRangeOwnOf, setCycleRegularRangeOf,
+    clearCycleLenNowOf, nextPeriodFactOf,
 } from './store.js';
 // ★ 往未来补：补完要**当场把该算的账算掉**（孕期状态 + 时间型结算 + 受精判定）✓
 //   ⚠️ 这条不会成环：judge.js 只 import settings / store / params / prompt 那几个，不碰 ui-* ✓
@@ -71,8 +77,9 @@ import { askArchiveName, applyPersonArchiveInteractive } from './ui-archive.js';
 // ★ 图鉴（第二批）：选条目 / 单独调 / 绑定读数 ——
 //   ⚠️ 方向是**单向**的（ui-settings 引 ui-codex；ui-codex 不引 ui-settings）⇒ 不成环 ✓
 import { openCodexOverrideEditor, codexPickControl } from './ui-codex.js';
-import { codexIdOf, setCodexIdOf, resolveRaceText, codexOverrideCount, setShowWeekOf } from './codex-bind.js';
-import { readShowWeeksOf, readShowWeekOf, showWeekForLevel, SHOW_LEVELS, codexEntryOf } from './codex-values.js';
+import { codexIdOf, setCodexIdOf, resolveRaceText, codexOverrideCount, setShowWeekOf, codexOverrideOf, setCodexOverride } from './codex-bind.js';
+import { readShowWeeksOf, readShowWeekOf, showWeekForLevel, SHOW_LEVELS, codexEntryOf, readSpermPowerOf, readEggQualityOf, readSpermLifeOf, readEggLifeOf, readSpermLifeBaseOf, readEggLifeBaseOf, LIFE_TIERS, lifeTierRangeOf } from './codex-values.js';
+import { POWER_TIERS, powerTierLabelOf } from './codex-schema.js';
 import { codexEntry } from './codex.js';
 import { wiSection } from './ui-wi.js';
 // ★ 第七批：「设定来源」（角色绑了哪几条世界书条目）＋「从世界书建角色」
@@ -82,8 +89,8 @@ import {
     listPersonArchives, savePersonArchive, deleteArchive, downloadArchive, archiveLabel, getArchive,
 } from './archive.js';
 import {
-    h, clear, button, section, textInput, numberInput, textArea, select, toggle, modal, askConfirm, field, dropdown,
-    groupHeading, helpButton, askText,
+    h, clear, button, section, textInput, numberInput, textArea, select, toggle, toggleRow, modal, askConfirm, field, dropdown,
+    groupHeading, helpButton, askText, debounce,
 } from './dom.js';
 // ★ 番茄钟那张卡单独一个文件（`src/ui-timer.js`）—— 这样它能被**单独挂进真浏览器点一遍** ✓
 //   ⚠️ 它住**「时间与日历」页**：多久 / 提示音 / 保活讲的都是"时间"的事，不是头像 ✗
@@ -1120,7 +1127,9 @@ function targetSection(container, onChange) {
     const box = section('追踪对象', {
         help: [
             '每个追踪对象都有自己独立的一份身体档案，互不共用数值',
-            '「追踪 {{user}} 本人」关掉之后只追别人，不追你自己（自己这一份不再推演、不再记数据、也不注入状态）。已经存下来的本人数据不会删，随时可以再打开。适合玩「上帝视角 / 世界意识」这类不亲自下场的玩家',
+            '下面那份列表是「有档案的人」，不等于「每次推演都会带上的人」：真正发去推演的是上面「追踪哪些对象」选出来的那一份名单。名单外的人只建了档，不参与推演、也不注入状态，列表里会标着「不在推演名单」',
+            '「追踪 {{user}} 本人」关掉之后只追别人，不追你自己：你这一份不再推演、不再记新的数据、也不注入状态',
+            '已经存下来的本人数据不会删，随时可以再打开。适合玩「上帝视角 / 世界意识」这类不亲自下场的玩家',
             // ⚠️ 这一条跟「解除上限」下面那行小字**说的是同一句** —— 屏幕上到处都是同一个数字 ✗
             '真正费 token 的是「给很多人改专属补丁」：给谁改一条，那个人就多领一份；改几条多几份，不是把整批模块都发一遍',
         ],
@@ -1164,7 +1173,7 @@ function targetSection(container, onChange) {
             }
             onChange?.(true);
         },
-        '关掉后不再追你自己，已经存下来的数据不会删'));
+        '关掉后只追别人，不追你自己'));
 
     if (s.targetMode === 'single' || s.targetMode === 'multi') {
         const list = h('div', { class: 'bc-chip-list' });
@@ -1351,6 +1360,12 @@ function targetSection(container, onChange) {
     }
 
     const targets = targetList().filter((t) => !isTargetLoose(t.key));
+    // ★ 2026-11-13（她报"明明在追踪对象里，推演说没有追踪对象"）——
+    //   这份列表列的是**档案**，推演看的是**按模式筛过的名单**。以前界面上两者长得一模一样，
+    //   档案建了、却从来没进过推演，玩家看不出来 ✗ ⇒ 每行标一颗「不在推演名单」✓
+    //   ⚠️ 口径就用 `trackingRoster()`（跟推演同一份，不另算一套）
+    let rosterKeys = new Set();
+    try { rosterKeys = new Set((trackingRoster() || []).map((t) => String(t?.key || ''))); } catch { rosterKeys = new Set(); }
     b.appendChild(h('div', { class: 'bc-section-title', text: '当前聊天已建档的对象' }));
     if (!targets.length) {
         // ★ 轻档都列在上面那一栏了 ⇒ 这里空着的时候说清楚去哪儿看，别只写「暂无」（会像数据没了 ✗）
@@ -1374,6 +1389,7 @@ function targetSection(container, onChange) {
             for (const t of list) {
                 const nm = displayName(t) || t.key;
                 const isActive = state().active === t.key;
+                const inRoster = rosterKeys.has(String(t.key || ''));
                 // ★ 标签也摆在这儿（一眼看出谁是哪一版 / 哪一篇 ✓）
                 const tagList = (() => { try { return parseAliases(identOf(t.key).tags); } catch { return []; } })();
                 tbl.appendChild(h('div', { class: 'bc-target-row' + (isActive ? ' active' : '') },
@@ -1381,6 +1397,7 @@ function targetSection(container, onChange) {
                         h('div', { class: 'bc-target-name' },
                             nm,
                             t.isUser ? h('span', { class: 'bc-badge', text: '用户本人' }) : null,
+                            inRoster ? null : h('span', { class: 'bc-badge bc-badge-out', text: '不在推演名单' }),
                             ...tagList.map((tg) => h('span', { class: 'bc-badge', text: tg })),
                         ),
                         // ⚠️ 这个时间戳只由**推演成功**写（`upsertTargetResult`）——
@@ -1392,6 +1409,18 @@ function targetSection(container, onChange) {
                     h('div', { class: 'bc-target-actions' },
                         isActive ? h('span', { class: 'bc-badge bc-badge-on', text: '正在查看' })
                                  : button('查看', () => { setActive(t.key); onChange?.(true); }),
+                        // ★ 2026-11-13：给「有档案、但不在名单里」的人一颗补票按钮
+                        //   （只有名字/多人这两档能一键补；只追本人那一档是模式决定的，
+                        //     要去上面换成「指定」或「自动」，这里不给假按钮 ✗）
+                        (!inRoster && !t.isUser && (s.targetMode === 'single' || s.targetMode === 'multi'))
+                            ? button('加进名单', () => {
+                                const need = String(t.name || '').trim();
+                                if (!need) return;
+                                // 单人是「只追一位」⇒ 换人；多人 ⇒ 追加（跟上面那两个框同一条路）✓
+                                addToTargetNames(need);
+                                onChange?.(true);
+                            }, { title: '把这个人写进上面那份名单，从下一轮起进推演（会占一个名额）' })
+                            : null,
                         // ★ 2026-11-09：正式档也能一步落到发情记录档，不用先退回轻档再选一次 ✓
                         button('只追发情期', () => {
                             if (!setTrackMode(t.key, 'estrus')) {
@@ -1427,7 +1456,9 @@ function targetSection(container, onChange) {
         };
 
         if (targets.length > TARGET_SEARCH_AT) {
-            const input = textInput('', (v) => { kw = v; paint(); }, { placeholder: '搜索对象名…' });
+            // ★ 2026-11-13：每敲一个字就重建整张对象表（每行四五颗按钮）⇒ 停手 250ms 再画 ✓
+            const paintSoon = debounce(paint, 250);
+            const input = textInput('', (v) => { kw = v; paintSoon(); }, { placeholder: '搜索对象名…' });
             b.appendChild(h('div', { class: 'bc-row bc-search-row' }, input));
         }
         paint();
@@ -1441,6 +1472,10 @@ function targetSection(container, onChange) {
         const name = draft2.trim();
         if (!name) return;
         createTarget(name);
+        // ★ 2026-11-13：跟面板「联系人」添加、上面那两个名字输入框写成同一件事 ——
+        //   以前这里只建了档 ⇒ 指定对象模式下这个人**永远不会进推演**，
+        //   界面上还显示"已添加"，玩家看不出来 ✗（名字/多人两档才有名单，其余档不动）
+        addToTargetNames(name);
         input2.value = '';
         draft2 = '';
         onChange?.(true);
@@ -1886,17 +1921,8 @@ function dataSection(container, onChange) {
     container.appendChild(box);
 }
 
-/** 一行「标题 + 开关 + 说明」 */
-function toggleRow(label, value, onChange, hint) {
-    const sw = toggle(!!value, (v) => onChange?.(v));
-    return h('div', { class: 'bc-toggle-row' },
-        h('div', { class: 'bc-toggle-main' },
-            h('div', { class: 'bc-toggle-label', text: label }),
-            hint ? h('div', { class: 'bc-hint', text: hint }) : null,
-        ),
-        h('div', { class: 'bc-toggle-sw' }, sw),
-    );
-}
+/** 一行「标题 + 开关 + 说明」
+ *  ★ 2026-11-13：搬到 dom.js 的 `toggleRow` 了（图鉴页那边也要用同一套间距）✓ */
 
 /**
  * 「易读模式」—— 放在常规页**最上面**。
@@ -4380,13 +4406,15 @@ export function bodyLockRows(host, key, opts = {}) {
         const restore = button('↩ 恢复自动', () => {
             setBodyLockField(key, field, null);
             paintTag(null);
-            onChange(field === 'canBePregnant');
+            onChange(field === 'canBePregnant' || field === 'canImpregnate');
         });
         const dd = select(lock[field] === null ? '' : String(lock[field]), options, (v) => {
             const val = v === '' ? null : (v === 'true');
             setBodyLockField(key, field, val);
             paintTag(val);                       // ★ 当场同步视觉 ✓
-            onChange(field === 'canBePregnant'); // 只有它要整页重建 ✓
+            // ★ 2026-11-13：「能不能让别人怀孕」也要整页重建 ——
+            //   生育数值那块按这两格决定显示哪几格，不重建就停在旧的那一套（她截图撞到的就是它）
+            onChange(field === 'canBePregnant' || field === 'canImpregnate');
         }, moot ? { disabled: true, title: '这个人不能怀孕，这一格不生效' } : {});
         const box2 = h('div', { class: 'bc-field' },
             h('div', { class: 'bc-label-row' },
@@ -4435,10 +4463,34 @@ export function bodyLockRows(host, key, opts = {}) {
     // ★ 2026-11-06：显怀早晚（体质，按人）——
     //   条目给「这一族最早到最晚第几周」，这个人固定一个周数；
     //   第一次随机一档，之后锁住，改档会在这档的范围里重新挑。
-    host.appendChild(showField(key));
+    // ★ 2026-11-13：选了「不能怀孕」就不给看这一格（它只跟怀孕有关，留着会被误会还在发）
+    if (!isCannotBePregnant(key)) host.appendChild(showField(key));
+    // ★ 2026-11-13（第五批）：生育数值（卵子质量 / 精子致孕力 / 两个存活时间）——
+    //   整块默认折叠，折叠条右边写当前状态 ✓
+    host.appendChild(fertilityNumbersBlock(key, onChange));
+    // ★ 2026-11-13（2.7 经期波动 第一批）：周期长度会不会变（规律度）——
+    //   紧跟在生育数值下面：它俩讲的是同一件事的两面（能不能怀 / 周期怎么走）✓
+    host.appendChild(cycleRegularBlock(key));
     // ★ 2026-11-06（第七批）：设定来源（这个角色绑了哪几条世界书条目）——
     //   只显示条数，「选…」开弹窗挑；清单不铺在页面上 ✓
     host.appendChild(wiBindRows(key, onChange));
+}
+
+/**
+ * 这个对象是不是被玩家明确锁了「不能怀孕」。
+ * 只有明确 false 才算；留空 / 没锁 = 不知道，不算 ✓
+ */
+export function isCannotBePregnant(key) {
+    try { return bodyLockOf(key).canBePregnant === false; } catch { return false; }
+}
+
+/**
+ * ★ 2026-11-13（她定）：这个对象是不是被明确锁了「不能让别人怀孕」。
+ *   跟上面那条同一套口径：只有明确 false 才算，留空 = 不知道 ✓
+ *   用途：生育数值那块 —— 只被受孕的人不显示精子那两格，只致孕的人不显示卵子那两格。
+ */
+export function isCannotImpregnate(key) {
+    try { return bodyLockOf(key).canImpregnate === false; } catch { return false; }
 }
 
 /**
@@ -4499,6 +4551,422 @@ function showField(key) {
     return box;
 }
 
+// ---------------------------------------------------------------------------
+// ★ 2026-11-13（第五批）：生育数值四格
+//
+// 住「角色基础信息」那张卡（设置页「你自己」／悬浮球弹窗／补丁页 · 人物 三处共用 ✓）。
+//   · 卵子质量 / 精子致孕力：倍率。默认「跟图鉴」= 这一族基准；5 档只是这一族基准 × 倍率
+//   · 精子存活 / 卵子存活：天。5 档 = 在这一族范围里**取一段**写进个人那一层（2026-11-13 她定：不再乘倍率）
+//   · 个人的数可以超过族范围、不设上界（她 2026-11-13 定的：玩家写多少就是多少 ✓）
+//
+// ⚠️ 数值本身存在「个人单独调」那一层（codexOverride）；档位存对象身上（或本人全局设置）。
+//   换绑别的族时，档位会跟着新基准重算；填了自定义就固定成那个数 ✓
+// ⚠️ 这些整块默认折叠（平常不动），折叠条右边直接写当前状态 —— 收起也看得出改过没有 ✓
+// ---------------------------------------------------------------------------
+const _fertOpen = Object.create(null);
+
+export function fertilityNumbersBlock(key, onChange = () => {}) {
+    // ★ 2026-11-13（她定）：四格按这个人**实际能参与的两种角色**显示 ——
+    //   只被受孕 ⇒ 不显示精子那两格；只致孕 ⇒ 不显示卵子那两格；
+    //   两样都能 ⇒ 四格全显示；两样都被锁死 ⇒ 一格都不显示，只留一句说明。
+    const canPreg = !isCannotBePregnant(key);
+    const canImp = !isCannotImpregnate(key);
+    const showEgg = canPreg;
+    const showSperm = canImp;
+    const cellCount = (showEgg ? 2 : 0) + (showSperm ? 2 : 0);
+    const wrap = h('div', { class: 'bc-field bc-fert' });
+    const body = h('div', { class: 'bc-fert-body' });
+    const sumEl = h('span', { class: 'bc-fert-state' });
+    // 展开/收起：**只有按钮能点**（她 2026-11-13：摘要那行文字能点，看着像 BUG）
+    const openBtn = button('', () => {
+        _fertOpen[String(key)] = !_fertOpen[String(key)];
+        applyOpen();
+    }, { variant: 'primary' });
+    const applyOpen = () => {
+        // ★ 一格都没有 ⇒ 根本没有可展开的东西：按钮整个收掉，说明直接摆出来
+        if (!cellCount) {
+            body.style.display = '';
+            openBtn.style.display = 'none';
+            return;
+        }
+        const open = !!_fertOpen[String(key)];
+        body.style.display = open ? '' : 'none';
+        openBtn.textContent = open ? `收起这 ${cellCount} 格` : `展开这 ${cellCount} 格`;
+    };
+
+    const ovRowOf = (ovKey) => {
+        try {
+            const ov = codexOverrideOf(key)[ovKey];
+            if (!ov || typeof ov !== 'object') return null;
+            const has = (v) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
+            if (!has(ov.min) && !has(ov.max)) return null;
+            const a = has(ov.min) ? Number(ov.min) : Number(ov.max);
+            const b = has(ov.max) ? Number(ov.max) : Number(ov.min);
+            return { min: Math.min(a, b), max: Math.max(a, b) };
+        } catch { return null; }
+    };
+    const setOvRow = (ovKey, val) => {
+        try {
+            const all = { ...codexOverrideOf(key) };
+            if (!val) delete all[ovKey];
+            else all[ovKey] = { min: val.min, max: val.max };
+            setCodexOverride(key, all);
+        } catch { /* 存不上就维持原样 */ }
+    };
+
+    /** 一行倍率（卵子质量 / 精子致孕力） */
+    const powerRow = (label, which) => {
+        const ovKey = which === 'sperm' ? 'sperm_power' : 'egg_quality';
+        const info = () => (which === 'sperm' ? readSpermPowerOf(key) : readEggQualityOf(key));
+        const tierGet = () => { try { return which === 'sperm' ? spermPowerTierOf(key) : fertilityTierOf(key); } catch { return ''; } };
+        const tierSet = (v) => { try { which === 'sperm' ? setSpermPowerTierOf(key, v) : setFertilityTierOf(key, v); } catch { /* 忽略 */ } };
+        const box = h('div', { class: 'bc-field bc-fert-row' });
+        const infoNow = info();
+        const ov = ovRowOf(ovKey);
+        const mode = ov ? 'custom' : (tierGet() || '');
+        const shown = ov ? Math.round(((ov.min + ov.max) / 2) * 100) / 100 : infoNow.value;
+        const line = h('div', { class: 'bc-hint' });
+        const paintLine = () => {
+            const v = info();
+            const o = ovRowOf(ovKey);
+            const t = tierGet();
+            const now = o ? Math.round(((o.min + o.max) / 2) * 100) / 100 : v.value;
+            let src = '跟图鉴';
+            if (o) src = '自定义';
+            else if (t) {
+                // ★ 这一格有两种来路：推演按角色设定判的 / 玩家自己选的 —— 分开写，别混 ✓
+                const mine = which === 'egg' ? (() => { try { return fertilityManualOf(key); } catch { return false; } })() : true;
+                src = `${powerTierLabelOf(t) || t} · ${mine ? '你选的' : '按角色设定判的'}`;
+            }
+            line.textContent = `这一族 ${v.lo} 到 ${v.hi} 倍（基准 ${v.base}）；现在 ${now} 倍 · ${src}`;
+        };
+        const opts = [['', '跟图鉴']]
+            .concat(POWER_TIERS.map(([id, l, f]) => [id, `${l}（×${f}）`]))
+            .concat([['custom', '自定义']]);
+        const dd = dropdown(mode, opts, (v) => {
+            if (v === 'custom') {
+                const cur = ovRowOf(ovKey);
+                const base = info().value;
+                setOvRow(ovKey, { min: cur ? cur.min : base, max: cur ? cur.max : base });
+                tierSet('');
+                if (which === 'egg') { try { setFertilityManualOf(key, true); } catch { /* 忽略 */ } }
+                paint();
+                return;
+            }
+            setOvRow(ovKey, null);
+            tierSet(v);
+            if (which === 'egg') {
+                // ★ 玩家在这里动过（哪怕是选回「跟图鉴」）⇒ 锁住、推演不再改这一格 ✓
+                //   （"跟图鉴"是他明确要的基准值；再让 AI 判一次就等于没听他的 ✗）
+                try { setFertilityManualOf(key, true); } catch { /* 忽略 */ }
+            }
+            paint();
+        });
+        const num = numberInput(shown, (v) => {
+            if (v === '' || v === null) return;
+            const n = Number(v);
+            if (!Number.isFinite(n) || n <= 0) return;
+            const r = Math.round(n * 100) / 100;
+            setOvRow(ovKey, { min: r, max: r });
+            tierSet('');
+            if (which === 'egg') { try { setFertilityManualOf(key, true); } catch { /* 忽略 */ } }
+            paint();
+        }, { min: 0.1, step: 0.1 });
+        paintLine();
+        box.appendChild(h('div', { class: 'bc-label-row' },
+            h('div', { class: 'bc-label', text: label }),
+            line,
+        ));
+        box.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+            h('div', { style: { flex: '0 0 132px', minWidth: '0' } }, dd),
+            h('div', { style: { flex: '0 0 92px', minWidth: '0' } }, num),
+            h('span', { class: 'bc-hint bc-inline-tip', text: '倍' }),
+        ));
+        return box;
+    };
+
+    /** 一行天数区间（精子存活 / 卵子存活） */
+    const lifeRow = (label, which) => {
+        const ovKey = which === 'sperm' ? 'sperm_life' : 'egg_life';
+        // 生效值（个人可能已经缩放过）
+        const info = () => (which === 'sperm' ? readSpermLifeOf(key) : readEggLifeOf(key));
+        // ★ 这一族的基准（**不看个人那一层**）—— 5 档按它缩放，拿生效值再乘就成了缩放两次 ✗
+        const base = () => (which === 'sperm' ? readSpermLifeBaseOf(key) : readEggLifeBaseOf(key));
+        // ★ 2026-11-13：从存下来的天数**反推**选的是哪一档。
+        //   ⚠️ 5 档缩放后会撞车（人类卵子 1 到 1 天：很短 / 短 / 标准 都是 1~1；长 / 很长 都是 2~2）——
+        //     按顺序取第一个匹配会把她选的「标准」显示成「很短」，读数就成了假话 ✗
+        //   ⇒ 撞车时取**离 1 倍最近**的那一档（选标准就该显示标准），还是一样近才按顺序取 ✓
+        const tierOfOv = (ov) => {
+            if (!ov) return '';
+            let best = '';
+            let bestD = Infinity;
+            for (const [id, , f] of LIFE_TIERS) {
+                const r = lifeTierRangeOf(base().lo, base().hi, id);
+                if (Math.round(r.lo) !== Math.round(ov.min) || Math.round(r.hi) !== Math.round(ov.max)) continue;
+                const d = Math.abs(Number(f) - 1);
+                if (d < bestD) { best = id; bestD = d; }
+            }
+            return best || 'custom';
+        };
+        const box = h('div', { class: 'bc-field bc-fert-row' });
+        const infoNow = info();
+        const ov = ovRowOf(ovKey);
+        const mode = ov ? tierOfOv(ov) : '';
+        const line = h('div', { class: 'bc-hint' });
+        const paintLine = () => {
+            const b = base();
+            const o = ovRowOf(ovKey);
+            const t = tierOfOv(o);
+            const tl = (LIFE_TIERS.find(([id]) => id === t) || [])[1] || '';
+            const now = o ? `${Math.round(o.min)} 到 ${Math.round(o.max)} 天` : `${b.lo} 到 ${b.hi} 天`;
+            const src = o ? (t && t !== 'custom' ? `${tl}（这一族区间里取的一段）` : '自定义') : '跟图鉴';
+            line.textContent = `这一族 ${b.lo} 到 ${b.hi} 天；现在 ${now}，${src}`;
+        };
+        // ★ 2026-11-13：档位不再乘倍率，改成在区间里取一段 ⇒ 选项上直接写出取到哪一段
+        // ★ 2026-11-13：这一族只有一个值时，五个档位取出来是同一段 ⇒ 干脆不给档位
+        const oneValue = (() => { const b = base(); return Number(b.lo) === Number(b.hi); })();
+        const opts = [['', '跟图鉴']]
+            .concat(oneValue ? [] : LIFE_TIERS.map(([id, l]) => {
+                const r = lifeTierRangeOf(base().lo, base().hi, id);
+                return [id, `${l}（${r.lo} 到 ${r.hi} 天）`];
+            }))
+            .concat([['custom', '自定义']]);
+        const dd = dropdown(mode, opts, (v) => {
+            if (v === 'custom') {
+                const cur = ovRowOf(ovKey);
+                const b = info();
+                setOvRow(ovKey, cur || { min: b.lo, max: b.hi });
+                paint();
+                return;
+            }
+            if (!v) { setOvRow(ovKey, null); paint(); return; }
+            const r = lifeTierRangeOf(base().lo, base().hi, v);
+            setOvRow(ovKey, { min: r.lo, max: r.hi });
+            paint();
+        });
+        const show = ov || { min: infoNow.lo, max: infoNow.hi };
+        const minI = numberInput(Math.round(show.min), (v) => {
+            if (v === '' || v === null) return;
+            const n = Math.round(Number(v));
+            if (!Number.isFinite(n) || n < 1) return;
+            const cur = ovRowOf(ovKey) || show;
+            setOvRow(ovKey, { min: Math.min(n, cur.max), max: Math.max(n, cur.max) });
+            paint();
+        }, { min: 1, step: 1 });
+        const maxI = numberInput(Math.round(show.max), (v) => {
+            if (v === '' || v === null) return;
+            const n = Math.round(Number(v));
+            if (!Number.isFinite(n) || n < 1) return;
+            const cur = ovRowOf(ovKey) || show;
+            setOvRow(ovKey, { min: Math.min(cur.min, n), max: Math.max(cur.min, n) });
+            paint();
+        }, { min: 1, step: 1 });
+        paintLine();
+        box.appendChild(h('div', { class: 'bc-label-row' },
+            h('div', { class: 'bc-label', text: label }),
+            line,
+        ));
+        box.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+            h('div', { style: { flex: '0 0 132px', minWidth: '0' } }, dd),
+            h('div', { style: { flex: '0 0 74px', minWidth: '0' } }, minI),
+            h('span', { class: 'bc-hint bc-inline-tip', text: '到' }),
+            h('div', { style: { flex: '0 0 74px', minWidth: '0' } }, maxI),
+            h('span', { class: 'bc-hint bc-inline-tip', text: '天' }),
+        ));
+        return box;
+    };
+
+    const paintSummary = () => {
+        // ★ 2026-11-13：两样都被锁死 ⇒ 四格都不显示，摘要也别报数（报数看着像还能调 ✗）
+        if (!cellCount) { sumEl.textContent = '两边都不参与生育'; return; }
+        const bits = [];
+        try {
+            if (showEgg) {
+                const q = readEggQualityOf(key);
+                const oq = ovRowOf('egg_quality');
+                const eqTier = fertilityTierOf(key);
+                const eqLab = oq ? '自定义'
+                    : (powerTierLabelOf(eqTier) ? (powerTierLabelOf(eqTier) + (fertilityManualOf(key) ? '·你选的' : '·按设定判的')) : '');
+                const eqTxt = oq ? Math.round(((oq.min + oq.max) / 2) * 100) / 100 : q.value;
+                bits.push(`卵子质量 ${eqTxt}${eqLab ? `（${eqLab}）` : ''}`);
+            }
+            if (showSperm) {
+                const p = readSpermPowerOf(key);
+                const op = ovRowOf('sperm_power');
+                const pt = powerTierLabelOf(spermPowerTierOf(key));
+                const pTxt = op ? Math.round(((op.min + op.max) / 2) * 100) / 100 : p.value;
+                bits.push(`精子致孕力 ${pTxt}${op ? '（自定义）' : (pt ? `（${pt}）` : '')}`);
+            }
+        } catch { /* 读不出来就不报 */ }
+        // ★ 2026-11-13：这一行只说**存活**那两格的事。
+        //   原来把「卵子质量 / 精子致孕力」的自定义也算进来 ⇒ 只改了生育力也写「存活有单设」（说的是假话 ✗）
+        const lifeCustom = (showSperm && !!ovRowOf('sperm_life')) || (showEgg && !!ovRowOf('egg_life'));
+        bits.push(lifeCustom ? '存活有单设' : '存活跟图鉴');
+        sumEl.textContent = bits.join(' · ');
+    };
+
+    const paint = () => {
+        clear(body);
+        try {
+            if (!cellCount) {
+                // 两样都被锁死 ⇒ 没有可调的格子，只写一句为什么
+                body.appendChild(h('div', {
+                    class: 'bc-hint',
+                    text: '这个人既不能怀孕也不能让别人怀孕，这四格都不用调。',
+                }));
+            } else {
+                if (showEgg) body.appendChild(powerRow('卵子质量', 'egg'));
+                if (showSperm) body.appendChild(powerRow('精子致孕力', 'sperm'));
+                if (showSperm) body.appendChild(lifeRow('精子存活', 'sperm'));
+                if (showEgg) body.appendChild(lifeRow('卵子存活', 'egg'));
+            }
+        } catch (e) { console.warn('[Bodycord] 画生育数值失败', e); }
+        paintSummary();
+    };
+
+    // ★ 2026-11-13：入口是一颗紧挨标题的按钮（原来贴在行尾被当成装饰）。
+    //   摘要那行**不接点击** —— 文字能点会让她看着像 BUG。
+    const headEl = h('div', { class: 'bc-fert-head' },
+        h('div', { class: 'bc-label', text: '生育数值' }),
+        openBtn,
+        sumEl,
+    );
+    wrap.appendChild(headEl);
+    wrap.appendChild(body);
+    // ⚠️ 这句说明挂在 **body 外面**：paint() 会把 body 清空重画，挂里面会跟着消失 ✗
+    wrap.appendChild(h('div', {
+        class: 'bc-hint',
+        text: '「跟图鉴」= 按这个角色的种族（图鉴那一族）算；直接填数字 = 只改这个人、不设上界。'
+            + ' 存活那两格选档位 = 在这一族的范围里取一段（很短是下三分之一、标准是整段、很长是上三分之一），怎么选都不会超出这一族；生育力那两格是这一族基准乘倍率。换绑种族时两边都会跟着变。'
+            + ' 卵子质量管怀上那一侧的概率，精子致孕力管作为致孕方那一侧的概率，都是倍率，1 = 人类基准。'
+            + ' 精子存活 = 每批精子能活几天，判定那天按日期看它还算不算；卵子存活 = 排卵之后还能受精几天，也就是受孕窗口有多长，判定时机和正文里那几个日号都跟着它变。'
+            + (!showEgg && !showSperm ? ' 这个人既不能怀孕也不能让别人怀孕，所以四格都不显示。'
+                : (!showEgg ? ' 这个人不能怀孕，所以卵子那两格不显示。'
+                    : (!showSperm ? ' 这个人不能让别人怀孕，所以精子那两格不显示。' : ''))),
+    }));
+    paint();
+    applyOpen();
+    return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// ★ 2026-11-13（2.7 经期波动 第一批）：经期规律度
+//
+// 住「角色基础信息」那张卡（设置页「你自己」／悬浮球弹窗／补丁页 · 人物 三处共用 ✓），
+// 就排在「生育数值」下面 —— 它管的是**周期长度会不会变**，跟生育那几格是一类事 ✓
+//
+// 三层：个人（这里选的）> 图鉴（那一族「经期规律度」）> 规律（老行为）。
+//   · 什么都没选 ⇒ 「跟图鉴」；图鉴也空着 = 规律（每段一样长，跟以前一模一样）✓
+//   · 「自定义」才多出两格（最短 / 最长）：玩家写多少就是多少，**不夹**，只挡非数字与 ≤0 ✓
+//   · 无月经（没有周期）/ 交配后排卵（长度不掷）⇒ 这一格不出现，只写一句为什么 ✓
+// ⚠️ 这一批只做到「存下来、读得到」；真正掷长度、预计日期改范围是第二批 ✓
+// ---------------------------------------------------------------------------
+export function cycleRegularBlock(key) {
+    const box = h('div', { class: 'bc-field' });
+    box.appendChild(h('div', { class: 'bc-label', text: '经期规律度' }));
+    const why = (text) => { box.appendChild(h('div', { class: 'bc-hint', text })); return box; };
+    let mode = 'normal';
+    try { mode = periodModeOf(key); } catch { mode = 'normal'; }
+    if (mode === 'amenorrhea') {
+        return why('这个人是「无月经」模式，没有周期，所以不用设规律度。');
+    }
+    let induced = false;
+    try { induced = ovuModeOf(key) === 'induced'; } catch { induced = false; }
+    if (induced) {
+        return why('这个人的排卵方式是「交配后排卵」，周期长度不掷，所以这一格不用设。');
+    }
+
+    const readTier = () => { try { return cycleRegularTierIdOf(cycleRegularTierOwnOf(key)); } catch { return ''; } };
+    const codexTier = () => {
+        let t = '';
+        try { t = cycleRegularLabelOf(cycleRegularTierOf(key)); } catch { t = ''; }
+        return t || '规律';
+    };
+    const range = () => { try { return cycleLenRangeOf(key); } catch { return null; } };
+    const line = h('div', { class: 'bc-hint' });
+    // ★ 2026-11-13（2.7 第三批）：读数一行 —— 这一段实际多长、下一次大概哪天来。
+    //   口径：本周期那个数就是判定用的那个数（掷过就用掷出来的，没掷就是平均）；
+    //   预计日期跟提示词 / 日历**同一个数据源**（`nextPeriodFactOf`），这里不另算一份 ✓
+    //   ⚠️ 规律档也要写（「本周期 28 天」），不然看不出"这一段是多久" ✓
+    const nowLine = h('div', { class: 'bc-hint', style: { marginTop: '8px', color: 'var(--bc-tx-2)' } });
+    const customRow = h('div', { class: 'bc-row bc-row-wrap' });
+    const paintNow = () => {
+        let len = 0;
+        try { len = Math.round(Number(bodyCycleParamsOf(key).cycle) || 0); } catch { len = 0; }
+        let np = null;
+        try { np = nextPeriodFactOf(key); } catch { np = null; }
+        const out = [];
+        if (len > 0) out.push('本周期 ' + len + ' 天');
+        // ⚠️ 算不出来就直说，不拿一个假日期顶上（她的红线：不许编数 ✓）
+        if (!np) out.push('预计下次月经：暂时算不出来（怀孕、还没定周期，或没有剧情日期）');
+        else if (np.kind === 'recovery') out.push('预计恢复周期 ' + np.date + '（距今 ' + np.days + ' 天）');
+        else if (np.dateTo) out.push('预计下次月经 ' + np.date + ' 到 ' + np.dateTo + '（距今 ' + np.days + ' 到 ' + np.daysTo + ' 天）');
+        else out.push('预计下次月经 ' + np.date + '（距今 ' + np.days + ' 天）');
+        nowLine.textContent = out.join(' · ');
+    };
+    const paint = () => {
+        const r = range();
+        if (r) {
+            // ⚠️ 不写「这一族」：这个平均值可能来自这个人自己填的周期长度（个人那一层），
+            //   写成族级就是把主语说错了 ✓
+            // ⚠️ 也别再写「这一段 N 天」：那件事在下面那行读数里已经有了（一句话只说一处 ✓）
+            line.textContent = r.lo === r.hi
+                ? ('平均 ' + r.avg + ' 天')
+                : ('平均 ' + r.avg + ' 天，每段的长度落在 ' + r.lo + ' 到 ' + r.hi + ' 天之间');
+        }
+        paintNow();
+        const custom = readTier() === 'custom';
+        customRow.style.display = custom ? '' : 'none';
+    };
+
+    const tierNow = readTier();
+    const opts = [['', '跟图鉴（' + codexTier() + '）']]
+        .concat([['regular', '规律'], ['slight', '有点不规律'], ['strong', '很不规律'], ['custom', '自定义']]);
+    const dd = dropdown(tierNow, opts, (v) => {
+        try { setCycleRegularTierOf(key, v); } catch { /* 存不上就维持原样 */ }
+        // ★ 换档 ⇒ 本周期记着的那个长度作废（第二批会按新档重掷；规律档本来就不该有值 ✓）
+        try { clearCycleLenNowOf(key); } catch { /* 忽略 */ }
+        if (v === 'custom' && !(() => { try { return cycleRegularRangeOwnOf(key); } catch { return null; } })()) {
+            try { setCycleRegularRangeOf(key, 24, 32); } catch { /* 忽略 */ }
+        }
+        paint();
+    });
+
+    const ownRange = (() => { try { return cycleRegularRangeOwnOf(key); } catch { return null; } })();
+    const shown = ownRange || { lo: 24, hi: 32 };
+    const loI = numberInput(shown.lo, (v) => {
+        if (v === '' || v === null) return;
+        const n = Math.round(Number(v));
+        if (!Number.isFinite(n) || n < 1) return;
+        try { setCycleRegularRangeOf(key, n, (() => { try { return cycleRegularRangeOwnOf(key)?.hi; } catch { return null; } })() ?? 32); } catch { /* 忽略 */ }
+        paint();
+    }, { min: 1, step: 1 });
+    const hiI = numberInput(shown.hi, (v) => {
+        if (v === '' || v === null) return;
+        const n = Math.round(Number(v));
+        if (!Number.isFinite(n) || n < 1) return;
+        try { setCycleRegularRangeOf(key, (() => { try { return cycleRegularRangeOwnOf(key)?.lo; } catch { return null; } })() ?? 24, n); } catch { /* 忽略 */ }
+        paint();
+    }, { min: 1, step: 1 });
+    customRow.appendChild(h('div', { style: { flex: '0 0 74px', minWidth: '0' } }, loI));
+    customRow.appendChild(h('span', { class: 'bc-hint bc-inline-tip', text: '到' }));
+    customRow.appendChild(h('div', { style: { flex: '0 0 74px', minWidth: '0' } }, hiI));
+    customRow.appendChild(h('span', { class: 'bc-hint bc-inline-tip', text: '天' }));
+
+    box.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
+        h('div', { style: { flex: '0 0 172px', minWidth: '0' } }, dd),
+        customRow,
+    ));
+    box.appendChild(nowLine);
+    box.appendChild(line);
+    box.appendChild(h('div', {
+        class: 'bc-hint',
+        text: '规律 = 每段一样长（默认，跟以前的算法一样）；有点不规律 = 每段在平均前后各 3 天里；很不规律 = 前后各 7 天；自定义 = 你自己填最短到最长。'
+            + ' 一个周期的长度定了之后整段都不变，下一次开周期才重新定。',
+    }));
+    paint();
+    return box;
+}
 
 /**
  * 「这个角色的种族」那一格：输入框 ＋ 一颗「选…」＋ 一行绑定读数 ✓
@@ -4633,10 +5101,14 @@ export function identRows(host, key, opts = {}) {
         stateText.textContent = filled.length ? '已填：' + filled.join(' + ') : '还没填';
     };
 
+    // ★ 2026-11-13：下面这三格原来每敲一个字就 onChange(false) ⇒ 一次全量刷新（重拼面板文字、
+    //   刷所有读数、往面板推整份数据）。打二十个字＝二十次全量刷新 ⇒ 改成停手 350ms 再刷一次 ✓
+    //   （值本身是逐字写进 store 的，不会丢；这里只是"刷新界面"那一步延后 ✓）
+    const commitSoon = debounce(() => { try { onChange(false); } catch { /* 忽略 */ } }, 350);
     body.appendChild(field('别名（还认哪些叫法）',
         textInput(cur.aliases, (v) => {
             cur.aliases = v; paintState();
-            setIdentField(key, 'aliases', v); onChange(false);
+            setIdentField(key, 'aliases', v); commitSoon();
         }, { placeholder: '例：阿杰 / 杰哥 / 小杰' })));
     // ★★ 标签：**没有预设清单**（现造、随用随长 ✓）
     //   ① 引擎也会报（它知道剧情：这个人属于哪一篇 / 是哪一版 ✓）
@@ -4645,12 +5117,12 @@ export function identRows(host, key, opts = {}) {
     body.appendChild(field('标签（分类用；只挂在这一个人身上的还能当别名）',
         textInput(cur.tags, (v) => {
             cur.tags = v; paintState();
-            setIdentField(key, 'tags', v); onChange(false);
+            setIdentField(key, 'tags', v); commitSoon();
         }, { placeholder: '例：未来篇、十年后（用「、」或空格隔开）' })));
     body.appendChild(field('备注（只给你自己看）',
         textInput(cur.note, (v) => {
             cur.note = v; paintState();
-            setIdentField(key, 'note', v); onChange(false);
+            setIdentField(key, 'note', v); commitSoon();
         }, { placeholder: '例：一班的那个' })));
 
     // 默认收起（项目规矩：别让东西默认展开占地方 ✓）
@@ -4738,7 +5210,8 @@ function userBodyInfoSection(container, onChange) {
     bodyLockRows(b, USER_KEY, { onChange: (st) => { try { onChange?.(st); } catch { /* 忽略 */ } } });
 
     // ★ 2026-10-24：察觉档位（玩家自己那份，存全局；留空＝交给 AI 判一次）
-    {
+    // ★ 2026-11-13：不能怀孕 ⇒ 藏起来（它是怀孕后才用的，留着会被误会还在发）
+    if (!isCannotBePregnant(USER_KEY)) {
         const curTier = (() => { try { return awarenessTierIdOf(USER_KEY); } catch { return ''; } })();
         const tierOpts = [
             ['', '自动（交给 AI 判）'],

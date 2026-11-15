@@ -13,6 +13,28 @@ function hasBold(s) {
     return /\*\*[^*]+\*\*/.test(String(s ?? ''));
 }
 
+/**
+ * ★ 2026-11-13：打字 / 拖窗口这类高频事件用「停手了再跑一次」，
+ *   别每敲一个字都把整块界面重拼一遍（拼音输入时一个词能触发好几次 input）。
+ *   `flush()` 是"现在就补跑"（离开输入框 / 保存前要调，不然最后一个字白打 ✗）
+ */
+export function debounce(fn, quietMs = 300) {
+    let timer = null;
+    let lastArgs = [];
+    const run = () => {
+        timer = null;
+        try { fn(...lastArgs); } catch { /* 调用方自己的错不该冒到这里 ✓ */ }
+    };
+    const wrapped = (...args) => {
+        lastArgs = args;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(run, quietMs);
+    };
+    wrapped.flush = () => { if (timer) { clearTimeout(timer); run(); } };
+    wrapped.cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    return wrapped;
+}
+
 export function h(tag, props = {}, ...children) {
     const el = document.createElement(tag);
     for (const [k, v] of Object.entries(props || {})) {
@@ -331,6 +353,24 @@ export function toggle(checked, onChange) {
 }
 
 /**
+ * 一行「标题 + 说明 + 开关」（开关在右，说明换行时整行跟着长高）。
+ *
+ * ★ 2026-11-13：从设置页搬到 dom.js 共用 —— 她那天连着两次让我「间距再改一下」：
+ *   新加的开关行如果自己用 `.bc-row` 拼，行距就得每次手调，而且和设置页那批开关
+ *   长得不一样 ✗ ⇒ 新开关一律调这个，别自己拼 ✓
+ *   （行距、分隔线、开关与两行文字的对齐都归 `.bc-toggle-row` 管 ✓）
+ */
+export function toggleRow(label, value, onChange, hint, opts = {}) {
+    return h('div', { class: 'bc-toggle-row' + (opts.class ? ' ' + opts.class : '') },
+        h('div', { class: 'bc-toggle-main' },
+            h('div', { class: 'bc-toggle-label', text: label }),
+            hint ? h('div', { class: 'bc-hint', text: hint }) : null,
+        ),
+        h('div', { class: 'bc-toggle-sw' }, toggle(!!value, (v) => onChange?.(v))),
+    );
+}
+
+/**
  * 插件自己画的勾选框（一个方块 + 一行字，整行都能点）。
  *
  * ★ 2026-11-09：**裸 `<input type="checkbox">` 不许直接用** —— 它会被酒馆主题
@@ -559,6 +599,13 @@ export function modal({ title, build, onSave, onDelete, onClose, width = 720, he
         overlay.dataset.vision = rootEl?.dataset?.vision || 'normal';
     } catch { /* 忽略 */ }
     let closed = false;
+    // ★ 2026-11-13（键盘 / 无障碍）：开窗时把焦点带进来、关窗时还给原来那颗按钮 ——
+    //   原来开窗之后焦点还留在背后的页面上，Tab 要从头数起 ✗
+    let prevActive = null;
+    try {
+        const a = document.activeElement;
+        if (a && a !== document.body && typeof a.focus === 'function') prevActive = a;
+    } catch { /* 忽略 */ }
     // ★ ESC 用的那条栈记录：先占位、下面把 close 填进去（close 里要反过来把自己摘掉 ✓）
     const entry = { close: null };
     const close = () => {
@@ -568,6 +615,10 @@ export function modal({ title, build, onSave, onDelete, onClose, width = 720, he
         const i = modalStack.indexOf(entry);
         if (i >= 0) modalStack.splice(i, 1);
         overlay.remove();
+        // ★ 关窗把焦点还给刚才是谁开的它（不然键盘用户要重新 Tab 回原处 ✓）
+        try {
+            if (prevActive && prevActive.isConnected && typeof prevActive.focus === 'function') prevActive.focus();
+        } catch { /* 忽略 */ }
         try { onClose?.(); } catch (e) { console.warn('[Bodycord] 弹窗关闭回调出错', e); }
     };
     entry.close = close;
@@ -605,6 +656,14 @@ export function modal({ title, build, onSave, onDelete, onClose, width = 720, he
     overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
     document.body.appendChild(overlay);
     build(body, close);
+    // ★ 2026-11-13：开窗就把焦点放进去（有输入框就放第一个输入框，否则放关窗那颗）。
+    //   原来焦点留在背后的页面上 ⇒ 键盘用户要一步步 Tab 进来，手机上还得先点一下才弹键盘 ✗
+    try {
+        const first = body.querySelector('input, textarea, select')
+            || body.querySelector('button')
+            || box.querySelector('.bc-modal-close');
+        if (first && typeof first.focus === 'function') first.focus();
+    } catch { /* 忽略 */ }
     return { close, body };
 }
 

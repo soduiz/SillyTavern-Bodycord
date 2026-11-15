@@ -14,14 +14,18 @@ import {
     isNoCycleMode,
     postpartumDefaultRange,
     fetusOvumRangeOf, fetusMixRangeOf, fetusSexRangeOf, fetusDevAllLines, judgeBasisOf,
+    windowLastDayOf, eggLifeRangeOf, termNameOf,
 } from './settings.js';
 import { chatCompletion, extractJson } from './api.js';
+// ★ 2026-11-14：失败时那句话的「可能的原因」单独一个文件（纯文案，判据只认错误串与回包原文 ✓）
+import { failureHint } from './judge-hint.js';
 // ★ 2026-11-06（第三批）：判定读图鉴 —— 孕期 / 胎数 / 性别 / 同卵 / 混合 / 单位都从条目里取
 //   ⚠️ 读不出来时这里返回 null，调用方退回原来的规则正文（老行为一字不变 ✓）
 import {
     readPregDaysOf, readCountOf, readOvumOf, readMixOf, readSexRangesOf, readUnitOf, codexEntryOf,
     readDevStagesOf, readShowWeekOf, shadowLog, parseGestDaysText,
     readEggSpansOf, mixedRacePoolOf, codexValueOf, readMilkOf,
+    needsLifeTier, applyLifeTierReport,
 } from './codex-values.js';
 // ★ 2026-11-08：图鉴里没有这一族 ⇒ 在这个聊天里记一条临时映射（只借名字，数值借最像的）
 import { getChat, getChatKey, getCtx } from './st.js';
@@ -39,7 +43,7 @@ import {
     cycleDayNum, timeUnitNow, setCurrentTime, storyDateTimeNow,
     refreshDueDates,
     cycleDayNow, cycleStartDateOf, setCycleDayOf, ensureCycleState,
-    wrapCycleDay, cyclesCrossed, cycleLenOf,
+    beginCycleAfterSettle, drawCycleLenNowOf,
     postpartumOf, postpartumMarkerOf, startPostpartumFor, clearPostpartumFor, handOverPostpartum, inPostpartumOf, conceiveDuringPostpartum,
     setCheckpoint, checkpointInfo, restoreCheckpoint, hashText,
     getFloorCandidate, setFloorCandidate, restoreCandidate, bodyLockOf, periodModeOf, traceOnOf, getOvuJudgment,
@@ -121,7 +125,7 @@ import { prepareWorldInfoForJudge } from './wi.js';
 //   正常轮按在场对象带；遗传判定那一轮先带两边绑的，都没绑才临时带整本 ✓
 import { boundsOfTargets, heritageBoundsOf, heritageBoundsOfMany, cardDescsOfTargets } from './wi-bind.js';
 import { isFieldOn, periodDaysOf } from './settings.js';
-import { specFor, readZoneRows, applyFertilityTierReport, needsFertilityTier, recentSexKeep, applyAwarenessTierReport, applyAwarenessEventReport, needsAwarenessTier } from './params.js';
+import { specFor, readZoneRows, applyFertilityTierReport, needsFertilityTier, applySpermPowerTierReport, needsSpermPowerTier, recentSexKeep, applyAwarenessTierReport, applyAwarenessEventReport, needsAwarenessTier } from './params.js';
 import { runFertilizationJudgment, lockImpregnatorsPerChild, rollSpermLife, rollGestationDays, rollImplantJudge } from './judgment.js';
 import { diffDays, formatFictionDate, parseClock, addDays, parseFictionDate } from './fiction-date.js';
 
@@ -256,6 +260,10 @@ const CONTRACT_TEMPLATE = `你必须只输出一个 JSON 对象，结构如下�
 - items 只能从【本轮可报的经期表现】里挑（那一行会随状态一起发给你）。那一行写着「还没勾任何一条」时，就按正文里真的写到的表现报，名字照正文写。
 - 一条都没有就填空数组 []。
 - 清单里没有、但剧情里真的出现了的，写进 off，并写一句原因（吃了什么、受凉、生病这类）。经量 / 痛经 要临时改档也写进 off，用 to 写变成哪一档：{ "what": "痛经", "to": "轻", "why": "吃了止痛药" }。
+  · 默认只算到「今天结束」：系统会把它记着，今天之内不用再重复报；到了第二天自动清掉。
+  · 想让它撑到「这次经期结束」，加 "duration": "经期"：{ "what": "痛经", "to": "轻", "why": "吃了止痛药", "duration": "经期" }。
+  · 药效过了、或者这一项已经好了，加 "cleared": true 把它撤掉：{ "what": "痛经", "cleared": true }。不写 what ＝ 全部撤掉。
+  · 同一项今天又出现了就照常再报一次（带上 to / why）；系统会更新它，不会叠成两条。
 - day（周期第几天）不在这个契约里：由系统按剧情日期自己算，你不要输出它。
 
 关于 present 字段：
@@ -270,7 +278,7 @@ const CONTRACT_TEMPLATE = `你必须只输出一个 JSON 对象，结构如下�
 - 其中 d1 不在这个契约里：阶段基础率由系统自己按周期日算，你不用输出它。
 - d4（致孕方）也不在这个契约里：受精成功时由系统掷定并锁定，你不用输出它。
 - d2（累计受孕率）也不在这个契约里：数值和状态标注都由系统自己算，你不用输出它。
-- d3（体质系数）也不在这个契约里：以 [身体补丁] 里那行「日常体质系数」为准，由系统自己填，你不用输出它。
+- d3（卵子质量）也不在这个契约里：由系统按这个对象的种族与档位自己算，你不用输出它。
 - d8（生产次数）也不在这个契约里：系统按孩子账本自己数（死胎不计入），你不用输出它，也不要在别处写一个数。
 @@ZONES_NOTE@@
 - d5、d7 例外：这两项可能整条未加载，所以如果你要输出内容，请写成「标签 | 值」的形式，
@@ -358,9 +366,23 @@ function buildContract(roster = []) {
     //   定过档就不问了（省 token，而且定过的值也不该一轮一个数地飘 ✓）
     //   ⚠️ 用户本人（{{user}}）那份不参与：他的身体补丁存在全局设置里（见 params.js 那段说明 ✓）
     const needTier = (roster || []).some(t => needsFertilityTier(t?.key));
-    out = out.replace('\n@@FERTILITY_TIER@@', needTier ? '\n' + [
-        '        "fertility_tier": "受孕体质档：很弱 / 偏弱 / 标准 / 偏强 / 很强（只填这五个词之一）。按这个对象的角色设定，判它自己作为受孕方时的生育能力强弱，拿不准填「标准」",',
-    ].join('\n') : '');
+    // ★ 2026-11-13（第六批）：精子致孕力 / 存活两格同样只在「还有人没定过」时才问 ——
+    //   她 2026-11-12 的原话：非 {{user}} 角色由插件自己判，判据是**角色设定与长期体质**，
+    //   不能拿这一楼的临时状态判（跑累了气喘吁吁就判弱 ✗）
+    const needSpermPower = (roster || []).some(t => needsSpermPowerTier(t?.key));
+    const needLifeTier = (roster || []).some(t => needsLifeTier(t?.key, 'sperm') || needsLifeTier(t?.key, 'egg'));
+    const tierLines = [];
+    if (needTier) {
+        tierLines.push('        "fertility_tier": "受孕体质档：很弱 / 弱 / 标准 / 强 / 很强（只填这五个词之一）。按这个对象的角色设定，判它自己作为受孕方时的生育能力强弱（它决定这个人的卵子质量），拿不准填「标准」",');
+    }
+    if (needSpermPower) {
+        tierLines.push('        "sperm_power_tier": "精子致孕力档：很弱 / 弱 / 标准 / 强 / 很强（只填这五个词之一）。按这个对象的角色设定，判它作为致孕方时精子有多容易让人怀上，拿不准填「标准」。判据只能是角色设定与长期体质，不能拿这一楼的临时状态判（比如刚累得气喘吁吁就判弱）。已经定过档的对象留空",');
+    }
+    if (needLifeTier) {
+        tierLines.push('        "sperm_life_tier": "精子存活档：很短 / 短 / 标准 / 长 / 很长（只填这五个词之一）。按这个对象的角色设定，判它的精子在体内大概能活多久，拿不准填「标准」。判据同上，不按这一楼的临时状态判。已经定过档的对象留空",');
+        tierLines.push('        "egg_life_tier": "卵子存活档：很短 / 短 / 标准 / 长 / 很长（只填这五个词之一）。按这个对象的角色设定，判它的卵子排出来后大概能受精多久，拿不准填「标准」。判据同上，不按这一楼的临时状态判。已经定过档的对象留空",');
+    }
+    out = out.replace('\n@@FERTILITY_TIER@@', tierLines.length ? '\n' + tierLines.join('\n') : '');
     // ★ A3：**察觉档位**也一样问一次（角色设定：它对自己身体变化察觉得早还是晚）——
     //   问的时机照正文那句「首次受孕成功时……选定一档」⇒ **只对已经怀上的对象问** ✓
     //   之后「该不该怀疑 / 该不该确认」由插件按设置里那张表算（见 store.js 的 awarenessStateOf ✓）
@@ -562,7 +584,7 @@ function buildContract(roster = []) {
         '- “有没有内射”只按剧情真实写出来的算：写了精液进入体内（内射、精液流入体内等）才记一条；只写了插入、只写“结束时仍留在体内”、没写清精液去向的，都按“没有内射”处理，不要用“没写体外射精 / 没写拔出 / 没写避孕手段”去倒推成内射。',
         '- 「中招」由系统按判定结果与锁定结果自己标，你不用管。',
         '- in_womb 按这一段剧情在讲什么判断，不要按字面对词：精液有没有到子宫那一层。判断之前先在 cot 里用自己的话写一句「这一笔射到了哪一层，依据是正文哪一处」，再填 true / false。只写到插入、整段没交代精液去哪儿的，填 false；不要用“没写体外射精 / 没写拔出”去倒推。对象在孕期时这一格一律填 false，cot 里写一句「孕期，精液止于阴道」：宫颈口被粘液栓封着，精液到不了子宫。',
-        '- protection 只写你判出来的那个情境词。这一批涨几个点由系统按情境、阶段基础率与体质系数自己乘，你不要算、也不要在别处写一个百分点数。',
+        '- protection 只写你判出来的那个情境词。这一批涨几个点由系统按情境、阶段基础率、卵子质量与精子致孕力自己乘，你不要算、也不要在别处写一个百分点数。',
     ].join('\n'));
     // ★★ 2026-10-28（她定：成就只能记正式档）——
     //   给模型一份**能写进成就的名字**：正式档（轻档不进推演名单，也不许出现在这里）。
@@ -740,7 +762,7 @@ const ADAPTER = `【重要 · 执行方式适配】
 - 模块里说的「row1 / row2 / row3」= profile 的 row1 / row2 / row3 字段
 - 模块里说的「cot」= JSON 里的 cot 字段
 - 模块里说的「生理监测」= JSON 里的 period 字段（不需要时填 null）
-- 模块里那批变量名也是同一批字段：Constitution_Factor（体质系数）＝ d3、Pregnancy_Risk（累计受孕率）＝ d2、Impregnator_Identity（致孕方）＝ d4、Awareness_State / Impregnator_Awareness（意识状态）＝ d5、Child_Count / Child_Type / Child_Gender / Child_Development（孩子）＝ d6、Milk_Production（产奶量）＝ d7、Birth_Count（生产次数）＝ d8；Is_Pregnant / Ovulation_Day / Cycle_Length 就在 vars 里，名字一样。哪几格不在契约里、由谁维护，契约尾部【d1~d9 的写法】那一段逐条写着 ✓
+- 模块里那批变量名也是同一批字段：Constitution_Factor（卵子质量）＝ d3、Pregnancy_Risk（累计受孕率）＝ d2、Impregnator_Identity（致孕方）＝ d4、Awareness_State / Impregnator_Awareness（意识状态）＝ d5、Child_Count / Child_Type / Child_Gender / Child_Development（孩子）＝ d6、Milk_Production（产奶量）＝ d7、Birth_Count（生产次数）＝ d8；Is_Pregnant / Ovulation_Day / Cycle_Length 就在 vars 里，名字一样。哪几格不在契约里、由谁维护，契约尾部【d1~d9 的写法】那一段逐条写着 ✓
 - 其中 Is_Pregnant 由系统自己维护（着床完成时切 true、分娩或妊娠终止时切 false）：它每轮在【上一轮状态】的 vars 里给你，你只读，不要写它、也不要把它报回来。
 - 其中 d4（致孕方）也由系统自己维护：受精成功时系统会掷定并锁定，结果每轮在【上一轮状态】里给你照抄；你不用写它、也不要把它报回来。
 - 模块里说的「上一轮状态 / 上一轮面板」= 下面输入给你的【上一轮状态】
@@ -1061,6 +1083,36 @@ export function storyDateUpdate(cur, reported, days, allowBack = false, canBack 
 }
 
 // ★ 导出给自测用（_tests/lactation.mjs 锁「模块关着就不发这一栏」✓）
+/**
+ * ★★ 2026-11-13：这个对象的**窗口日号 ＋ 这一族卵子存活几天**（喂给推演的那一行）。
+ *
+ * 为什么要有：全局的「生理周期模块」只发一份、发送时手里没有具体对象 ⇒ 里边的日号
+ *   只能按默认那套渲染（28 天周期 / 第 14 天排卵 / 人类卵子 1 天），
+ *   而狗这类族真正的窗口到第 21 天 ⇒ 提示词与判定说的是两回事 ✗
+ *   ⇒ 模块正文改成"由系统按每个对象自己的那一族算好"，数字一律从这里按人喂 ✓
+ *
+ * 口径跟判定**同一个来源**（`windowLastDayOf` / `eggLifeRangeOf`）⇒ 不会再打架 ✓
+ * @returns {{label:string, text:string}|null} 没周期 / 交配后排卵还没排卵 / 读不到 ⇒ null
+ */
+export function windowFactsOf(key) {
+    try {
+        const mode = periodModeOf(key);
+        if (isNoCycleMode(mode)) return null;              // 无月经没有周期 ⇒ 没有窗口
+        const bp = bodyCycleParamsOf(key) || {};
+        const o = Math.round(Number(bp.ovu));
+        const last = Math.round(Number(windowLastDayOf(key)));
+        if (!Number.isFinite(o) || o <= 0 || !Number.isFinite(last)) return null;
+        const er = (() => { try { return eggLifeRangeOf(key); } catch { return null; } })();
+        const life = !er ? '' : (er.lo === er.hi ? `卵子存活 ${er.lo} 天` : `卵子存活 ${er.lo} 到 ${er.hi} 天`);
+        // 名字跟着这个对象的周期模式走（月经档叫排卵窗口、中性档叫受孕窗口 ✓）
+        const label = (termNameOf('ovulationWindow', mode) || '受孕窗口') + '日号';
+        const text = `第${Math.max(1, o - 1)}到${last}天`
+            + (life ? `，${life}` : '')
+            + '，窗口过去之后的下一轮做受精判定';
+        return { label, text };
+    } catch { return null; }
+}
+
 export function prevStateBlock(roster) {
     const arr = roster.map(t => {
         const has = !!(t.profile || Object.keys(t.vars || {}).length);
@@ -1185,6 +1237,12 @@ export function prevStateBlock(roster) {
                 };
             } catch { return { 现在是周期第几天: '（读不到）', 上次月经日: '（读不到）' }; }
         })();
+        // ★★ 2026-11-13：窗口日号也挂在每个对象这块（全局模块里不许写按人算的数字 ✓）
+        //   ⚠️ 改的是刚算出来的那一份，不碰模块正文、也不影响别的栏
+        try {
+            const wf = windowFactsOf(t.key);
+            if (wf) cycleLine[wf.label] = wf.text;
+        } catch { /* 读不到就不发这一项，别拖垮别的栏 */ }
         return {
             name: judgeNameOf(t),
             initialized: has,
@@ -1250,6 +1308,8 @@ export function prevStateBlock(roster) {
             //   条目没写这一族 ⇒ 不给这一行（它照旧按 [显怀] 模块判，老行为不变 ✓）
             显怀: (() => {
                 try {
+                    // ★ 2026-11-13：明确「不能怀孕」就不发这一行（哪怕 Is_Pregnant 是旧值）
+                    if (!canBePregnantPerson(t)) return undefined;
                     if (String(t?.vars?.Is_Pregnant ?? '').trim().toLowerCase() !== 'true') return undefined;
                     const w = readShowWeekOf(t.key);
                     if (!w) return undefined;
@@ -2202,7 +2262,8 @@ export function refreshRaw(opts = {}) {
                 //   这里按当前判定重算，失败会全清、成功只留一条（幂等 ✓）
                 try {
                     const ovu = Number(bodyCycleParamsOf(t.key)?.ovu) || 14;
-                    markConceivedInsems(t.key, ovu + 1);
+                    const wl = (() => { try { return windowLastDayOf(t.key); } catch { return null; } })();
+                    markConceivedInsems(t.key, Number.isFinite(Number(wl)) ? Number(wl) : ovu + 1);
                 } catch { /* 修不上不影响显示 */ }
                 // ★ row1 少了这颗受精卵 ⇒ 补在最前面（模型会照抄上一轮的 row1，歪了就一路歪）
                 try { patchRow1ForEgg(t.key); } catch { /* 补不上不影响显示 */ }
@@ -2638,8 +2699,8 @@ function judgeAmenorrheaFor(t) {
  *     而窗口最后一天当天报，同一轮里后写出来的行为就赶不上了 ✗）
  *
  * 三条规则：
- *   ① **时机**：这个对象的周期日**过了受孕窗口最后一天**（≥ 排卵日 + 2）且本周期还没判过。
- *      窗口 = 排卵日前后各一天 ⇒ 最后一天 = 排卵日 + 1，过了它才算窗口真的结束 ✓
+ *   ① **时机**：这个对象的周期日**过了受孕窗口最后一天**（窗口最后一天 = 排卵日 ＋ 卵子存活天数）
+ *      且本周期还没判过。窗口 = 排卵日前一天 到 排卵日 ＋ 这一族卵子能受精的天数 ✓
  *      （这样窗口内**每一轮**报上来的行为都来得及入账；提前到窗口最后一天当天判，
  *        同一轮里后写出来的行为就赶不上了 ✗）
  *   ② **判定值**：窗口结束那一刻的累计（账本里"窗口内 + 判定时仍有活精子"的批次之和）。
@@ -2668,8 +2729,16 @@ function judgeCycleFor(t, rejudgeKeys = [], aiCandidates = []) {
     }
     let ovu = 14;
     try { ovu = Number(bodyCycleParamsOf(key)?.ovu) || 14; } catch { /* 读不到就按默认 14 */ }
-    const windowLast = ovu + 1;                                  // 受孕窗口 = 排卵日前后各一天
-    if (day < ovu + 2) return { judged: false, why: '窗口还没结束' };
+    // ★ 2026-11-13（精子卵子存活 第二批）：窗口最后一天 = 排卵日 ＋ 这一族的卵子存活天数。
+    //   人类 1 天时还是原来的「排卵日 +1」，一个字没变 ✓；读不出来才退回 +1。
+    const windowLast = (() => {
+        try {
+            const w = windowLastDayOf(key);
+            return Number.isFinite(Number(w)) ? Number(w) : ovu + 1;
+        } catch { return ovu + 1; }
+    })();
+    // 过了窗口最后一天才判（窗口内每一轮报上来的行为都还来得及入账 ✓）
+    if (day < windowLast + 1) return { judged: false, why: '窗口还没结束' };
 
     // ★ 本周期只判一次：
     //   推演每轮都扫一遍，不拦的话同一个周期会被反复重掷、覆盖上一次结论 ✗
@@ -3411,11 +3480,12 @@ export function settleAfterTimeShift() {
         if (!due.due) continue;
         try {
             // ★ 2026-11-01：结算后按**周期长度折回**，不再写死第 1 天
-            const _len = cycleLenOf(k);
+            // ★ 2026-11-13（2.7 第二批）：折回＋掷长度收进 `beginCycleAfterSettle`
+            //   （跨过好几段时每一段各掷一次，不是拿一个值套三段 ✓）
             const _dNow = Number(cycleDayNow(k)) || 1;
-            const _crossed = cyclesCrossed(_dNow, _len);
-            const r = settleCycle(settings().cycleSettleMode || 'reset', due.reason, { pregnant: false, target: k, cycles: _crossed });
-            if (currentDate()) setCycleDayOf(k, wrapCycleDay(_dNow, _len), currentDate());
+            const _nx = beginCycleAfterSettle(k, _dNow);
+            const r = settleCycle(settings().cycleSettleMode || 'reset', due.reason, { pregnant: false, target: k, cycles: _nx.cycles });
+            if (currentDate()) setCycleDayOf(k, _nx.day, currentDate());
             settled.add(k);
             out.settled.push({
                 name: displayName(t) || k,
@@ -3536,7 +3606,7 @@ export function sexTimesOf(ev) {
  * 跑一次状态推演
  * @returns {Promise<{ok:boolean, error?:string, updated?:string[], usage?:object|null, raw?:string, log?:string}>}
  */
-export async function runJudge({ silent = false, signal = null, force = false, rejudge = [], allowNoSystemFloor = false, floor = null } = {}) {
+export async function runJudge({ signal = null, force = false, rejudge = [], allowNoSystemFloor = false, floor = null } = {}) {
     const s = settings();
     if (!s.enabled) return { ok: false, error: '插件总开关是关的' };
 
@@ -3963,8 +4033,11 @@ export async function runJudge({ silent = false, signal = null, force = false, r
             state().lastRun = { ts: Date.now(), ok: false, error: r.error };
             commit();
         }
-        if (!silent && typeof window !== 'undefined' && window.toastr) window.toastr.error('状态推演失败：' + r.error);
-        return { ok: false, error: r.error, log };
+        // ★ 2026-11-14：写一句「可能的原因」交给调用方，红弹窗里补在报错后面
+        //   （调用方是唯一出口：提示只许弹一次，见 judge-queue 那套"谁发起谁提示"✓）
+        //   完整原文照旧进「上次推演日志」，这里不截断、也不吞 ✓
+        const hint = failureHint({ error: r.error, raw: r.text });
+        return { ok: false, error: r.error, hint, log };
     }
 
     const json = extractJson(r.text);
@@ -4006,7 +4079,12 @@ export async function runJudge({ silent = false, signal = null, force = false, r
             state().lastRun = { ts: Date.now(), ok: false, error: '模型没有返回预期的 JSON' };
             commit();
         }
-        return { ok: false, error: '模型没有返回预期的 JSON（可以到「设置 → 推演日志」看看原文）', raw: r.text, log };
+        return {
+            ok: false,
+            error: '模型没有返回预期的 JSON（可以到「设置 → 推演日志」看看原文）',
+            hint: failureHint({ error: '模型没有返回预期的 JSON', raw: r.text }),
+            raw: r.text, log,
+        };
     }
 
     // ★★ 换聊天守卫（第三处，最关键的一处）：模型这一趟可能等了几十秒 ⇒
@@ -4110,12 +4188,23 @@ export async function runJudge({ silent = false, signal = null, force = false, r
         try { if (t) aiD5.set(String(t.key), String(item?.profile?.d5 || '')); } catch { /* 忽略 */ }
         if (t) updated.push(displayName(t) || t.key);
         // ★ 受孕体质档：推演按角色设定报一个档，
-        //   插件把档换成数值写进**那个对象自己**的身体补丁（日常体质系数）。
+        //   插件把档记在**那个对象自己**身上（卵子质量那一档）。
         //   · 只管 NPC（本人那份身体补丁在全局设置里，这一期不动 ✓）
         //   · 玩家手改过 ⇒ 只记档不写值（手改锁 ✓）
         //   · 定过档就不在契约里再问 ⇒ 通常一个对象只写一次 ✓
         try { if (t) applyFertilityTierReport(t.key, item?.vars?.fertility_tier); }
         catch (e) { console.warn('[Bodycord] 写受孕体质档失败', e); }
+        // ★ 2026-11-13（第六批）：精子致孕力与存活两档同样记在**这个对象自己**身上。
+        //   · 只管 NPC（本人那份在设置里自己选 ✓）
+        //   · 已经有个人值 ⇒ 一律不覆盖（玩家优先 ✓）
+        try { if (t) applySpermPowerTierReport(t.key, item?.vars?.sperm_power_tier); }
+        catch (e) { console.warn('[Bodycord] 写精子致孕力档失败', e); }
+        try {
+            if (t) {
+                applyLifeTierReport(t.key, 'sperm', item?.vars?.sperm_life_tier);
+                applyLifeTierReport(t.key, 'egg', item?.vars?.egg_life_tier);
+            }
+        } catch (e) { console.warn('[Bodycord] 写存活档失败', e); }
         // ★ A3：察觉档位（A~E）＋「剧情强制提前」也在这儿收 ——
         //   档位只问一次（之后由插件按设置里那张表算怀疑/确认）；
         //   强制提前是**只有剧情知道的事实**，记下来之后只前进不后退 ✓
@@ -4325,7 +4414,7 @@ export async function runJudge({ silent = false, signal = null, force = false, r
         // 内射 / 受孕记录：AI 只报「谁 / 哪个骰子 / 防护情境 / 中没中」，轮次和剧情时间由插件补
         try {
             if (t && Array.isArray(item?.sex_events)) {
-                // ★ A1：这一笔的增量由插件按"防护情境 × 阶段基础率 × 体质系数"算出来。
+                // ★ A1：这一笔的增量由插件按"防护情境 × 阶段基础率 × 卵子质量 × 精子致孕力"算出来。
                 //   先算好再进循环 —— 下面掷存活期要看它有没有值（没有贡献就不掷 ✓），
                 //   而且"掷不掷"和"落账那个数"必须是同一个值 ✓
                 // ★★ 2026-11-09（她报：正文明明写着好几次，账里只进了一笔）——
@@ -4342,7 +4431,9 @@ export async function runJudge({ silent = false, signal = null, force = false, r
                     // ★ 这一轮结束时的周期日（上面交配后排卵掷的也是同一个数 ✓）
                     const insemDay = insemDayNow;
                     const gain = (() => {
-                        try { return inseminationGainOf(t?.key, ev?.protection, insemDay, ev?.note); } catch { return null; }
+                        // ★ 2026-11-13（第五批）：把**致孕方**一起传进去 ——
+                        //   精子致孕力按提供方那一族取（跨族各取各的）✓
+                        try { return inseminationGainOf(t?.key, ev?.protection, insemDay, ev?.note, ev?.by); } catch { return null; }
                     })();
                     const times = sexTimesOf(ev);
                     for (let n = 0; n < times; n++) {
@@ -4350,7 +4441,9 @@ export async function runJudge({ silent = false, signal = null, force = false, r
                         let lifeRoll = null;
                         // ★ 看「生效中的模式」，不看开关：规则换挡和数据换挡必须是同一刻 ✓
                         if (settings().cycleSettleMode === 'sperm' && gain != null) {
-                            const lr = rollSpermLife();
+                            // ★ 2026-11-13（精子卵子存活 第四批）：范围按**精子提供方**那一族取
+                            //   （`ev.by` 就是这一笔的提供方；没建档 / 对不上族 ⇒ 跟人类那一条 ✓）
+                            const lr = rollSpermLife(String(ev?.by || ''));
                             lifeRoll = lr.value;
                             try {
                                 const used = (getLastUsage() || []).slice();
@@ -4682,7 +4775,20 @@ export async function runJudge({ silent = false, signal = null, force = false, r
                     // ★ 2026-11-08 产后恢复：剧情明说月经来了 ⇒ 以剧情为准，当场结束恢复期
                     //   （跟"剧情报了上次月经日就以它为准"是同一条规矩 ✓）
                     try { if (postpartumMarkerOf(rt.key)) clearPostpartumFor(rt.key); } catch { /* 清不掉不影响写天数 */ }
+                    const _prevStart = (() => { try { return cycleStartDateOf(rt.key); } catch { return ''; } })();
                     setCycleDayOf(rt.key, back + 1, cur);
+                    // ★ 2026-11-13（2.7 第二批）：新的上次月经日 ⇒ 新周期开始，给这一段掷长度。
+                    //   ⚠️ 只有**起点真的变了**才掷（模型把同一个日子再报一遍时不许重掷 ✗）
+                    //   ⚠️ 2026-11-13（第三批修）：比的是**日子**不是字面 ——
+                    //     模型写「5月13日」、插件算出来是「2022年05月13日」时，字面永远不等
+                    //     ⇒ 同一段周期每轮都重掷，长度会飘 ✗
+                    const _sameStart = (() => {
+                        if (!_prevStart || !said) return false;
+                        try { return diffDays(_prevStart, said) === 0; } catch { return false; }
+                    })();
+                    if (!_sameStart) {
+                        try { drawCycleLenNowOf(rt.key); } catch { /* 掷不了就回落静态值 */ }
+                    }
                 }
             }
             try { ensureCycleState(rt.key); } catch { /* 忽略 */ }
@@ -4769,14 +4875,15 @@ export async function runJudge({ silent = false, signal = null, force = false, r
             if (!due.due) continue;
             try {
                 // ★ 2026-11-01：结算后按**周期长度折回**，不再写死第 1 天
-                const _len = cycleLenOf(tKey);
+                // ★ 2026-11-13（2.7 第二批）：折回＋掷长度收进 `beginCycleAfterSettle`
+                //   （时间跳跃跨过好几段时，**每一段各掷一次**，不是拿一个值套三段 ✓）
                 const _dNow = Number(cycleDayNow(tKey)) || 1;
-                const _crossed = cyclesCrossed(_dNow, _len);
-                const r = settleCycle(settings().cycleSettleMode || 'reset', due.reason, { pregnant: false, target: tKey, cycles: _crossed });
+                const _nx = beginCycleAfterSettle(tKey, _dNow);
+                const r = settleCycle(settings().cycleSettleMode || 'reset', due.reason, { pregnant: false, target: tKey, cycles: _nx.cycles });
                 // ★ 结算完把周期**按周期长度折回**（第 len+1 天 = 新周期第 1 天）——
                 //   不然下一轮周期日还 > 周期长度，会**每轮重复结算** ✗
                 //   ⚠️ 但这一轮它已经报了新的上次月经日（剧情明说月经来潮）⇒ 以它为准，别抢锚点 ✗
-                if (!cycleStarts.get(tKey) && currentDate()) setCycleDayOf(tKey, wrapCycleDay(_dNow, _len), currentDate());
+                if (!cycleStarts.get(tKey) && currentDate()) setCycleDayOf(tKey, _nx.day, currentDate());
                 settledThisRound.add(tKey);
                 console.log('[Bodycord] 时间型周期结算（' + (displayName(t) || tKey) + '）：'
                     + due.why + ' ⇒ ' + (r?.reason || due.reason));
@@ -4801,6 +4908,8 @@ export async function runJudge({ silent = false, signal = null, force = false, r
             try { _pp = postpartumOf(key); } catch { _pp = null; }
             if (_pp) continue;
             setCycleDayOf(key, 1, currentDate());
+            // ★ 2026-11-13（2.7 第二批）：事件型也算新周期开始 ⇒ 给这一段掷长度
+            try { drawCycleLenNowOf(key); } catch { /* 掷不了就回落静态值 */ }
             console.log('[Bodycord] 事件型结算后把周期日拨回第 1 天（' + key + '）：' + ev);
         }
     } catch (e) { console.warn('[Bodycord] 事件型结算后的周期日重置失败', e); }

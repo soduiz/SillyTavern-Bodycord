@@ -1,5 +1,5 @@
 
-import { phaseNameOf, periodDaysOf, bodyCycleParamsOf, isNoCycleMode, cycleDayInfoOf, amenorrheaRateOf, windowRateOf } from './settings.js';
+import { phaseNameOf, periodDaysOf, bodyCycleParamsOf, isNoCycleMode, cycleDayInfoOf, amenorrheaRateOf, windowRateOf, eggWindowDaysOf } from './settings.js';
 
 // ★ 2026-11-07：**滞育**（熊那种：受精卵悬浮几个月、等冬眠了才着床）。
 //   判据只有一条：着床天数长到 60 天以上，就不可能是"普通的着床等待"，
@@ -72,9 +72,10 @@ function num(v, fallback) {
  * @param {number|null} pregDays **孕期已经过了几天**（可选）—— 只给「植入卵」那种用：
  *   **这个和怀孕不太一样，因为是植入的，所以应该从植入那天算**✓
  *   不给（普通怀孕）⇒ 照旧用周期日当孕周基准（LMP 那套，一个字不变 ✓）
- * @param {{totalDays?:number|null, diapauseWait?:boolean}} [opts]
+ * @param {{totalDays?:number|null, diapauseWait?:boolean, eggDays?:number, targetKey?:string}} [opts]
  *   `totalDays`＝这一族的孕期总天数（用来按比例切孕早/中/晚，读不到就退回 12/27 周 ✓）；
  *   `diapauseWait`＝受精成功、但着床还隔着几个月（滞育）⇒ 阶段写「滞育」 ✓
+ *   `eggDays` / `targetKey`＝受孕窗口尾部铺几天（按这一族的卵子存活时间；不传 ⇒ 1 天）✓
  *   不传＝照旧按周期日算 ✓
  * @returns {{phase:string, sub:string, d1:string}|null} 拿不到天数时返回 null（不接管）
  */
@@ -180,10 +181,21 @@ export function deriveCycleFields(vars = {}, mode = null, periodDays = 5, cycleD
     const pdays = (ovu === null)
         ? Math.max(1, Math.min(Math.round(Number(periodDays) || 5), Math.max(1, len - 2)))
         : Math.max(1, Math.min(Math.round(Number(periodDays) || 5), Math.max(1, ovu - 2)));
+    // ★ 2026-11-13（精子卵子存活 第二批）：受孕窗口尾部按这一族的卵子存活时间铺。
+    //   优先用调用方给的 `eggDays`；没给就按 `opts.targetKey` 现读（跟判定同一个口径 ✓）。
+    //   都不给 ⇒ 1 天（人类默认，跟改动前一字不差 ✓）
+    const eggDays = (() => {
+        const given = Number(opts?.eggDays);
+        if (Number.isFinite(given) && given >= 1) return Math.round(given);
+        if (opts?.targetKey) {
+            try { return eggWindowDaysOf(opts.targetKey, len, ovu); } catch { return 1; }
+        }
+        return 1;
+    })();
     // ★ A12（定下丙案）：这条 if 链**搬进 settings.js 的 `cycleDayInfoOf`** ——
     //   正文里那句「第几天到第几天」（@@DAYS:xxx@@）要用**同一套**算法，
     //   两处各写一份迟早打架（正文说第13到15天、判定却按别的日子 ✗）✓
-    const { phaseId, d1 } = cycleDayInfoOf(day, ovu, pdays);
+    const { phaseId, d1 } = cycleDayInfoOf(day, ovu, pdays, eggDays);
     // ★ 数值批（口径 B）：四档整体压低，目标＝认真玩大多 1~2 个周期怀上。
     //   旧值 2 / 15 / 30 / 25 在新口径下会变成"只要不避孕就必中"（窗口三天 105%）✗
     //   ⚠️ 改档位必须**同时改「生理周期模块」正文那张表**（两处不能对不上 ✓）

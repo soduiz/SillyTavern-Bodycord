@@ -13,10 +13,12 @@
  * 这里也照样显示——你填过的东西不该因为开关而看不见。
  */
 
-import { moduleText, moduleTextRaw, setModuleText, settings, save, CYCLE_RATE_DEF, ACH_LEN_DEF, PROT_COEF_DEF, AWARENESS_TIER_DEF, ZONE_LV_DEF, zoneParamsOf, parseZoneRows, serializeZoneRows, stripLegacyTailBlocks, BODY_COEF_RE, BODY_COEF_OLD_RE, RACE_LINE_RE, RACE_READ_NEW_RE, RACE_READ_OLD_RE, postpartumParamsOf, talentTierTableOf, dominantSourceRangeOf, parseBodyCycleParams, fetusParamsOf, setFetusParams, periodDaysOf, periodDaysCapOf } from './settings.js';
+import { moduleText, moduleTextRaw, setModuleText, settings, save, CYCLE_RATE_DEF, ACH_LEN_DEF, PROT_COEF_DEF, AWARENESS_TIER_DEF, ZONE_LV_DEF, zoneParamsOf, parseZoneRows, serializeZoneRows, stripLegacyTailBlocks, RACE_LINE_RE, RACE_READ_NEW_RE, RACE_READ_OLD_RE, postpartumParamsOf, talentTierTableOf, dominantSourceRangeOf, parseBodyCycleParams, fetusParamsOf, setFetusParams, periodDaysOf, periodDaysCapOf } from './settings.js';
 import {
     zoneTextOf, setZoneTextOf, setZonePresetOf,
     isUserKey, fertilityTierOf, setFertilityTierOf, fertilityManualOf, setRaceManualOf,
+    spermPowerTierOf, setSpermPowerTierOf,
+    isCannotBePregnantOf, isCannotImpregnateOf,
     awarenessTierIdOf, setAwarenessTierIdOf, noteAwarenessEvent,
     bodyRaceSetOf, setBodyRaceSetOf, raceJudgeOf,
 } from './store.js';
@@ -24,6 +26,8 @@ import { MODULE_MAP } from './modules.js';
 // ★ 改了「这个角色的种族」的名字 ⇒ 原来那条图鉴绑定要作废（第三批会按绑定算数值 ✓）
 import { codexIdOf, setCodexIdOf } from './codex-bind.js';
 import { codexEntry } from './codex.js';
+// ★ 2026-11-13（第五批）：生育力五档只有一份（codex-schema 是叶子，谁都能引 ✓）
+import { POWER_TIERS } from './codex-schema.js';
 
 // ---------------------------------------------------------------------------
 // 规格
@@ -33,9 +37,10 @@ import { codexEntry } from './codex.js';
 // 数值句的锚点（改排版）
 //
 // 既然抬头都是 [身体补丁 - XXX] 了，下面那行就可以删掉 ——
-//   改成 种族：XXX / 日常体质系数：XXX / 排卵日：XXX；排卵日取 14 更合适 ✓
-//   · 新写法（现在出厂正文用的，一行一格）：`种族：人类` / `周期长度：28天` / `排卵日：14` /
-//     `日常体质系数：1.0（排卵日当天临时提升至 1.5）`
+//   改成 种族：XXX / 周期长度：XXX 天 / 排卵日：XXX；排卵日取 14 更合适 ✓
+//   · 新写法（现在出厂正文用的，一行一格）：`种族：人类` / `周期长度：@@CYCLE_LEN@@天` /
+//     `排卵日：@@CYCLE_OVU@@`
+//     ★ 2026-11-13（第五批）：「日常体质系数」那行也删掉了（改由「卵子质量」接管）
 //   · 老写法（老存档 / 玩家自己那份旧文本）：
 //     `周期：28天，排卵日第14天` ＋ `{{user}} 的种族为人类`（更老的是 `{{user}} 为人类体质`）
 //
@@ -48,15 +53,10 @@ const CYCLE_READ = /周期长度：\s*(\d+)\s*天/;
 const CYCLE_OLD_READ = /周期：\s*(\d+)\s*天[，,]\s*排卵日第\s*(\d+)\s*天/;
 const OVU_READ = /排卵日：\s*第?\s*(\d+)/;
 const OVU_OLD_READ = /排卵日第\s*(\d+)\s*天/;
-const BASE_READ = BODY_COEF_RE;          // ★ 乙-4：正则从 settings.js 来（一份解析 ✓）
-const BASE_OLD_READ = BODY_COEF_OLD_RE;
-const PEAK_READ = /排卵日当天临时提升至\s*([\d.]+)/;
+// ★ 2026-11-13（第五批）：「日常体质系数 / 排卵日暴击」两格连同它们的读写锚点一起退役
 const CYCLE_WRITE = /(周期长度：\s*)(?:\d+|@@CYCLE_LEN@@)(\s*天)/;
 const CYCLE_OLD_WRITE = /(周期：\s*)\d+\s*天([，,]\s*排卵日第\s*)\d+\s*天/;
 const OVU_WRITE = /(排卵日：\s*)(?:\d+|@@CYCLE_OVU@@)/;
-const BASE_WRITE = /(日常体质系数：\s*)[\d.]+/;
-const BASE_OLD_WRITE = /(日常体质系数\s*)[\d.]+(\s*[，,]\s*排卵日当天临时提升至\s*)[\d.]+/;
-const PEAK_WRITE = /(排卵日当天临时提升至\s*)[\d.]+/;
 
 // ---------------------------------------------------------------------------
 // 「这个角色的种族」那一格
@@ -77,15 +77,15 @@ export const PARAM_SPECS = [
     {
         moduleId: 'body_base',
         title: '身体基础参数',
-        desc: '这个身体的基础周期。默认跟这个角色的种族（图鉴里那一族的平均值）；在这里填了就只改这个人',
+        desc: '这个身体的基础周期。默认跟这个角色的种族（图鉴里那一族的平均值）；在这里填了就只改这个人。受孕窗口从排卵日前一天铺到排卵日之后，铺几天由这一族的卵子存活时间决定（图鉴那一格）',
         fields: [
             { key: 'cycle', label: '周期长度', suffix: '天', type: 'number' },
             // ⚠️ suffix 里**不许自带括号** —— 渲染时统一套一对（ui-params.js:125）
             //   自带就成了「（（第几天））」（✗）
             { key: 'ovu', label: '排卵日', suffix: '第几天', type: 'number' },
-            // 这两格只能改数字（出厂 1.0，排卵日当天临时提升至 1.5）
-            { key: 'base', label: '日常体质系数', type: 'number' },
-            { key: 'peak', label: '排卵日暴击', suffix: '当天临时提升至', type: 'number' },
+            // ★ 2026-11-13（第五批）：原来这里有「日常体质系数 / 排卵日暴击」两格 ——
+            //   受孕率公式改成「卵子质量 × 精子致孕力」之后它们退役了。
+            //   卵子质量不在正文里改，改在「角色基础信息」那张卡的生育数值里（按档位 / 自定义）✓
             // ★ 种族名字（这角色是什么种族）—— 只影响叫法，不影响规则 ✓
             //   「种族用哪条判定规则」是另一件事：2026-11-08 起由这一族在图鉴里那条决定 ✓
             { key: 'raceName', label: '这个角色的种族', type: 'text', wide: true },
@@ -97,9 +97,7 @@ export const PARAM_SPECS = [
             // 周期长度 / 排卵日：先认新排版那两行，再认老的一句（老存档 ✓）
             const cyc = t.match(CYCLE_READ) || t.match(CYCLE_OLD_READ);
             const ov = t.match(OVU_READ) || t.match(OVU_OLD_READ);
-            const bs = t.match(BASE_READ) || t.match(BASE_OLD_READ);
-            const pk = t.match(PEAK_READ);
-            if (!cyc && !bs) return null;
+            if (!cyc && !ov) return null;
             // ★ 2026-11-08：种族名不再存在正文里（正文那行已删）——
             //   先读档案里那格；再退到「绑的图鉴条目名」；再退到推演报的；
             //   老存档正文里还留着那行的，最后才读它 ✓
@@ -121,8 +119,6 @@ export const PARAM_SPECS = [
             return {
                 cycle: cyc ? cyc[1] : '',
                 ovu: ov ? ov[1] : '',
-                base: bs ? bs[1] : '',      // 日常体质系数
-                peak: pk ? pk[1] : '',      // 排卵日暴击
                 raceName: rn,
             };
         },
@@ -136,9 +132,12 @@ export const PARAM_SPECS = [
             if (hasCycle || hasOvu) {
                 // ★ 这两格以前没有边界 ⇒ 排卵日填得比周期还大时，
                 //   「排卵窗口最后一天」永远不出现、受精判定**永不触发**（推演出来的）✗
-                //   夹一道：周期 5~90 天，排卵日 1~（周期 − 2）
+                //   夹一道：排卵日 1~（周期 − 2）
+                // ⚠️ 2026-11-13（2.7 第三批修）：周期长度**不再夹上限 90** ——
+                //   图鉴里狗 180 / 象 112 / 狼 365 都是真的，经期波动又能自定义任意天数，
+                //   夹到 90 等于把玩家写的数悄悄改掉（她的红线：不夹玩家写的值 ✗）
                 const cur = parseBodyCycleParams(out);
-                const cyc = Math.max(5, Math.min(90, Math.round(Number(hasCycle ? v.cycle : cur.cycle) || 28)));
+                const cyc = Math.max(5, Math.round(Number(hasCycle ? v.cycle : cur.cycle) || 28));
                 const ovu = Math.max(1, Math.min(Math.round(Number(hasOvu ? v.ovu : cur.ovu) || 14), cyc - 2));
                 // 新排版：两行各换各的；老排版：一句里两个一起换（老存档照样能改 ✓）
                 if (CYCLE_WRITE.test(out)) {
@@ -152,11 +151,8 @@ export const PARAM_SPECS = [
                 if (CYCLE_WRITE.test(out)) out = out.replace(CYCLE_WRITE, '$1@@CYCLE_LEN@@$2');
                 if (OVU_WRITE.test(out)) out = out.replace(OVU_WRITE, '$1@@CYCLE_OVU@@');
             }
-            if (String(v.base ?? '').trim() !== '' || String(v.peak ?? '').trim() !== '') {
-                if (BASE_WRITE.test(out)) out = out.replace(BASE_WRITE, `$1${v.base || 1.0}`);
-                else out = out.replace(BASE_OLD_WRITE, `$1${v.base || 1.0}$2${v.peak || 1.5}`);
-                out = out.replace(PEAK_WRITE, `$1${v.peak || 1.5}`);
-            }
+            // ★ 2026-11-13（第五批）：「日常体质系数」那格退役 —— 受孕率公式改用
+            //   「卵子质量」（图鉴 / 个人档位，存在档案里，不再改正文）⇒ 这里不再写 base / peak ✓
             // ★ 2026-11-08：种族名已经不住正文里了（正文那行删了）——
             //   那一格改由 writeParams 写档案（见下面的 setBodyRaceSetOf）✓
             return out;
@@ -990,84 +986,83 @@ export function fieldDefaultOf(moduleId, fieldKey) {
 }
 
 // ---------------------------------------------------------------------------
-// ★ 「受孕体质档」：推演按角色设定判一个档，插件把档换成数值写进身体补丁
+// ★ 「卵子质量档」：推演按角色设定判一个档（2026-11-13 第五批，原「受孕体质档」）
 //
-// 让 AI 判断受孕体质 —— 角色设定明显很弱（怀孕能力之类的）
-//   或者很强的，AI 可以自己填写这个角色（NPC）的初始体质 ✓
+// 让 AI 判断生育力 —— 角色设定明显很弱（怀孕能力之类的）或者很强的，
+//   AI 报一个**档位词**，插件把档记在这个对象身上（`targets[key].fertilityTier`）✓
 //
-// 为什么让 AI 只报**档位词**、数值由这里给：
-//   体质系数是受孕率公式里的**乘数**（阶段基础率 × 体质系数 × 防护系数），
-//   基础率已经按既定口径调好 ⇒ 档开太宽等于把难度冲掉 ✗
-//   所以范围由代码夹住（0.8 ~ 1.3），AI 只回答"很弱 / 偏弱 / 标准 / 偏强 / 很强" ✓
+// ★ 为什么现在写档案、不再改身体补丁正文：
+//   第五批把公式换成「基础率 × 卵子质量 × 精子致孕力 × 防护」，体质系数那格退役；
+//   卵子质量按「这一族基准 × 个人档位倍率」实时算 ⇒ 换绑别的族会跟着变，
+//   不用往正文里写死一个数（写死就会和族对不上 ✗）✓
 //
-// ⚠️ 只管 NPC：用户本人那份身体补丁存在**全局设置**里、穿所有聊天
-//   ⇒ 这一期不动它（要动的只是"这个角色的（NPC）初始体质" ✓）
-// ⚠️ 玩家手改过（`fertilityManual`）⇒ 只记档、不写值（手改锁，照敏感带那套 ✓）
+// ⚠️ 只管 NPC：本人那份在全局设置里（`userEggQualityTier`），推演不动它 ✓
+// ⚠️ 玩家手改过（`fertilityManual`）⇒ AI 不再覆盖 ✓
 // ---------------------------------------------------------------------------
-
-/** 档位 ⇄ 体质系数（顺序＝从弱到强，界面按这个顺序展示 ✓） */
-export const FERTILITY_TIERS = [
-    ['很弱', 0.8],
-    ['偏弱', 0.9],
-    ['标准', 1.0],
-    ['偏强', 1.15],
-    ['很强', 1.3],
-];
-
-/** 档位词 → 数值（认不出来 ⇒ null，别拿它写数据 ✗） */
-export function fertilityCoefOfTier(word) {
-    const w = String(word ?? '').trim();
-    const hit = FERTILITY_TIERS.find(([name]) => w === name);
-    return hit ? hit[1] : null;
-}
 
 /** 档位词 → 规范写法（模型可能写成「偏强（生育能力强）」这种 ⇒ 认开头那个词 ✓） */
 export function normalizeFertilityTier(word) {
     const w = String(word ?? '').trim();
-    const hit = FERTILITY_TIERS.find(([name]) => w.startsWith(name));
+    if (!w) return '';
+    // 老档 / 老模型可能还回「偏弱 / 偏强」（2026-11-13 之前的五档）⇒ 折到新档 ✓
+    if (w.startsWith('偏弱')) return 'weak';
+    if (w.startsWith('偏强')) return 'strong';
+    const hit = POWER_TIERS.find(([id, label]) => w === id || w.startsWith(label));
     return hit ? hit[0] : '';
 }
 
 /**
- * 把「日常体质系数」写成指定数值。
- *
- * ⚠️ 必须带上**读出来的整份数值**再写：`spec.write` 里那一行
- *   `out.replace(PEAK_WRITE, $1${v.peak || 1.5})` 是**无条件执行**的 ⇒
- *   只传 `{ base }` 会把「排卵日暴击」悄悄改成 1.5（玩家自己调过的就丢了 ✗）
- *
- * @param {{onlyIfDefault?: boolean}} [opts]
- *   `onlyIfDefault` = **推演报档那条路**用的闸：只有这一格还是出厂那个 1.0 才敢写 ✓
- *   （玩家在别处，比如「全文」里自己写过一个数 ⇒ 一个字都不许覆盖 ✗ 红线）
- *   界面上的「恢复按设定判」不加这个闸 —— 那是玩家当场点的动作 ✓
- */
-export function writeFertilityCoef(key, coef, opts = {}) {
-    const spec = specFor('body_base');
-    if (!spec || !key) return false;
-    const cur = readParams(spec, key);
-    if (!cur) return false;                        // 那段正文被改烂了 ⇒ 不硬写
-    if (Number(cur.base) === Number(coef)) return false;   // 已经就是这个数 ⇒ 一个字不动
-    if (opts.onlyIfDefault && Number(cur.base) !== 1) return false;
-    return writeParams(spec, key, { ...cur, base: coef });
-}
-
-/**
- * 推演报了一个受孕体质档 ⇒ 记下来，并（在玩家没手改过时）写进那个对象的身体补丁。
- * ✅ 只动**这一个对象**那一份，绝不碰别人、也绝不碰全局那份（红线 ✓）
+ * 推演报了一个档 ⇒ 记下来（玩家没手改过时）。
+ * ✅ 只动**这一个对象**，绝不碰别人、也绝不碰全局那份（红线 ✓）
+ * ⚠️ 记之前先核一遍「这个人还允许 AI 判吗」：玩家手改过 ⇒ 一个字都不动 ✓
  */
 export function applyFertilityTierReport(key, word) {
     if (!key || isUserKey(key)) return false;       // 本人那份不动
+    if (isCannotBePregnantOf(key)) return false;    // 明确不能怀孕 ⇒ 这一档没用（界面也不显示）✓
     const tier = normalizeFertilityTier(word);
     if (!tier) return false;                        // 没报 / 认不出来 ⇒ 什么都不做（下轮再试 ✓）
+    if (fertilityManualOf(key)) return false;       // 玩家改过 ⇒ AI 不许覆盖 ✓
     setFertilityTierOf(key, tier);
-    if (fertilityManualOf(key)) return true;        // 玩家改过 ⇒ 只记档、不写值 ✓
-    return writeFertilityCoef(key, fertilityCoefOfTier(tier), { onlyIfDefault: true });
+    return true;
 }
 
 /** 这个对象还没定过档（推演名单里有这种人时，契约才多问那一行 ✓） */
 export function needsFertilityTier(key) {
     if (!key || isUserKey(key)) return false;
+    // ★ 2026-11-14（她拍）：明确不能怀孕的人**不问这一档** ——
+    //   界面已经不画卵子那两格，问了只会让模型填一个永远不显示的值 ✗
+    if (isCannotBePregnantOf(key)) return false;
     if (fertilityTierOf(key)) return false;
     return !fertilityManualOf(key);
+}
+
+// ---------------------------------------------------------------------------
+// ★ 2026-11-13（第六批）：精子致孕力也按「建档时判一次档」
+//
+// 第五批只把**卵子质量**那一侧接了模型判档，精子那一侧漏了（她 2026-11-13 点出来的）。
+//   两边判据完全相同：按角色设定与长期体质判一次，不能拿这一楼的临时状态判。
+// 落法：档位写到**那个对象自己**身上（`targets[key].spermPowerTier`），
+//   数值由「这一族基准 × 档位倍率」实时算 ⇒ 换绑别的族会跟着变 ✓
+// ⚠️ 本人那份在全局设置里（`userSpermPowerTier`），推演不动它 ✓
+// ⚠️ 已经有档（玩家选的 / 上一轮判的）⇒ 一律不覆盖 ✓
+// ---------------------------------------------------------------------------
+
+export function applySpermPowerTierReport(key, word) {
+    if (!key || isUserKey(key)) return false;       // 本人那份不动
+    if (isCannotImpregnateOf(key)) return false;    // 明确不能让别人怀孕 ⇒ 这一档没用 ✓
+    const tier = normalizeFertilityTier(word);
+    if (!tier) return false;                        // 没报 / 认不出来 ⇒ 下轮再试 ✓
+    if (spermPowerTierOf(key)) return false;        // 定过档（玩家或上次判的）⇒ 不覆盖 ✓
+    setSpermPowerTierOf(key, tier);
+    return true;
+}
+
+/** 这个对象还没定过精子致孕力那一档 */
+export function needsSpermPowerTier(key) {
+    if (!key || isUserKey(key)) return false;
+    // ★ 2026-11-14（她拍）：明确不能让别人怀孕 ⇒ 不问精子致孕力这一档（同上一条）✓
+    if (isCannotImpregnateOf(key)) return false;
+    return !spermPowerTierOf(key);
 }
 
 /** 察觉档位：字母 ＋ 它在面板上显示的名字（顺序＝从最早察觉到最晚 ✓） */

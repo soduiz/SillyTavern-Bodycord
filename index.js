@@ -125,7 +125,7 @@ async function doJudge(reason = '') {
     //   （接手那次跑完自己会刷；这里刷只会闪一下"回滚后"的旧状态 ✗）
     let superseded = false;
     try {
-        const r = await runJudge({ silent: true, signal });
+        const r = await runJudge({ signal });
         if (r.ok) {
             console.log('[Bodycord] 推演完成：', r.updated, reason ? `（触发：${reason}）` : '');
         } else if (r.cancelled) {
@@ -142,7 +142,9 @@ async function doJudge(reason = '') {
             try { noteSkip('没有正文'); } catch { /* 忽略 */ }
         } else {
             console.warn('[Bodycord] 推演失败：', r.error);
-            toast('状态推演失败：' + r.error, 'error');
+            // ★ 2026-11-14：报错后面补一句「可能的原因」（她定的：光有接口原话玩家看不懂 ✓）
+            //   多显示几秒，不然一句长报错还没读完就消失了
+            toast('状态推演失败：' + r.error + (r.hint ? '｜' + r.hint : ''), 'error', { timeOut: 12000 });
         }
     } catch (e) {
         console.error('[Bodycord] 推演异常', e);

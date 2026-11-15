@@ -19,7 +19,9 @@ import { getChatKey, getCtx, resolvePersonaAvatar, EXT_ROOT, hasWindow } from '.
 //   这里只用它一处：日历要不要按现实日期显示 ✓
 import { isCardExcluded } from './cardexclude.js';
 import { renderDiceTab } from './ui-dice.js';
-import { snapshotChat, applySnapshotChat, state, commit, hashText, userDisplayName, displayName, findOrCreateLightTarget, inRealChat, inChatPage, conceptionForPanel, contactsForPanel, createTarget, diffForPanel, lastJudgeForPanel, achievementsForPanel, childrenForPanel, children, updateChild, bodyStateForPanel, chatNotes, setChatNotes, zoneNotes, setZoneNote, divHistory, setDivHistoryJSON, hasChatMeta, addCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarDayCard, pruneEmptyCalendarEvents, markCalendarAlerted, activeCalendarNow, dueMarksForPanel } from './store.js';
+// ★ 2026-11-13：骰子页重画前要先比"数据变没变"（见 _mountDiceInto）✓
+import { currentPool, getLastUsage, entries as diceEntries } from './dice.js';
+import { snapshotChat, applySnapshotChat, state, commit, hashText, userDisplayName, displayName, findOrCreateLightTarget, inRealChat, inChatPage, conceptionForPanel, contactsForPanel, createTarget, addToTargetNames, diffForPanel, lastJudgeForPanel, achievementsForPanel, childrenForPanel, children, updateChild, bodyStateForPanel, chatNotes, setChatNotes, zoneNotes, setZoneNote, divHistory, setDivHistoryJSON, hasChatMeta, addCalendarEvent, updateCalendarEvent, deleteCalendarEvent, calendarDayCard, pruneEmptyCalendarEvents, markCalendarAlerted, activeCalendarNow, dueMarksForPanel, clearPeriodOff } from './store.js';
 // ★ 「联系人」里那颗「改种族」写的就是「角色基础信息」里那一格
 //   ⇒ 复用参数面板那条写库路（它会顺手打上"玩家手改过"的标记 ✓）
 import { specFor, writeParams } from './params.js';
@@ -922,6 +924,9 @@ export class BodycordPanel {
         this._userName = '';
         this._avatar = '';
         this._avatarScope = 'nochat';
+        // ★ 2026-11-13：面板现在停在哪一页（面板切换页签时会 postMessage 告诉外壳）。
+        //   用它是为了「不在日历页就别白算那一整页日历 HTML」——null = 还不知道 ✓
+        this._panelView = null;
         this._onMessage = this._onMessage.bind(this);
         window.addEventListener('message', this._onMessage);
     }
@@ -1078,8 +1083,22 @@ export class BodycordPanel {
                 try { window.dispatchEvent(new CustomEvent('bodycord:childrenRenamed')); } catch { /* 忽略 */ }
                 this.update();
             });
-        } else if (d.type === 'childMute') {
-            // ★ 2026-11-07（她：找不到哪里勾选不发送某个孩子）——
+        } else if (d.type === 'periodOffClear') {
+            // ★ 2026-11-13（经期非常态持久化，计划 §六.5）：面板上那颗「清除」——
+            //   玩家自己点的，所以允许写；**只清非常态**，经量 / 痛经的基础档一个字不动 ✓
+            //   ⚠️ 预览那份是样例，不能往真数据上写（跟孩子改名那颗同一个挡法 ✓）
+            if (this.previewRaw || this.previewConceptionFor) {
+                try { window.toastr?.info?.('预览里不能改'); } catch { /* 忽略 */ }
+                return;
+            }
+            const pKey = String(state().active || '');
+            if (clearPeriodOff(pKey)) {
+                try { window.toastr?.info?.('经期非常态清掉了（经量 / 痛经的基础档没动）'); } catch { /* 忽略 */ }
+                this.update();
+            } else {
+                try { window.toastr?.warning?.('这个对象现在没有经期记录'); } catch { /* 忽略 */ }
+            }
+        } else if (d.type === 'childMute') {            // ★ 2026-11-07（她：找不到哪里勾选不发送某个孩子）——
             //   「孩子」频道每张卡上那颗「发送 / 不发送」。
             //   ⚠️ 账本一条都不删，只是这一段不写他 ⇒ 数据还在，面板上也看得见 ✓
             const id = String(d.id || '');
@@ -1116,6 +1135,14 @@ export class BodycordPanel {
             // ★ 联系人详情的「隐藏已失活」—— 只改显示偏好，不动账本 ✓
             setContactsHideDead(d.value === true);
             this.update();
+        } else if (d.type === 'view') {
+            // ★ 2026-11-13（B3）：面板换页签时告诉外壳一声。
+            //   切到「日历」⇒ 立刻重算并推一份新的（外壳平时不再白算那一页 ✓）；
+            //   切到别处 ⇒ 只记下来，之后照旧不算 ✓
+            const view = String(d.view || '');
+            const wasCal = this._panelView === 'calendar';
+            this._panelView = view || null;
+            if (view === 'calendar' && !wasCal) this.update();
         } else if (d.type === 'calendarNav') {
             // ★ 翻月：面板**不自己算日期** ⇒ 回外壳重算一格再推过去 ✓
             const step = Number(d.step) || 0;
@@ -1291,14 +1318,9 @@ export class BodycordPanel {
         try {
             const t = createTarget(name);
             if (!t) return { ok: false, msg: '这个名字建不了档：' + name };
-            const s = settings();
-            if (s.targetMode === 'single' || s.targetMode === 'multi') {
-                const arr = Array.isArray(s.targetNames) ? s.targetNames.slice() : [];
-                if (!arr.some((x) => String(x).trim() === name)) {
-                    s.targetNames = [...arr, name];
-                    save();
-                }
-            }
+            // ★ 2026-11-13：三条添加路（这里 / 设置页名字框 / 设置页「添加对象」）统一走一个实现，
+            //   别再各写一份（以前各自的写法不一样，会出现"建了档但不进推演"）
+            addToTargetNames(name);
             return { ok: true, msg: '已添加：' + name };
         } catch (e) {
             return { ok: false, msg: '添加失败：' + (e?.message || e) };
@@ -1386,9 +1408,16 @@ export class BodycordPanel {
             // ★ 已经挂上过 ⇒ 只重画内容，别再把整个容器重建 ✗
             //   骰子页显示的是「这一轮取用了哪些 / 池子」这类每轮都会变的数据，
             //   原来挂上之后永远不再重画 ⇒ 推演完了还显示「没有取用任何随机数」✗
+            // ★★ 2026-11-13：但也不能"每次推送都无条件重画" ——
+            //   面板停在骰子页时，任何一次全量刷新（推演完 / 改设置 / 切人）都会走到这儿，
+            //   无条件重画会把正在输入的用途、滚动位置、展开状态一起清掉 ✗
+            //   ⇒ 先算一份数据签名，一模一样就一个字都不动 ✓
+            const sig = this._diceSignature();
+            if (sig && sig === host.dataset.bcSig) return;
             try {
                 const existing = host.querySelector('.bc-embed');
                 if (existing) renderDiceTab(existing, { embedded: true });
+                if (sig) host.dataset.bcSig = sig;
             } catch (e) { console.warn('[Bodycord] 重画骰子面板失败', e); }
             return;
         }
@@ -1404,6 +1433,8 @@ export class BodycordPanel {
             //   否则它会一直留在内容上方。
             while (host.firstChild) host.removeChild(host.firstChild);
             host.appendChild(doc.adoptNode(wrap));
+            // ★ 记下这次画的是哪一份数据（下次推送就能比出"变没变" ✓）
+            try { host.dataset.bcSig = this._diceSignature(); } catch { /* 忽略 */ }
         } catch (e) {
             console.warn('[Bodycord] 挂骰子面板失败', e);
             this._diceDiag('挂载失败：' + ((e && e.message) || e));
@@ -1411,6 +1442,24 @@ export class BodycordPanel {
         }
 
         this._injectCssInto(doc);
+    }
+
+    /**
+     * ★ 2026-11-13：骰子页「内容签名」—— 只挑影响显示的那几样（模式 / 清单骰 / 池子 / 上一轮取用）。
+     *   一模一样 ⇒ 不重画（保住正在输入的框、滚动位置和展开状态 ✓）。
+     *   取不到就返回空串：空串的语义是「判不了」⇒ 调用方照旧重画，宁可多画一次也别显示旧数据 ✓
+     */
+    _diceSignature() {
+        try {
+            const s = settings();
+            const slim = (d) => [d && d.id, d && d.label, d && d.expr, d && (d.value ?? null)];
+            return JSON.stringify({
+                m: (s && s.dice && s.dice.mode) || 'pool',
+                e: (diceEntries() || []).map(slim),
+                p: (currentPool() || []).map(slim),
+                u: (getLastUsage() || []).map((u) => [u && u.for, u && u.ref, u && (u.value ?? null), u && (u.result || '')]),
+            });
+        } catch { return ''; }
     }
 
     /** 把问题直接写在骰子那一页上，别让用户对着空白发呆 */
@@ -1636,44 +1685,54 @@ export class BodycordPanel {
             // ★ 「日历」频道（写备注 / 圈红圈 / 有提醒那种）——
             //   外壳**把整页 HTML 算好**再推过去 ⇒ 面板里不重建一份日期引擎 ✓
             //   （翻月 / 点日子 / 切节日 / 关提示都走 postMessage 回来重算 ✓）
-            calendar: (() => {
-                try {
-                    // ★★ 被排除的角色卡：日历按**现实日期**显示（2026-10-28 她定的）——
-                    //   剧情日期是推演账本里的东西，这个卡里没有账本 ⇒ 传 `inChat=false`，
-                    //   于是"今天 / 节日 / 月相"整块跟着现实日期走，不会一半现实一半剧情 ✓
-                    const inChat = inChatPage() && !isCardExcluded();
-                    // ★★ 换上下文（换聊天 / 进出聊天）⇒ 锚点清零（见上面 `_calCtx` 那段）✓
-                    //   不然：你在"非聊天那份"翻到 2026 年 10 月，进聊天后数据源换成了剧情日历，
-                    //   可月份/选区还停在 2026-10 ⇒ 看着就像**锚定在非聊天那份日历上** ✗
-                    const ctxNow = String(rawChatId() || 'global') + '|' + (inChat ? 'chat' : 'real');
-                    if (ctxNow !== _calCtx) {
-                        _calCtx = ctxNow;
-                        _calYM = null;
-                        _calSel = null;
-                        _calMode = 'default';
-                    }
-                    // ★ 这一屏读的是哪一份日程（下面所有写入都按它分流 ✓）
-                    _calReal = !inChat;
-                    // 顺手清掉"点了加一条又什么都没写"的空壳子
-                    //   ⚠️ **正在编辑的那一天不碰**（别把人家正打字的行抽走 ✗）
-                    try {
-                        if (_calReal) pruneEmptyRealEvents(_calKeepKey());
-                        else pruneEmptyCalendarEvents(_calKeepKey());
-                    } catch { /* 忽略 */ }
-                    const v = calendarViewHtml({
-                        inChat, y: _calYM?.y, m: _calYM?.m, mode: _calMode, sel: _calSel,
-                    });
-                    _calYM = { y: v.y, m: v.m };
-                    if (v.sel) _calSel = v.sel;      // 视图会把选区归一到"正在看的那个月" ✓
-                    return { html: v.html, y: v.y, m: v.m, months: v.months, inChat: v.inChat, mode: v.mode };
-                } catch (e) {
-                    console.warn('[Bodycord] 拼日历失败', e);
-                    return null;
-                }
-            })(),
+            // ★★ 2026-11-13（B3）：这一整页 HTML 很贵 —— 逐日农历 + 节日匹配 + 每个对象的发情日
+            //   和预产期，跨月还要递归三个月。原来**每轮刷新都算一遍**，面板关着、人在别的页也照算 ✗
+            //   ⇒ 只有面板正停在日历页（视图已知且是 calendar）才算；未知视图（刚挂载 / 刚重建）
+            //     也算一次当种子，面板那边至少有一份能立刻画出来的 ✓
+            //   跳过时返回 `undefined`（＝不推），让面板留着上一份，别把它清成 null ✓
+            calendar: (this._panelView !== null && this._panelView !== 'calendar') ? undefined : this._calendarPayload(),
         };
     }
 
+    /**
+     * 算「日历」那一整页 HTML（很贵：逐日农历 / 节日 / 发情日 / 预产期，跨月还递归三个月）。
+     * ★ 2026-11-13（B3）：只在面板真停在日历页时调（见 _payload / 'view' 消息）✓
+     */
+    _calendarPayload() {
+        try {
+            // ★★ 被排除的角色卡：日历按**现实日期**显示（2026-10-28 她定的）——
+            //   剧情日期是推演账本里的东西，这个卡里没有账本 ⇒ 传 `inChat=false`，
+            //   于是"今天 / 节日 / 月相"整块跟着现实日期走，不会一半现实一半剧情 ✓
+            const inChat = inChatPage() && !isCardExcluded();
+            // ★★ 换上下文（换聊天 / 进出聊天）⇒ 锚点清零（见上面 `_calCtx` 那段）✓
+            //   不然：你在"非聊天那份"翻到 2026 年 10 月，进聊天后数据源换成了剧情日历，
+            //   可月份/选区还停在 2026-10 ⇒ 看着就像**锚定在非聊天那份日历上** ✗
+            const ctxNow = String(rawChatId() || 'global') + '|' + (inChat ? 'chat' : 'real');
+            if (ctxNow !== _calCtx) {
+                _calCtx = ctxNow;
+                _calYM = null;
+                _calSel = null;
+                _calMode = 'default';
+            }
+            // ★ 这一屏读的是哪一份日程（下面所有写入都按它分流 ✓）
+            _calReal = !inChat;
+            // 顺手清掉"点了加一条又什么都没写"的空壳子
+            //   ⚠️ **正在编辑的那一天不碰**（别把人家正打字的行抽走 ✗）
+            try {
+                if (_calReal) pruneEmptyRealEvents(_calKeepKey());
+                else pruneEmptyCalendarEvents(_calKeepKey());
+            } catch { /* 忽略 */ }
+            const v = calendarViewHtml({
+                inChat, y: _calYM?.y, m: _calYM?.m, mode: _calMode, sel: _calSel,
+            });
+            _calYM = { y: v.y, m: v.m };
+            if (v.sel) _calSel = v.sel;      // 视图会把选区归一到"正在看的那个月" ✓
+            return { html: v.html, y: v.y, m: v.m, months: v.months, inChat: v.inChat, mode: v.mode };
+        } catch (e) {
+            console.warn('[Bodycord] 拼日历失败', e);
+            return null;
+        }
+    }
     async mount() {
         if (this.iframe || this._destroyed) return;
         const tpl = await loadTemplate();
@@ -1824,7 +1883,9 @@ export class BodycordPanel {
         this.iframe?.contentWindow?.__bodycordSetJudgeLog?.(p.judgeLog || null);
         this.iframe?.contentWindow?.__bodycordSetAchievements?.(p.achievements || null);
         this.iframe?.contentWindow?.__bodycordSetChildren?.(p.children || null);
-        this.iframe?.contentWindow?.__bodycordSetCalendar?.(p.calendar || null);
+        // ★ 2026-11-13（B3）：不在日历页时外壳不算那一页（`p.calendar` 是 undefined）⇒
+        //   这里也不许推 null，否则会把面板手里那份清掉，切过去就变成"日历还没算出来" ✗
+        if (p.calendar !== undefined) this.iframe?.contentWindow?.__bodycordSetCalendar?.(p.calendar || null);
         this.iframe?.contentWindow?.__bodycordSetBodyState?.(p.bodyState || null);
             if (p.theme) this.setTheme(p.theme);
         if (p.vision) this.setVision(p.vision);
@@ -1846,7 +1907,10 @@ export class BodycordPanel {
         this._syncNotesBridge();
         // 重建 = 新文档，历史得整份补一遍（指纹作废 ✓）
         this._pushedChatSig = '';
-        this.iframe.srcdoc = buildDoc(_tpl, { ...p, avatar: this._avatar });
+        // ★ 2026-11-13（B3）：新文档一起步就停在概览页 ⇒ `p.calendar` 可能是 undefined（为了不白算）。
+        //   但重建时**必须**带一份种子进去，不然她点进日历页会先看到"还没算出来"再被补上 ✗
+        const seedCalendar = (p.calendar === undefined) ? this._calendarPayload() : p.calendar;
+        this.iframe.srcdoc = buildDoc(_tpl, { ...p, calendar: seedCalendar ?? null, avatar: this._avatar });
     }
 
     /**

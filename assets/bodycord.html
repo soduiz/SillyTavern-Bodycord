@@ -578,6 +578,15 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
 /* ★ 2026-11-08（发情期第 0 批）：日历上标发情日（跟预产期那种绿色分开：发情用红色） */
 .bc-cal-heat{font-size:calc(9.5px * var(--bc-fs-scale, 1));color:var(--red);font-weight:700;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bc-cal-cell.bc-cal-hasheat:not(.bc-cal-mark){box-shadow:inset 0 0 0 2px var(--red)}
+/* ★ 2026-11-13（2.7 第二批）：日历上标「预计下次月经」（粉色，跟预产期的绿、发情的红分开）
+   口径：这一段**整段铺一层淡粉**（连成一条），起止两天加一圈粉框；第一天写「预计月经」四个字
+   （中间那些天不写字，格子小、写满会挤爆）；规律档只有一天 ⇒ 那一天同时是起和止 ✓ */
+.bc-cal-per{font-size:calc(9.5px * var(--bc-fs-scale, 1));color:var(--pink);font-weight:700;margin-top:1px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bc-cal-cell.bc-cal-hasperiod{background:var(--pink-dim)}
+.bc-cal-cell.bc-cal-on.bc-cal-hasperiod{background:var(--blurple-dim)}
+.bc-cal-cell.bc-cal-perstart:not(.bc-cal-mark),.bc-cal-cell.bc-cal-perend:not(.bc-cal-mark){box-shadow:inset 0 0 0 2px var(--pink)}
+/* 下半部分那行"谁、哪一段"（只读，不是日程 ✓） */
+.bc-cal-pernote{padding:5px 0 0;font-size:calc(12px * var(--bc-fs-scale, 1));line-height:1.75;color:var(--pink);font-weight:600}
 /* 下半部分那行"谁的预产期、还有几天 / 已过几天"（只读，不是日程 ✓） */
 .bc-cal-duenote{padding:7px 0 0;font-size:calc(12px * var(--bc-fs-scale, 1));line-height:1.75;color:var(--green);font-weight:600}
 /* 头部那颗「跳到预产期」（跟「今天」同款，用绿色区分 ✓） */
@@ -1651,7 +1660,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
          就是单纯没进聊天；别再把这两个概念混在一起 ✗ */
 
   // 面板自己的构建标记：用来确认到底加载了哪一版文件（拿到缓存的旧文件时一眼能看出来）
-  var PANEL_BUILD = '2026-11-12-18';
+  var PANEL_BUILD = '2026-11-14-4';
   // 界面上不显示它，但留个查询口 —— 报 BUG 时能确认加载的是哪一版 ✓
   try{ window.__bodycordPanelBuild = PANEL_BUILD; }catch(e){}
 
@@ -2506,6 +2515,8 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
       list.push({
         name: m[1] || map['name'] || '身体监测',
         day: map['第几天'] || '—',
+        // ★ 2026-11-13：共几天（经期长度）。老快照没有这一行 ⇒ '—'，面板那边自动不显示 ✓
+        total: map['共几天'] || '—',
         flow: map['流量'] || '—',
         color: map['颜色'] || '—',
         texture: map['质地'] || '—',
@@ -4276,6 +4287,16 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     if(/轻微|轻度|一点|隐隐|钝痛|坠胀/.test(s)) return 'pain-mild';
     return 'pain-none';
   }
+  /**
+   * ★ 2026-11-13（非常态持久化）：非常态那一行后面那颗「清除」——
+   *   只清状态（经量 / 痛经的基础档不动），写库永远由外壳做 ✓
+   */
+  function periodOffClearBtn(){
+    return '<button class="child-name-btn" style="margin-left:6px;vertical-align:middle" onclick="event.stopPropagation();window.__periodOffClear()" title="清掉这次记下的非常态（经量 / 痛经的基础档不动）">清除</button>';
+  }
+  window.__periodOffClear = function(){
+    try{ window.parent.postMessage({ __bodycord: true, type: 'periodOffClear' }, '*'); }catch(e){}
+  };
   function renderPeriodSummary(){
     if(!currentPeriods || !currentPeriods.length) return '';
     var pp = currentPeriods[0];
@@ -4298,8 +4319,10 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
           '<div><div class="field-label">颜色</div><div class="field-value">'+periodColorSwatch(pp.color)+'<span>'+safe(pp.color)+'</span></div></div>' +
           '<div><div class="field-label">质地</div><div class="field-value">'+safe(pp.texture)+'</div></div>' +
           '<div><div class="field-label">痛经</div><div class="field-value"><span class="bc-pain '+periodPainClass(pp.pain)+'">'+safe(pp.pain)+'</span></div></div>' +
+          // ★ 2026-11-13：计划 §六.1「第几天、共几天」—— 共几天由插件算好放进来；老数据没有就不显示 ✓
+          (pp.total && pp.total !== '—' ? '<div><div class="field-label">经期</div><div class="field-value">共 '+safe(pp.total)+'</div></div>' : '') +
           '<div><div class="field-label">常态</div><div class="field-value">'+safe(pp.items || '无')+'</div></div>' +
-          (pp.off && pp.off !== '—' ? '<div><div class="field-label">非常态</div><div class="field-value">'+safe(pp.off)+'</div></div>' : '') +
+          (pp.off && pp.off !== '—' ? '<div><div class="field-label">非常态</div><div class="field-value">'+safe(pp.off)+' '+periodOffClearBtn()+'</div></div>' : '') +
         '</div>' +
       '</div>' +
     '</div>';
@@ -4333,6 +4356,8 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
         '</div>' +
         '<div class="period-stat">' +
           '<div><span>周期第 </span><span class="ps-num">'+safe(dayNum)+'</span><span> 天</span></div>' +
+          // ★ 2026-11-13：计划 §六.1 的「共几天」；老快照没有这行 ⇒ 不显示 ✓
+          (pp.total && pp.total !== '—' ? '<div><span>经期共 </span><span class="ps-num">'+safe(pp.total)+'</span></div>' : '') +
         '</div>' +
         '<div class="embed-panel period">' +
           '<div class="fields-grid">' +
@@ -4347,7 +4372,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
             '<div class="field-value" style="font-weight:500;line-height:1.7;white-space:pre-wrap">'+safe(pp.items || '无')+'</div>' +
             ((pp.off && pp.off !== '—')
               ? ('<div class="field-label" style="margin-top:8px">非常态</div>' +
-                 '<div class="field-value" style="font-weight:500;line-height:1.7;white-space:pre-wrap">'+safe(pp.off)+'</div>')
+                 '<div class="field-value" style="font-weight:500;line-height:1.7;white-space:pre-wrap">'+safe(pp.off)+' '+periodOffClearBtn()+'</div>')
               : '') +
           '</div>' +
         '</div>' +
@@ -5541,16 +5566,22 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
 
   var _calFocusNew = false;      // 刚点了「＋ 加一条」⇒ 画完把新那格聚焦 ✓
 
+  var _calLastHtml = '';
   function renderCalendarPanel(){
     var host = getPanel('calendar');
     if(!host) return;
     var d = (typeof window.__bodycordGetCalendar === 'function') ? window.__bodycordGetCalendar() : null;
     if(!d || !d.html){
       host.innerHTML = '<div class="empty-state">日历还没算出来。<br>进聊天里再点这一页试试</div>';
+      _calLastHtml = '';
       return;
     }
+    // ★ 2026-11-13：内容一模一样就别动 —— 原来每次推送都整块 innerHTML 换掉，
+    //   滚动位置和正在打字的那个框会被清掉；日历页开着的时候后台任意一次刷新都会碰到 ✗
+    if(d.html === _calLastHtml && !_calFocusNew) return;
     // ⚠️ 重画之前先把还挂着的改动存掉（不存就等于把人家刚打的字吞了 ✗）
     try{ calFlush(); }catch(e){}
+    _calLastHtml = d.html;
     host.innerHTML = d.html;
     bindCalendarEvents(host);
     // ★ 刚点了「加一条」⇒ 把**那条空的**聚焦，好直接打字 ✓
@@ -5772,6 +5803,14 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     updateTopTime(pr);
     if(!customAvatarUrl && !autoAvatarUrl) tryAutoAvatar();
   }
+  /* ★ 2026-11-13：把"现在停在哪一页"告诉外壳。
+     为什么：日历那一页的 HTML 是外壳算的（逐日农历 / 节日 / 发情日 / 预产期），很贵 ——
+     原来每轮刷新都算一遍，面板关着、人在别的页也照算。现在外壳只在日历页才算 ⇒
+     切到日历页时必须**主动说一声**，外壳才会立刻算一份新的推过来 ✓ */
+  function postViewToShell(){
+    try{ window.parent.postMessage({ __bodycord: true, type: 'view', view: String(currentView || '') }, '*'); }catch(e){}
+  }
+
   function switchView(view){
     if(view !== 'time') _timeAsked = false;
     currentView = view;
@@ -5782,6 +5821,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     }
     activatePanel(view);
     renderMain();
+    postViewToShell();
   }
   function updateThemeIcon(){
     var use = $('themeIconSvg') && $('themeIconSvg').querySelector('use');
@@ -5868,7 +5908,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     var p = currentProfile;
     if(p){
       var names = {title:'状态标题', phase:'阶段名', sub:'进度', minor:'次要描述', calc:'计算说明',
-                   d1:'d1 阶段基础率', d2:'d2 累计受孕率', d3:'d3 体质系数', d4:'d4 致孕方',
+                   d1:'d1 阶段基础率', d2:'d2 累计受孕率', d3:'d3 卵子质量', d4:'d4 致孕方',
                    d5:'d5 意识状态', d6:'d6 胎儿状态', d7:'d7 泌乳状态', d8:'d8 生产次数',
                    d9:'d9 敏感带'};
       for(var k in names){
@@ -6999,6 +7039,8 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     catch(e){ console.error('[bodycord] setRaw failed', e); }
   };
   render();
+  // ★ 起点这一页也要告诉外壳一声（不然外壳一直当"视图未知"，每次刷新都白算一份日历 ✓）
+  try{ postViewToShell(); }catch(e){}
   startAvatar();
 })();
 </script>

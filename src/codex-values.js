@@ -18,12 +18,12 @@
  *   绝不半懂不懂地猜一个数（卵生是第五批 ✓）
  */
 
-import { settings, setCodexCycleReader, setBodyRaceReader, setCodexEstrusReader } from './settings.js';
+import { settings, setCodexCycleReader, setBodyRaceReader, setCodexEstrusReader, setEggLifeReader, setFertilityPowerReader } from './settings.js';
 import { cycleHooks } from './cycle-hooks.js';
 import { codexEntry, codexEntries } from './codex.js';
-import { rowOf, VALUE_ROWS } from './codex-schema.js';
-import { codexIdOf, codexOverrideOf, resolveRaceWithTemp, showWeekOf, setShowWeekOf, showWeekManualOf } from './codex-bind.js';
-import { state, raceJudgeOf, isUserKey } from './store.js';
+import { rowOf, VALUE_ROWS, HUMAN_LIFE_DEFAULT, HUMAN_POWER_DEFAULT, powerTierFactorOf, powerTierLabelOf } from './codex-schema.js';
+import { codexIdOf, codexOverrideOf, setCodexOverride, resolveRaceWithTemp, showWeekOf, setShowWeekOf, showWeekManualOf } from './codex-bind.js';
+import { state, raceJudgeOf, isUserKey, fertilityTierOf, spermPowerTierOf, isCannotBePregnantOf, isCannotImpregnateOf } from './store.js';
 import { parseFetus } from './fetus.js';
 import {
     fetusCountTableOf, fetusSexRangeOf, fetusOvumRangeOf, fetusMixRangeOf,
@@ -329,6 +329,22 @@ export function readCycleParamsOf(key, entryArg = null) {
 
 // 注册给 settings.js（那边不能 import 这里，会成环 ✓）
 setCodexCycleReader((key) => readCycleParamsOf(key));
+
+/**
+ * ★ 2026-11-13（2.7 经期波动 第一批）：这一族的「经期规律度」。
+ *
+ * ⚠️ **只读条目那一层**（顺着借用链），**不读个人单独调** ——
+ *   个人的那一份存在对象身上（store 的 `cycleRegularTierOwnOf`），
+ *   要是这里也读 `codexOverride`，同一个人就有两份个人值、互相盖 ✗
+ * 空着 ⇒ 空串（settings 那边当「规律」，＝老行为 ✓）
+ * @returns {{text:string, layer:string, from:object|null}}
+ */
+export function readCycleRegularOf(key, entryArg = null) {
+    const entry = entryArg || codexEntryOf(key);
+    if (!entry) return { text: '', layer: '', from: null };
+    return resolveTextRow(entry, 'cycle_regular');
+}
+cycleHooks.regularCodex = (key) => readCycleRegularOf(key).text;
 
 /**
  * ★ 2026-11-08：这个对象是不是「交配后排卵」（兔 / 猫这类）。
@@ -696,6 +712,253 @@ export function readImplantDaysOf(key) {
     } catch { /* 读不到就用默认 6~10 */ }
     return { lo, hi, layer: 'global' };
 }
+
+// ---------------------------------------------------------------------------
+// ★ 2026-11-13（精子卵子存活 第一批）：精子 / 卵子的存活时间
+//
+// 三层：个人单独调 > 这一条（顺着借用链）> 人类那一条 > 代码里的常量。
+// ⚠️ 第一批只加了读取；第二批接进受孕窗口（卵子）、第三批接跨周期判定、
+//   第四批接掷骰（精子，`rollSpermLife(提供方)` 拿的就是这里那份范围）✓
+// ---------------------------------------------------------------------------
+
+function lifePairOfRow(row) {
+    if (!row || row.kind !== 'range') return null;
+    const a = row.min != null ? Number(row.min) : Number(row.max);
+    const b = row.max != null ? Number(row.max) : Number(row.min);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    const lo = Math.max(1, Math.round(Math.min(a, b)));
+    const hi = Math.max(lo, Math.round(Math.max(a, b)));
+    return [lo, hi];
+}
+
+function readLifeOf(key, rowKey, fallbackPair, allowPerson = true) {
+    const entry = codexEntryOf(key);
+    const hit = pickRow(key, entry, rowKey, allowPerson);
+    const own = lifePairOfRow(hit.row);
+    if (own) return { lo: own[0], hi: own[1], layer: hit.layer || 'entry', entry };
+    // 这条没填 ⇒ 跟人类那一条（不退回设置页：全局那两格第一批已经撤掉了 ✓）
+    const h = humanEntry();
+    const human = h ? lifePairOfRow(resolveRowOf(h, rowKey).row) : null;
+    if (human) return { lo: human[0], hi: human[1], layer: 'human', entry: h };
+    return { lo: fallbackPair[0], hi: fallbackPair[1], layer: 'human', entry: h || null };
+}
+
+/** 这一族的精子在体内能活几天（区间，天） */
+export function readSpermLifeOf(key) {
+    return readLifeOf(key, 'sperm_life', HUMAN_LIFE_DEFAULT.sperm);
+}
+
+/** 这一族的卵子排出来后能受精几天（区间，天） */
+export function readEggLifeOf(key) {
+    return readLifeOf(key, 'egg_life', HUMAN_LIFE_DEFAULT.egg);
+}
+
+/**
+ * ★ 2026-11-13（第五批）：**不看个人那一层**的族基准区间（界面算「5 档缩放后是多少」用）。
+ *   为什么要它：个人选过档之后，`readSpermLifeOf` 返回的已经是缩放过的值；
+ *   拿它再乘一遍倍率就变成"缩放两次" ✗ ⇒ 档位比对与新档计算一律走这一份 ✓
+ */
+export function readSpermLifeBaseOf(key) {
+    return readLifeOf(key, 'sperm_life', HUMAN_LIFE_DEFAULT.sperm, false);
+}
+
+export function readEggLifeBaseOf(key) {
+    return readLifeOf(key, 'egg_life', HUMAN_LIFE_DEFAULT.egg, false);
+}
+
+// 注册给 settings.js：受孕窗口的尾部按这一族的卵子存活时间铺（那边不能 import 这里，会成环 ✓）
+setEggLifeReader((key) => readEggLifeOf(key));
+
+/**
+ * 个人那一层的 5 档倍率（存活时间用）。
+ * 「致孕力 / 卵子质量」第五批复用同一套写法，只是倍率另给一组 ✓
+ */
+export const LIFE_TIERS = [
+    ['very_short', '很短', 0.5],
+    ['short', '短', 0.75],
+    ['standard', '标准', 1],
+    ['long', '长', 1.5],
+    ['very_long', '很长', 2],
+];
+
+/** 「很短」/ `very_short` ⇒ 倍率；认不出（含空）⇒ 标准 1 ✓ */
+export function lifeTierFactorOf(text) {
+    const t = String(text ?? '').trim();
+    const hit = LIFE_TIERS.find(([id, label]) => id === t || label === t);
+    return hit ? hit[2] : 1;
+}
+
+/** 档位名字（认不出 ⇒ 空串） */
+export function lifeTierLabelOf(text) {
+    const t = String(text ?? '').trim();
+    const hit = LIFE_TIERS.find(([id, label]) => id === t || label === t);
+    return hit ? hit[1] : '';
+}
+
+/**
+ * 按档位在这一族的区间里**取一段**（2026-11-13 她定：**不再乘倍率**）。
+ *
+ * 口径：很短 = 下 1/3、短 = 下 2/3、标准 = 整个区间、长 = 上 2/3、很长 = 上 1/3。
+ * 为什么改成取段：图鉴那格填的是**这一族的范围**，再乘 0.5~2 倍会让「很短」掉到范围外、
+ *   「很长」冲出上限，跟"这一族的范围"自相矛盾（她的原话：那已经超出极限了）。
+ * 跨度不到 3 天的区间取段后会退化成同一个数，档位没有区别 —— 已知代价 ✓
+ *   要极端值就直接填天数（个人那一层不设上界 ✓）。
+ * @param {number} lo
+ * @param {number} hi
+ * @param {string} tierText '很短' / '短' / '标准' / '长' / '很长'（认不出 = 标准）
+ * @returns {{lo:number, hi:number}}
+ */
+export function lifeTierRangeOf(lo, hi, tierText) {
+    const a = Math.max(1, Math.round(Number(lo)));
+    const b = Math.max(a, Math.round(Number(hi)));
+    const span = b - a;
+    const at = (num, den) => Math.min(b, Math.max(a, a + Math.round((span * num) / den)));
+    const t = String(tierText ?? '').trim();
+    const id = (() => {
+        const hit = LIFE_TIERS.find(([k, label]) => t === k || t === label);
+        return hit ? hit[0] : 'standard';
+    })();
+    if (id === 'very_short') return { lo: a, hi: at(1, 3) };
+    if (id === 'short') return { lo: a, hi: at(2, 3) };
+    if (id === 'long') return { lo: at(1, 3), hi: b };
+    if (id === 'very_long') return { lo: at(2, 3), hi: b };
+    return { lo: a, hi: b };
+}
+
+// ---------------------------------------------------------------------------
+// ★ 2026-11-13（第六批）：存活时间也按「建档时判一次档」定个体那一层
+//
+// 她 2026-11-12 17:21 的原话：正式档下非 {{user}} 的角色由插件自己判这个角色的能力，
+//   判据是角色设定与长期体质，**不能拿这一楼的临时状态判**（跑累了气喘吁吁就判弱 ✗）。
+// 落法：模型报一个五档词 ⇒ 插件在「这一族区间」里取对应的那一段写进个人那一层（不乘倍率），
+//   之后每次射精仍在这段里掷一个天数（见 judgment.js 的 rollSpermLife）。
+// ⚠️ 已经有个人值（玩家自己选过 / 填过 / 上一轮判过）⇒ 一律不动，AI 不覆盖玩家 ✓
+// ⚠️ 本人那份不判：玩家在设置里自己选（跟卵子质量同一套边界 ✓）
+// ---------------------------------------------------------------------------
+
+/** 个人那一层里已经存着的存活区间（没有 ⇒ null） */
+export function lifePersonRowOf(key, which) {
+    const rowKey = which === 'sperm' ? 'sperm_life' : 'egg_life';
+    const ov = codexOverrideOf(key)?.[rowKey];
+    if (!ov || typeof ov !== 'object') return null;
+    const has = (v) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
+    if (!has(ov.min) && !has(ov.max)) return null;
+    const a = has(ov.min) ? Number(ov.min) : Number(ov.max);
+    const b = has(ov.max) ? Number(ov.max) : Number(ov.min);
+    return { min: Math.min(a, b), max: Math.max(a, b) };
+}
+
+/** 这个对象还没定过存活档（名单里有人没定 ⇒ 契约才多问那一行 ✓） */
+export function needsLifeTier(key, which) {
+    if (!key || isUserKey(key)) return false;
+    // ★ 2026-11-14（她拍）：只被受孕的人不显示精子两格、只致孕的人不显示卵子两格 ——
+    //   推演那边也照着这个口径问，别问用不上的那半 ✓
+    if (which === 'egg' && isCannotBePregnantOf(key)) return false;
+    if (which === 'sperm' && isCannotImpregnateOf(key)) return false;
+    return !lifePersonRowOf(key, which);
+}
+
+/**
+ * 推演报的存活档 ⇒ 写进个人那一层。
+ * @param {string} which 'sperm' | 'egg'
+ * @param {string} word 很短 / 短 / 标准 / 长 / 很长（认不出 ⇒ 什么都不做，下轮再试 ✓）
+ */
+export function applyLifeTierReport(key, which, word) {
+    if (!key || isUserKey(key)) return false;
+    if (which === 'egg' && isCannotBePregnantOf(key)) return false;   // 用不上的那半不写 ✓
+    if (which === 'sperm' && isCannotImpregnateOf(key)) return false;
+    const t = String(word ?? '').trim();
+    if (!t) return false;
+    const hit = LIFE_TIERS.find(([id, label]) => t === id || t === label || t.startsWith(label));
+    if (!hit) return false;                        // 认不出 ⇒ 别写坏数据 ✗
+    if (lifePersonRowOf(key, which)) return false;  // 已经有个人值 ⇒ 玩家那边优先 ✓
+    const base = which === 'sperm' ? readSpermLifeBaseOf(key) : readEggLifeBaseOf(key);
+    const r = lifeTierRangeOf(base.lo, base.hi, hit[0]);
+    const all = { ...(codexOverrideOf(key) || {}) };
+    all[which === 'sperm' ? 'sperm_life' : 'egg_life'] = { min: r.lo, max: r.hi };
+    setCodexOverride(key, all);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// ★ 2026-11-13（第五批）：精子致孕力 / 卵子质量
+//
+// 三层跟存活时间同一套：个人单独调 > 这一条（顺着借用链）> 人类那一条 > 常量。
+// 倍率取**区间中点**（0.8 到 1.2 ⇒ 1.0）—— 它是受孕率的固定乘数，
+//   不能一轮一个数地飘（跟"每天在区间里掷"是两回事 ✓）。
+// 个人那一层再来一道 5 档（POWER_TIERS）：值是 **这一族基准 × 档位倍率**，
+//   所以换绑别的族会跟着变；要固定成某个数就填自定义（`codexOverride` 的绝对值）✓
+// ---------------------------------------------------------------------------
+
+function powerPairOfRow(row) {
+    if (!row || row.kind !== 'range') return null;
+    const a = row.min != null ? Number(row.min) : Number(row.max);
+    const b = row.max != null ? Number(row.max) : Number(row.min);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    const r2 = (x) => Math.round(x * 100) / 100;
+    const lo = Math.max(0.1, Math.min(a, b));
+    const hi = Math.max(lo, Math.max(a, b));
+    return [r2(lo), r2(hi)];
+}
+
+function readPowerOf(key, rowKey, fallbackPair) {
+    const entry = codexEntryOf(key);
+    const hit = pickRow(key, entry, rowKey, true);
+    const own = powerPairOfRow(hit.row);
+    if (own) return { lo: own[0], hi: own[1], layer: hit.layer || 'entry', entry };
+    const h = humanEntry();
+    const human = h ? powerPairOfRow(resolveRowOf(h, rowKey).row) : null;
+    if (human) return { lo: human[0], hi: human[1], layer: 'human', entry: h };
+    return { lo: fallbackPair[0], hi: fallbackPair[1], layer: 'human', entry: h || null };
+}
+
+function powerMid(lo, hi) {
+    // ★ 中点保留三位小数（0.9 到 1.05 ⇒ 0.975）—— 这里**别先四舍五入到两位**，
+    //   不然 0.975 会变成 0.98，再乘 20% 就跟手算的对不上（看着像 BUG ✓）
+    return Math.round(((Number(lo) + Number(hi)) / 2) * 1000) / 1000;
+}
+
+function powerResultOf(key, rowKey, fallbackPair, tierOf) {
+    const r = readPowerOf(key, rowKey, fallbackPair);
+    const base = powerMid(r.lo, r.hi);
+    // ★ 个人单独调过（那就是一个**绝对值**）⇒ 不再乘档位倍率（不然会缩放两次 ✗）
+    const custom = r.layer === 'person';
+    let tier = '';
+    if (!custom) { try { tier = String(tierOf(key) || '').trim(); } catch { tier = ''; } }
+    const factor = custom ? 1 : powerTierFactorOf(tier);
+    return {
+        // 判定真正用的那个数：保留三位小数（0.975 × 1.8 = 1.755，能被 20% 乘回整数 ✓）
+        value: Math.round(base * factor * 1000) / 1000,
+        base,                                           // 这一族的基准（区间中点）
+        lo: r.lo,
+        hi: r.hi,
+        tier,                                           // 个人那一层的档位（'' = 跟图鉴）
+        tierLabel: powerTierLabelOf(tier),
+        factor,
+        layer: r.layer,
+        entry: r.entry,
+    };
+}
+
+/** 这个人的精子致孕力（作为致孕方那一侧；个人档位 > 族基准 > 人类） */
+export function readSpermPowerOf(key) {
+    return powerResultOf(key, 'sperm_power', HUMAN_POWER_DEFAULT.sperm, (k) => {
+        try { return spermPowerTierOf(k); } catch { return ''; }
+    });
+}
+
+/** 这个人的卵子质量（作为孕方那一侧；个人档位 > 族基准 > 人类） */
+export function readEggQualityOf(key) {
+    return powerResultOf(key, 'egg_quality', HUMAN_POWER_DEFAULT.egg, (k) => {
+        try { return fertilityTierOf(k); } catch { return ''; }
+    });
+}
+
+// 注册给 settings.js（那边不能 import 这里，会成环 ✓）
+//   which：'sperm' 精子致孕力 / 'egg' 卵子质量
+setFertilityPowerReader((key, which) => (
+    which === 'sperm' ? readSpermPowerOf(key) : readEggQualityOf(key)
+));
 
 /** 单位（胎 / 枚 / 只） */
 export function readUnitOf(key) {

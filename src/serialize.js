@@ -17,7 +17,7 @@ const ROW_KEY = { row1: '一', row2: '二', row3: '三' };
 const D_LABEL = {
     d1: '阶段基础率',
     d2: '累计受孕率',
-    d3: '体质系数',
+    d3: '卵子质量',
     d4: '致孕方',
     d6: '胎儿状态',
     d8: '生产次数',
@@ -226,9 +226,13 @@ export function buildPeriodProfile(name, period = {}) {
     const who = safeName(name);
     const items = (Array.isArray(period.items) ? period.items : []).map((x) => String(x ?? '').trim()).filter(Boolean);
     const offTxt = periodOffText(period.off);
+    // ★ 2026-11-13：共几天（经期长度）由插件算好落进 period.totalDays ✓
+    //   老快照没有这个字段 ⇒ 这一行不发（面板读不到就不显示，不编一个数）
+    const totalDays = Math.round(Number(period.totalDays));
     const L = [
         `<period_profile name="${who}">`,
         `第几天：${clean(period.day) || '—'}`,
+        ...(Number.isFinite(totalDays) && totalDays > 0 ? [`共几天：${totalDays} 天`] : []),
         `流量：${clean(period.flow) || '—'}`,
         `颜色：${clean(period.color) || '—'}`,
         `质地：${clean(period.texture) || '—'}`,

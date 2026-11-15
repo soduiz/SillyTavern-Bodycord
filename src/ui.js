@@ -102,7 +102,7 @@ const FIELD_DEFS = [
     { key: 'minor', label: '次要描述（时间 / 防护 / 风险）', wide: true, multiline: true },
     { key: 'calc', label: '计算说明', wide: true, multiline: true },
     { key: 'd2', label: '数据项二 · 累计受孕率' },
-    { key: 'd3', label: '数据项三 · 体质系数' },
+    { key: 'd3', label: '数据项三 · 卵子质量' },
     { key: 'd4', label: '数据项四 · 致孕方' },
     { key: 'd5', label: '数据项五 · 意识状态' },
     { key: 'd6', label: '数据项六 · 胎儿状态', wide: true, multiline: true },
@@ -1577,8 +1577,8 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *     两边不一致会被测试当场抓出来（自测脚本）✓
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
-export const PLUGIN_VERSION = '2.4';
-export const BUILD_STAMP = '2026-11-12-18';
+export const PLUGIN_VERSION = '2.7';
+export const BUILD_STAMP = '2026-11-14-4';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -3447,6 +3447,8 @@ function demoOne(name, i) {
     //   每个样例的常态与非常态**各不相同**（验收那块靠对比，全一样就看不出问题 ✓）
     const period = {
         day: `Day${1 + (i % 5)}`,
+        // ★ 2026-11-13：主面板要「共几天」（计划 §六.1）—— 每个样例各不相同（不共享一份）
+        totalDays: 3 + i,
         flow: ['中', '多', '少'][i % 3],
         color: ['暗红', '鲜红', '褐色'][i % 3],
         texture: ['粘稠', '有血块', '稀薄'][i % 3],
@@ -3454,8 +3456,8 @@ function demoOne(name, i) {
         items: [['腰酸', '腹胀'], ['腰酸', '乏力', '情绪'], ['乳房胀痛']][i % 3],
         off: [
             [],
-            [{ what: '痛经', to: '轻', why: '吃了止痛药' }],
-            [{ what: '恶心', why: '吃坏了东西' }],
+            [{ what: '痛经', to: '轻', why: '吃了止痛药', untilText: '今天结束' }],
+            [{ what: '恶心', why: '吃坏了东西', untilText: '这次经期结束' }],
         ][i % 3],
     };
     // 名字也换成"这一号"的，免得面板标题还写着单人样例那个名字
@@ -3551,7 +3553,7 @@ export function demoPanelText() {
         row3: '昨夜 23:10 · 示例致孕方·甲 · 内射',
     };
     const PERIOD = {
-        day: '第 3 天', flow: '中等', color: '暗红',
+        day: '第 3 天', totalDays: 5, flow: '中等', color: '暗红',
         texture: '少量细碎血块', pain: '轻微坠胀，热敷后缓解',
         desc: '腰酸、轻微乏力、食欲下降',
     };
@@ -4254,7 +4256,7 @@ function buildKnownFactsBox(t) {
     const achQuip = textInput('', () => {}, { placeholder: '例：疼死我了，但值得' });
     // ★ 造精子批次 / 手加痕迹（先做这俩）
     const insBy = textInput('', () => {}, { placeholder: '例：示例角色·甲（可以是没建档的人）' });
-    const insLife = textInput('', () => {}, { placeholder: '例：3（留空＝按设置掷 1~3）' });
+    const insLife = textInput('', () => {}, { placeholder: '例：3（留空＝按提供方那一族掷）' });
     // ★ 2026-10-24：意识状态的手动保底（她报：没人知道怀孕，面板却写成已确认）
     const man0 = awarenessManualOf(key);
     const knowIn = textInput(man0.knownName ?? '', (v) => {
@@ -4477,6 +4479,8 @@ function buildKnownFactsBox(t) {
      * 补一笔精子（＝补一条内射记录）。
      * ⚠️ 存活期的口径**跟着推演那条路走**：设置开着「按精子存活」才掷（`rollSpermLife` 同一个函数）；
      *   玩家填了天数就以玩家填的为准；两边都没有 ⇒ `lifeRoll = null` ＝：没设存活期，一直有效✓
+     *   ★ 2026-11-13（精子卵子存活 第四批）：范围按**这一笔的提供方**那一族取
+     *     （`by` 就是他；没建档 / 对不上族 ⇒ 跟人类那一条 ✓）
      *   （这正是两件之一；不接这条的话会造出：永远有效的精子 ✗）
      */
     const addInsem = () => {
@@ -4487,14 +4491,16 @@ function buildKnownFactsBox(t) {
             say(false, '这个对象还没有周期日：先让推演跑一轮，或者去「角色基础信息」里定周期起始');
             return;
         }
+        // ★ 2026-11-13（她定的）：手动写的存活期不设上界，写多少就按多少
+        //   （只挡非数字和小于 1；0 天等于没设存活期，那是另一条路 ✓）
         let lifeRoll = null;
         const lifeIn = String(insLife.value || '').trim();
         if (lifeIn) {
             const n = Math.round(Number(lifeIn));
-            if (!Number.isFinite(n) || n < 1 || n > 30) { say(false, '存活期填 1~30 天（或者留空跟设置走）'); return; }
+            if (!Number.isFinite(n) || n < 1) { say(false, '存活期填 1 天以上的整数（或者留空，让插件按提供者那一族掷）'); return; }
             lifeRoll = n;
         } else {
-            try { if (settings().cycleSettleMode === 'sperm') lifeRoll = rollSpermLife().value; } catch { /* 掷不出来就按"没设存活期" */ }
+            try { if (settings().cycleSettleMode === 'sperm') lifeRoll = rollSpermLife(by).value; } catch { /* 掷不出来就按"没设存活期" */ }
         }
         const it = recordInsemination(
             { by, note: '手动补录', protection: '内射', guard: '内射' },
@@ -4634,7 +4640,7 @@ function buildKnownFactsBox(t) {
         h('div', { class: 'bc-row bc-row-wrap' },
             h('div', { style: { flex: '1 1 200px' } }, field('补一笔精子：谁', insBy)),
             h('div', { style: { flex: '0 1 150px' } }, field('存活期（天）', insLife)),
-            h('div', { class: 'bc-row-end' }, button('记一笔精子', addInsem, { title: '按今天（或你填的周期日）补一条内射记录，存活期照设置或者你填的天数 ✓' })),
+            h('div', { class: 'bc-row-end' }, button('记一笔精子', addInsem, { title: '按今天（或你填的周期日）补一条内射记录；存活期留空就按提供者那一族掷 ✓' })),
         ),
         insemSec,
         // ★ 2026-10-24（不能紧贴在“补一笔精子”下面，会误读成删那笔记录）——
@@ -4667,7 +4673,7 @@ function buildKnownFactsBox(t) {
                 '「设为未孕」连受精判定一起撤：不撤的话下一轮推演又会把它切回已孕 ✗',
                 '「意识状态（手动）」是保底：设了就不看剧情事件；「交回自动」清掉手动，按剧情事件走 ✓',
                 '「已知晓致孕方」留空＝尚未知晓；填名字＝已知晓这个人；它压过模型报的那半截 ✓',
-                '「补一笔精子」按今天那个周期日入账；存活期留空就跟着设置走（设置没开存活期 ⇒ 一直有效）✓',
+                '「补一笔精子」按今天那个周期日入账；存活期留空就按提供者那一族掷（不是「按精子存活」那一档 ⇒ 一直有效）✓',
                 '「清空精液量」把阴道、子宫都清到空（阶段插图立刻变）；跟补的记录无关，也不动精子存活期和怀孕判定 ✓',
                 '「来源 / 分批」是按批填的：前一批是谁、后一批是谁（几十上百枚不逐个填 ✓）。'
                     + '全是一批就只填名字、数量留空；分了批就每批都写清多少枚（不然后面分不出谁归第几批 ✗）',
@@ -5273,7 +5279,7 @@ function cycleDayBox(t) {
             const { cycle, ovu } = bodyCycleParamsOf(t.key);
             const dv = deriveCycleFields({
                 Ovulation_Day: ovu, Cycle_Length: cycle, Is_Pregnant: 'false',
-            }, periodModeOf(t.key), periodDaysOf(t.key), d);
+            }, periodModeOf(t.key), periodDaysOf(t.key), d, null, { targetKey: t.key });
             if (dv) txt = `第 ${d} 天 ＝ ${dv.phase}（基础率 ${dv.d1}）`;
         } catch { /* 忽略 */ }
         hint.textContent = txt;
@@ -6085,7 +6091,9 @@ async function doJudge(rejudge = [], opts = {}) {
             //   这里补一句，让下回点的时候至少有话说 ✓
             else window.toastr?.warning?.('这次推演没跑到：' + String(r.error || '原因不明'));
         } else {
-            window.toastr?.error?.('推演失败：' + r.error);
+            // ★ 2026-11-14：报错后面补一句「可能的原因」（她定的：光有接口原话玩家看不懂 ✓）
+            //   多显示几秒，不然一句长报错还没读完就消失了
+            window.toastr?.error?.('推演失败：' + r.error + (r.hint ? '｜' + r.hint : ''), '', { timeOut: 12000 });
         }
     } catch (e) {
         // ★ 2026-10-24：以前这里只有 finally —— 中途抛错就变成"点了没反应"
@@ -7177,7 +7185,8 @@ export function initTimer() {
     // 窗口大小变了 ⇒ 把气泡的位置重算一下（球是 fixed 的，自己会跟着走 ✓）
     if (!initTimer._hooked) {
         initTimer._hooked = true;
-        window.addEventListener('resize', () => { try { placeTimerBubble(); } catch { /* 忽略 */ } });
+        // ★ 2026-11-13：转屏时 resize 会连发 ⇒ 同一帧只算一次气泡位置 ✓
+        window.addEventListener('resize', rafOnce(() => { try { placeTimerBubble(); } catch { /* 忽略 */ } }));
     }
 }
 
@@ -7326,7 +7335,8 @@ function clampRootIntoView() {
     root.style.transform = 'none';
 }
 
-function makeDraggable(el, handle, opts = {}) {
+// ★ 导出只为了自测（真浏览器里能模拟一次完整的拖拽 + 夹取，见 _analysis/_fab-drag-*.cjs）
+export function makeDraggable(el, handle, opts = {}) {
     let dragging = false, moved = false, sx = 0, sy = 0, sl = 0, st = 0;
 
     handle.addEventListener('pointerdown', (e) => {
@@ -7355,8 +7365,15 @@ function makeDraggable(el, handle, opts = {}) {
         const dx = e.clientX - sx, dy = e.clientY - sy;
         if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
         let nx = sl + dx, ny = st + dy;
-        nx = Math.max(4, Math.min(window.innerWidth - el.offsetWidth - 4, nx));
-        ny = Math.max(4, Math.min(window.innerHeight - 40, ny));
+        // ★ 2026-11-13：上下也要**整颗都在屏幕里**。原来 y 只留 40px 就允许继续拖，
+        //   松手存下的坐标于是落在屏幕外 ⇒ 下一次心跳（clampFabIntoView）又把它往上夹回来，
+        //   看着就是「拖完自己跳一下」✗  ⇒ 拖动和夹取用同一套边界 ✓
+        const bw = el.offsetWidth || 54;
+        const bh = el.offsetHeight || 54;
+        const vw = window.innerWidth || 0;
+        const vh = window.innerHeight || 0;
+        nx = Math.max(4, Math.min(Math.max(4, vw - bw - 4), nx));
+        ny = Math.max(4, Math.min(Math.max(4, vh - bh - 4), ny));
         el.style.left = nx + 'px';
         el.style.top = ny + 'px';
         // ★ 告诉调用方"正在拖/拖到哪了" —— 贴在球旁边的那个提醒气泡
@@ -7378,9 +7395,14 @@ function makeDraggable(el, handle, opts = {}) {
     //   不然调用方那边的"正在拖"标记会一直卡在 true（心跳就再也不帮它归位 ✗）
     handle.addEventListener('pointercancel', () => {
         const was = dragging;
+        const didMove = moved;
         dragging = false;
         document.body.style.userSelect = '';
         if (was) { try { opts.onDragEnd?.(); } catch { /* 忽略 */ } }
+        // ★ 2026-11-13：手机上被系统手势 / 来电打断也算"拖完了"——
+        //   原来这里**不保存**新位置，于是屏幕上球停在新地方、存档还是老坐标，
+        //   下一次心跳按老坐标一夹 ⇒ 球自己跳回去了 ✗  ⇒ 挪过就把新位置存下来 ✓
+        if (was && didMove) { try { opts.onDrop?.(el.getBoundingClientRect()); } catch { /* 忽略 */ } }
     });
 }
 
@@ -7394,6 +7416,25 @@ function makeDraggable(el, handle, opts = {}) {
  * **必须早于建面板调用** —— 见 initUI 里的注释：
  * 一个面板异常不该让悬浮球也变成摆设。
  */
+/**
+ * ★ 2026-11-13：resize / visualViewport 这类事件一秒能来几十次，
+ *   挂在上面的活又要读布局、重排（很贵）⇒ 同一个回调在同一帧里只跑一次 ✓
+ */
+function rafOnce(fn) {
+    let pending = 0;
+    return () => {
+        if (pending) return;
+        try {
+            pending = requestAnimationFrame(() => {
+                pending = 0;
+                try { fn(); } catch { /* 忽略 */ }
+            });
+        } catch {
+            try { fn(); } catch { /* 忽略 */ }
+        }
+    };
+}
+
 function attachFabHandlers() {
     if (!els?.fab) return;
     makeDraggable(els.fab, els.fab, {
@@ -7419,10 +7460,11 @@ function attachFabHandlers() {
     });
     // ★ 窗口尺寸一变也让气泡跟一次（原来得等下一次心跳 ⇒ 会错位一秒多 ✗）
     //   ★ 同时把球夹回屏幕里（转屏 / 把窗口拖窄之后球不能跑到屏幕外 ✓）
-    const onViewportChange = () => {
+    //   ★ 2026-11-13：转屏时会连着来一串 resize ⇒ 同一帧只做一次 ✓
+    const onViewportChange = rafOnce(() => {
         if (!fabDragging) { try { clampFabIntoView(); } catch { /* 忽略 */ } }
         followBubbleToFab();
-    };
+    });
     try { window.addEventListener('resize', onViewportChange); } catch { /* 忽略 */ }
     try { window.visualViewport?.addEventListener?.('resize', onViewportChange); } catch { /* 忽略 */ }
     // ★ 开局量一次：某些宿主（手机 / Luker）算出来的包含块不一样，球可能落在屏幕外 ⇒ 先夹一次
@@ -7515,11 +7557,12 @@ export function initUI() {
 
     // 窗口尺寸变化时停靠面板要重新对齐
     if (!els._onResize) {
-        els._onResize = () => {
+        // ★ 2026-11-13：这一发要重排全部楼层，量大 ⇒ 拖窗口时同一帧只跑一次 ✓
+        els._onResize = rafOnce(() => {
             try { refreshAllFloors(); } catch { /* 忽略 */ }
             // ★ 窗口变小之后，按老坐标摆的面板会顶出屏幕 ⇒ 顺手夹一次（只动显示，不动存档 ✓）
             try { clampRootIntoView(); } catch { /* 忽略 */ }
-        };
+        });
         window.addEventListener('resize', els._onResize);
     }
 
@@ -7586,35 +7629,57 @@ export function applyFabLook() {
  *    这里再兜一层：真要是还落在屏幕外（宿主算法不同 / 转屏那一瞬），就钉回屏幕里。
  *    ⚠️ 兜底**只改显示、不改存档** —— 下次默认位置正常时还是 CSS 给的那个位置 ✓
  */
-function clampFabIntoView() {
-    const s = settings();
-    const fab = els?.fab;
+/**
+ * 悬浮球该被摆到哪（纯算，不碰 DOM ⇒ 好自测）。
+ * `null` ＝ 屏幕上现在这个位置就挺好，**一个字都别动**。
+ * @param {{inView:boolean,left:number,top:number,bw?:number,bh?:number,vw:number,vh:number,pad?:number}} o
+ */
+export function fabClampTarget(o) {
+    const pad = Number(o.pad ?? 8);
+    const vw = Number(o.vw || 0);
+    const vh = Number(o.vh || 0);
+    const bw = Number(o.bw || 54);
+    const bh = Number(o.bh || 54);
+    if (!vw || !vh) return null;
+    // ★★ 这一条最要紧：**屏幕上的位置本来就在视口里 ⇒ 绝不改**
+    //   以前只要存档里有坐标就按存档摆，于是"拖到一半 / 刚拖完"会被拽回存档那个旧位置 ✗
+    if (o.inView) return null;
+    const cx = Number(o.left);
+    const cy = Number(o.top);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+    const maxX = Math.max(pad, vw - bw - pad);
+    const maxY = Math.max(pad, vh - bh - pad);
+    return {
+        left: Math.round(Math.min(Math.max(pad, cx), maxX)),
+        top: Math.round(Math.min(Math.max(pad, cy), maxY)),
+    };
+}
+
+export function clampFabIntoView(fabEl = null) {
+    const fab = fabEl || els?.fab;
     if (!fab) return;
     const vw = window.innerWidth || 0;
     const vh = window.innerHeight || 0;
     if (!vw || !vh) return;
-    const bw = fab.offsetWidth || 54;
-    const bh = fab.offsetHeight || 54;
-    const pad = 8;
-    const saved = s.ui.fabX != null && s.ui.fabY != null;
-    let cx;
-    let cy;
-    if (saved) {
-        cx = Number(s.ui.fabX);
-        cy = Number(s.ui.fabY);
-    } else {
-        const r = fab.getBoundingClientRect();
-        if (!r.width || !r.height) return;      // 还没排完版，等下一轮
-        if (r.top >= 0 && r.left >= 0 && r.bottom <= vh && r.right <= vw) return;   // 好好的，别动
-        cx = r.left;
-        cy = r.top;
-        if (!Number.isFinite(cx) || !Number.isFinite(cy)) { cx = vw - bw - 14; cy = vh - bh - 92; }
-    }
-    const nx = Math.min(Math.max(pad, cx), Math.max(pad, vw - bw - pad));
-    const ny = Math.min(Math.max(pad, cy), Math.max(pad, vh - bh - pad));
+    const r = fab.getBoundingClientRect();
+    if (!r.width || !r.height) return;      // 还没排完版，等下一轮
+    const inView = r.top >= -0.5 && r.left >= -0.5 && r.bottom <= vh + 0.5 && r.right <= vw + 0.5;
+    const t = fabClampTarget({
+        inView, left: r.left, top: r.top,
+        bw: fab.offsetWidth || 54, bh: fab.offsetHeight || 54, vw, vh, pad: 8,
+    });
+    if (!t) return;
     // ⚠️ 只改显示、**不改存档**：回到大屏时球还在原来那个位置 ✓
-    const lx = Math.round(nx) + 'px';
-    const ly = Math.round(ny) + 'px';
+    // ★★ 2026-11-13：写的是**要挪多少**（位移），不是"绝对坐标" ——
+    //   有的宿主把 body 设成 fixed 或给祖先加 transform ⇒ `left/top` 参照的不是视口，
+    //   按视口算出来的绝对坐标写进去就会偏，而且每次心跳都偏一遍（表现：拖到一半自己跑）✗
+    //   位移在两个坐标空间里是一样的，所以只把"差"加上去 ✓
+    const curLeft = parseFloat(fab.style.left);
+    const curTop = parseFloat(fab.style.top);
+    const dx = t.left - r.left;
+    const dy = t.top - r.top;
+    const lx = Number.isFinite(curLeft) ? Math.round(curLeft + dx) + 'px' : t.left + 'px';
+    const ly = Number.isFinite(curTop) ? Math.round(curTop + dy) + 'px' : t.top + 'px';
     fab.classList.add('bc-positioned');
     if (fab.style.left !== lx) fab.style.left = lx;
     if (fab.style.top !== ly) fab.style.top = ly;

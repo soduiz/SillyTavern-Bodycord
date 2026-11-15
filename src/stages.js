@@ -54,7 +54,9 @@ function pregnancyArtReady(k, t) {
 export const STAGE_ORDER = ['egg', 'sperm_only', 'sperm_egg', 'fertilized', 'implanted', 'incubating', 'daily'];
 
 /**
- * 「卵子在场」的阶段 = 排卵窗口（排卵日 + 前后各一天）。
+ * 「卵子在场」的阶段 = 排卵窗口（排卵日前一天 到 排卵日 ＋ 这一族卵子能受精的天数）。
+ * ★ 2026-11-13（第二批）：窗口尾部跟着卵子存活时间走，但那几天的 phaseId 仍是
+ *   ovulation / ovulationDay ⇒ 这里不用改判据 ✓
  * ⚠️ 用 phaseId 判（稳定身份 ✓），不靠中文阶段名 ✗（和 prompt.js 的 isMenstruating 同一条纪律）
  */
 export const EGG_PHASES = ['ovulation', 'ovulationDay'];

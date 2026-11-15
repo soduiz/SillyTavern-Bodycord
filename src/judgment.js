@@ -14,7 +14,7 @@
  * 玩家在「骰子」页签里能直接看到，也能对账。
  *
  * 判定规则照抄 [生理周期模块] 的【排卵窗口受精判定】：
- *   判定时刻 = 排卵窗口最后一天的 23:55
+ *   判定时刻 = 受孕窗口最后一天（排卵日 ＋ 这一族卵子存活天数）的 23:55
  *   判定值   = min(累计受孕率, 100%)
  *   掷 1-100，随机数 ≤ 判定值 → 受精成功
  *   ★ 成功后 → 再掷一颗「着床判定」（跟正文那条固定的着床率比）：
@@ -26,7 +26,9 @@ import { rollOne, currentPool, getLastUsage, recordUsage, poolSlotTakenBy } from
 // 精子存活期的范围可配（settings.js 只依赖 modules/st，不会循环 ✓）
 import { settings, implantRangeOf } from './settings.js';
 // ★ 2026-11-06（第三批）：着床天数从图鉴条目读（读不出才用设置页那两格）✓
-import { readImplantDaysOf } from './codex-values.js';
+// ★ 2026-11-13（精子卵子存活 第四批）：精子存活时间也从图鉴读（按精子提供方那一族）✓
+import { readImplantDaysOf, readSpermLifeOf } from './codex-values.js';
+import { HUMAN_LIFE_DEFAULT } from './codex-schema.js';
 
 /** 现成预设的 id（那边的 DICE_PRESETS 改了名字，这里要跟着改） */
 const ID_FERTILIZE = 'D100_1';   // 受精判定 · 1d100
@@ -81,31 +83,43 @@ export function rollImplant(key = null) {
 }
 
 /**
- * 掷一次「这批精子能活几天」：在设置的范围里**均匀随机**（真随机，不做概率倾斜）。
+ * 掷一次「这批精子能活几天」：在**提供方那一族**的范围里**均匀随机**（真随机，不做概率倾斜）。
  *
- * 把分布改窄、再塞一个尾巴的做法
- *    ⇒ **这里只认范围均匀**：
- *    · 范围由玩家在设置里填（最短 / 最长），掷出来的每一天概率一样 ✓
- *    · 想要"平均一到三天、偶尔到七天"，就把最长填成 7 —— 但那是均匀的，
- *      平均会跟着上去，**不许我们在背后偷偷改概率** ✗
- *    · 最短 = 最长 ⇒ 固定值，不掷 ✓
+ * ★ 2026-11-13（精子卵子存活 第四批）：范围不再是设置页那两格，改成**图鉴里「精子存活时间」那一格**——
+ *   按**精子提供方**那一族的条目取（跨族各取各的：人类男 × 精灵女 ⇒ 精子按人类那一族掷 ✓）；
+ *   取不到人就取不到族 ⇒ 跟人类那一条（2 到 7 天 ✓）。
+ *   个人在参数面板里单独调过那一格 ⇒ 那一份优先（`readSpermLifeOf` 本来就是三层取值 ✓）。
+ *
+ * 口径：
+ *   · 范围里每一天概率一样 ✓（想要"平均短、偶尔长"就把图鉴那一格的范围填小一点，
+ *     不许我们在背后偷偷改概率 ✗）
+ *   · 最短 = 最长 ⇒ 固定值，不掷 ✓
+ *   · **不设上界**（2026-11-13 她定的）：个人那一层写多少天就按多少天算，写得比这一族还大也照算；
+ *     插件不夹，只要求是 ≥1 的整数 ✓
  */
-export function rollSpermLife() {
+export function rollSpermLife(providerKey = null) {
     // ⚠️ 以前这里借用了 ID_FERTILIZE（受精判定的骰位）✗ —— 会覆盖骰子面板上
     //   受精判定那一次的对账值，而且它根本不是「受精判定」这个用途。
     //   ⇒ 改成独立掷，并在骰子面板里单独记一条，不去碰判定的骰位 ✓
-    let lo = 1, hi = 7;
+    let lo = HUMAN_LIFE_DEFAULT.sperm[0];
+    let hi = HUMAN_LIFE_DEFAULT.sperm[1];
+    let who = '';
     try {
-        const st = settings();
-        lo = Math.max(1, Math.min(30, Math.round(Number(st.spermLifeMin) || 1)));
-        hi = Math.max(1, Math.min(30, Math.round(Number(st.spermLifeMax) || 7)));
-        if (hi < lo) hi = lo;
-    } catch { /* 读不到就用默认 */ }
+        const r = readSpermLifeOf(providerKey);
+        lo = Math.max(1, Math.round(Number(r.lo) || lo));
+        hi = Math.max(1, Math.round(Number(r.hi) || hi));
+        who = String(r?.entry?.name || '').trim();
+    } catch { /* 读不到就用人类那一组 */ }
+    if (hi < lo) hi = lo;
     const span = hi - lo + 1;
     const v = span <= 1 ? lo : (lo + (fallbackRoll(span) - 1));
+    // 来源那行照旧把**范围**写在最前面（骰子页靠它压成 `独立掷 2~7`），族名跟在后头 ✓
+    const whoTxt = who ? `，${who}` : '';
     return {
         value: Math.max(lo, Math.min(hi, v)),
-        source: hi === lo ? `精子存活专用（固定 ${lo} 天）` : `精子存活专用掷（${lo}~${hi} 天，均匀）`,
+        source: hi === lo
+            ? `精子存活专用（固定 ${lo} 天${whoTxt}）`
+            : `精子存活专用掷（${lo}~${hi} 天，均匀${whoTxt}）`,
     };
 }
 

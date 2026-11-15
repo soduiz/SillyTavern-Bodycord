@@ -989,9 +989,9 @@ export const DEFAULT_SETTINGS = {
     //   ⇒ 现在只存这一份：判定直接读它，正文里那几处数字由 `applyCycleRateLines()` 在**发送时**渲染进去
     //     （面板上改一格，判定和提示词一起变 ✓；正文里看到的仍是人话「基础率 8%」，不是占位符 ✓）
     cycleRateMenstrual: 1,     // 经期
-    cycleRateFollicular: 8,    // 卵泡期
+    cycleRateFollicular: 3,    // 卵泡期（2026-11-15：8 → 3，窗口外不该那么好怀）
     cycleRateWindow: 20,       // 受孕窗口（含排卵日当天）
-    cycleRateTransition: 15,   // 窗口结束后第一天（过渡日）
+    cycleRateTransition: 3,    // 窗口结束后第一天（过渡日；2026-11-15：15 → 3）
     // ★★ 第九个数：无月经档（没有周期、没有阶段）
     //   那一档没有"第几天"可落段 ⇒ 每次内射都按这一格算基础率，
     //   别去借五段里的某一段（借了会随天数漂：1% / 8% / 25% / 0% 乱跳 ✗）
@@ -2154,7 +2154,9 @@ export const DEFAULT_PHASE_NAMES = {
 /** 防护系数（乘数）的出厂值 —— 与正文里那 8 处逐字一致 ✓ */
 export const PROT_COEF_DEF = {
     internal: 1.0, friction: 0.3, condomTorn: 0.3, condomBurst: 1.0,
-    condomSlipOff: 0.3, outPull: 0.5, pillShort: 0.05, condomIntact: 0,
+    condomSlipOff: 0.3, outPull: 0.1, pillShort: 0.05, condomIntact: 0,
+    //   2026-11-15（她拍的）：无套外射 0.5 → 0.1（原本窗口里一次 10%，压到 2%）。
+    //   注意它现在和前液那格同值：现实里外射比前液危险一截，想要顺序就调到 0.15 ✓
     // 前液也必须判——
     //   没射精、只有前液 / 前列腺液混着体液流到入口或外阴 ⇒ 也算一笔（系数 0.1）
     //   ⚠️ 它是**接触**，不是内射：账本里要能分出来（见 store.js 的 GUARD_DEFS 那条 `pre`）✓
@@ -3715,7 +3717,11 @@ export function postpartumParamsOf(text = null) {
  * ⚠️ 夹 0~1000 的整数（0 是合法的："这一段不发生关系"的极端玩法 ✓，负数/乱填 ⇒ 回出厂）
  */
 export const CYCLE_RATE_DEF = {
-    menstrual: 1, follicular: 8, window: 20, transition: 15,
+    // ★ 2026-11-15（她拍的）：卵泡期 8→3、窗口后过渡日 15→3。
+    //   理由：默认「窗口内全部累加」口径把窗口外的批次也全额计入判定 ⇒
+    //   人类按每天一次算一个周期会到九成多，现实只有两成上下。
+    //   受孕窗口那 20% 不动（动了才是真变难，跟"虚拟、别太难"冲突）✓
+    menstrual: 1, follicular: 3, window: 20, transition: 3,
     // ★ 无月经档那一格：没有阶段可挑 ⇒ 它自己就是"每轮基础率"（出厂 10%）
     amenorrhea: 10,
 };

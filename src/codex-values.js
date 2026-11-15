@@ -927,7 +927,7 @@ function powerResultOf(key, rowKey, fallbackPair, tierOf) {
     if (!custom) { try { tier = String(tierOf(key) || '').trim(); } catch { tier = ''; } }
     const factor = custom ? 1 : powerTierFactorOf(tier);
     return {
-        // 判定真正用的那个数：保留三位小数（0.975 × 1.8 = 1.755，能被 20% 乘回整数 ✓）
+        // 判定真正用的那个数：保留三位小数（0.975 × 1.5 = 1.4625 ⇒ 1.462 或 1.463）
         value: Math.round(base * factor * 1000) / 1000,
         base,                                           // 这一族的基准（区间中点）
         lo: r.lo,

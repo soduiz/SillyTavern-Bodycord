@@ -363,7 +363,7 @@ export const PARAM_SPECS = [
         //   但写回走的是设置 ⇒ 用同一个标记让语义一致 ✓
         fromSettings: true,
         title: '受孕基础率与防护系数',
-        desc: '各阶段每次内射的基础受孕率；下面那 8 格是各情境的防护乘数（计算和提示词正文都用这些数）。最下面那格是产后恢复的天数：轻松 42 天（默认），现实 42 到 180 天，也可以选自定义自己填两格；图鉴条目里填了这一项的族按条目走，个人还能单独调',
+        desc: '各阶段每次内射的基础受孕率；下面那 9 格是各情境的防护乘数（计算和提示词正文都用这些数）',
         fields: [
             { key: 'menstrual', label: '经期', suffix: '%', type: 'number' },
             { key: 'follicular', label: '卵泡期', suffix: '%', type: 'number' },
@@ -376,11 +376,16 @@ export const PARAM_SPECS = [
             //     `renderParamFields` 只渲染 `specOf()` 拿到的**第一条** ✗
             //   ⇒ 同一 moduleId 的所有字段都收在这一条里 ✓
             { key: 'internal', label: '防护 · 内射', type: 'number' },
-            { key: 'friction', label: '防护 · 外部摩擦', type: 'number' },
+            // ★ 2026-11-15（她拍的 A 案）：面板名只给玩家看，AI 报的那个词（「外部摩擦」）不动。
+            //   原名「外部摩擦／无套外射」的位置感是反的：外射实际是射在**远离入口**的地方（0.1），
+            //   而这一档是**蹭到入口**（体外蹭射 / 隔衣渗到 / 龟头摩擦，0.3）⇒ 改成"碰到 / 没碰到"一对 ✓
+            { key: 'friction', label: '防护 · 蹭到入口', type: 'number' },
             { key: 'condomTorn', label: '防护 · 破损（小洞）', type: 'number' },
             { key: 'condomBurst', label: '防护 · 大面积破裂', type: 'number' },
-            { key: 'condomSlipOff', label: '防护 · 掉落（有液）', type: 'number' },
-            { key: 'outPull', label: '防护 · 无套外射', type: 'number' },
+            // ★ 2026-11-15：这格只管"滑脱时有液体到入口"那一种（0.3）；
+            //   没液体的 0 和 射精时滑脱的 1.0 是边界，写死在正文里，不做成旋钮 ✓
+            { key: 'condomSlipOff', label: '防护 · 掉落（有液体时）', type: 'number' },
+            { key: 'outPull', label: '防护 · 拔出射在远处', type: 'number' },
             // 前液也必须判：没射精、只有前液流到入口 / 外阴也算一笔 ✓
             { key: 'pre', label: '防护 · 前液接触（没射精）', type: 'number' },
             { key: 'pillShort', label: '防护 · 短效避孕药', type: 'number' },

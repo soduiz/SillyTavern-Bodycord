@@ -2075,7 +2075,7 @@ function sendCard(repaint) {
             : '关：图鉴条目不显示这一栏，也不发给主模型。已经填过的内容不会删，重新打开还在；默认关'));
     b.appendChild(swGroup);
     let plan = null;
-    try { plan = buildCodexPlan(codexTargets(), { needRepro: codexNeedRepro, bodyOn: settings().codexIntroOn === true }); } catch { plan = null; }
+    try { plan = buildCodexPlan(codexTargets(), { needRepro: codexNeedRepro, bodyOn: introOn, sexOn }); } catch { plan = null; }
 
     if (!plan || !plan.targetCount) {
         b.appendChild(h('div', { class: 'bc-empty', text: '这个聊天还没有追踪对象' }));
@@ -2103,9 +2103,13 @@ function sendCard(repaint) {
     }
 
     // 条目一个字都没写的：列出来，别让人以为"发了但看不见" ✓
+    // ★ 2026-11-15：分两种说 —— 条目里本来有内容、只是被上面两个开关关掉了的，
+    //   不能说成"还没写正文"（她正是拿这块预览验收的，说错会让她以为数据没了 ✗）✓
     for (const e of plan.entries) {
         if (e.segments.length) continue;
-        b.appendChild(h('div', { class: 'bc-hint', text: '· ' + e.name + ' 还没写正文，这一轮不会发' }));
+        b.appendChild(h('div', { class: 'bc-hint', text: e.hidden
+            ? '· ' + e.name + ' 的正文和性特征被上面的开关关掉了，这一轮不会发'
+            : '· ' + e.name + ' 还没写正文，这一轮不会发' }));
     }
     for (const u of plan.unmatched) {
         const why = u.how === 'ambiguous' ? '撞到多条' : (u.how === 'missing' ? '原来绑的条目没了' : '一条都没对上');

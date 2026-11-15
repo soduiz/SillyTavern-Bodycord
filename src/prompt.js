@@ -1425,7 +1425,7 @@ export function rebuildInjection() {
     //   （正常操作走不到这里：读取在页面画完就开始了，读一次约几十毫秒 ✓）
     if (builtinReady()) {
         try {
-            const codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, bodyOn: settings().codexIntroOn === true });
+            const codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, bodyOn: settings().codexIntroOn === true, sexOn: settings().sexTraitsOn === true });
             if (codexPlan.text) put(KEY_CODEX, substitute(codexPlan.text));
         } catch (e) { console.warn('[Bodycord] 种族设定那段没发出去（不影响别的注入）', e); }
     }
@@ -1511,7 +1511,7 @@ export function previewInjection() {
     const cxTargets = codexTargets();
     let codexPlan = null;
     try {
-        codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, bodyOn: settings().codexIntroOn === true });
+        codexPlan = buildCodexPlan(cxTargets, { needRepro: codexNeedRepro, bodyOn: settings().codexIntroOn === true, sexOn: settings().sexTraitsOn === true });
     } catch { codexPlan = null; }
     return {
         state: targets.length ? buildStateText(targets) : '（没有追踪对象）',

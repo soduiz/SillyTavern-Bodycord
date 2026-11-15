@@ -5,7 +5,7 @@
  *   1) 把这一轮**在场**的对象对到图鉴条目（绑定的 > 名字 / 别名对上的）；
  *   2) 正文四段受一个总开关管（默认不发）；开着时再按**阶段**筛：日常发介绍和生理，
  *      受孕 / 怀孕 / 待孵那几轮才带繁殖段；
- *      自由补充常驻（有才发）；
+ *      自由补充常驻（有才发）；性特征那一段另有自己的总开关（`sexOn`，调用方按设置传）；
  *   3) 拼成一段进系统段的文字，同时给出每条的字数与大概 token（界面拿它做预览）。
  *
  * 口径（她 2026-11-02 定的计划，2026-11-06 又当面纠了一次）：
@@ -116,11 +116,13 @@ export function resolveSendEntry(t) {
  * @param {object[]} targets 这一轮在场的对象（主 API 那边就是 injectTargets() 的结果）
  * @param {object} opts
  *   · needRepro(t)  这个对象这一轮要不要带「生育」段（受孕 / 怀孕 / 待孵 ⇒ true）
+ *   · bodyOn        四段正文（介绍 / 生理 / 生育 / 补充）发不发（默认 true，调用方传设置）
+ *   · sexOn         性特征那一段发不发（默认 true，调用方传设置）
  *   · resolve(t)    换成别的解析器（自测用）
  *   · nameOf(t)     对象在界面上叫什么（自测用）
  * @returns {{
  *   text:string, chars:number, tokens:number, targetCount:number, sentCount:number,
- *   entries:Array<{id,name,segments:string[],segLabels:string[],chars:number,tokens:number,who:string[],text:string}>,
+ *   entries:Array<{id,name,segments:string[],segLabels:string[],chars:number,tokens:number,who:string[],text:string,hidden?:boolean}>,
  *   unmatched:Array<{race:string,name:string,how:string}>
  * }}
  */
@@ -131,8 +133,12 @@ export function buildCodexPlan(targets, opts = {}) {
     // ★★ 2026-11-13（她定）：**整段正文（介绍 / 生理 / 繁殖 / 补充）**一起管，默认关。
     //   理由：这四段都是科普与外貌那类小知识，判定只用数值表；角色卡自己写了外貌时
     //   图鉴再发一份两处还会打架 ⇒ 默认一律不发，玩家想看再打开。
-    //   性特征不在这道闸里（它讲的是结构事实，不是科普）✓
+    //   性特征不受这道闸管（它讲的是结构事实，不是科普），它自己有一个总开关 ✓
     const bodyOn = opts.bodyOn !== undefined ? !!opts.bodyOn : true;
+    // ★★ 2026-11-15（她报的 BUG）：性特征那个总开关以前**只挡了图鉴详情里的编辑栏**，
+    //   发送层根本没读它 ⇒ 开关关着也照样把这 69 字发给主模型，界面上的预览也照实显示
+    //   "还在发"（预览没错，是发送错了）✗ ⇒ 这道闸必须同时管发送与预览，两边同一个判据 ✓
+    const sexOn = opts.sexOn !== undefined ? !!opts.sexOn : true;
     // ★ 2026-11-08：这个对象的性特征借用了哪一条（空 = 跟随它自己绑的那一条 ✓）
     const borrowOf = typeof opts.sexBorrowOf === 'function' ? opts.sexBorrowOf : sexBorrowOf;
     const nameOf = typeof opts.nameOf === 'function'
@@ -225,8 +231,8 @@ export function buildCodexPlan(targets, opts = {}) {
             if (!text) continue;
             segs.push({ key: s.key, label: s.label, text });
         }
-        // ★ 性特征跟正文一起常驻；内容相同的只由第一块带，其余块靠标题里的名字认领 ✓
-        if (g.sexText) {
+        // ★ 性特征跟正文一起常驻（但受它自己的总开关管）；内容相同的只由第一块带，其余块靠标题里的名字认领 ✓
+        if (sexOn && g.sexText) {
             const grp = sexByText.get(g.sexKey) || { names: [], borrowed: '' };
             const mine = g.label || g.entry.name;
             if (grp.names[0] === mine) {
@@ -237,10 +243,15 @@ export function buildCodexPlan(targets, opts = {}) {
             }
         }
         if (!segs.length) {
-            // 这一条正文全空：不发，但界面上要能看见"为什么没发" ✓
+            // 这一条这一轮什么都不发：但界面上要能看见"为什么没发" ✓
+            // ★ 2026-11-15（她报 BUG 时顺带要的）：分两种写 ——
+            //   · 条目里本来就有内容、只是被上面的开关挡住了 ⇒ 写"被开关关掉了"，不能说"还没写正文" ✗
+            //   · 条目里真的一格都没写 ⇒ 照旧写"还没写正文"
+            const bodyWritten = CODEX_SEGMENTS.some((s) => String(g.entry[s.key] || '').trim());
+            const hidden = (bodyWritten && !bodyOn) || (!!g.sexText && !sexOn);
             entriesOut.push({
                 id: g.entry.id, name: g.entry.name, segments: [], segLabels: [],
-                chars: 0, tokens: 0, who: g.who, text: '',
+                chars: 0, tokens: 0, who: g.who, text: '', hidden,
             });
             continue;
         }

@@ -43,6 +43,19 @@ const CROSS_HINT = '像是被浏览器跨域拦下了（这个接口没给跨域
     + '把这条渠道的「请求方式」改成「只用酒馆后端转发」就能用，或者换一个支持跨域的服务商。';
 
 /**
+ * ★ 给"走酒馆后端"那条路的报错补上「酒馆后端」三个字。
+ *
+ * 为什么要有这个函数（2026-11-17，玩家截图里逮到的）：
+ *   `chatViaTavern` 自己已经带了前缀（`酒馆后端 HTTP 502：…` / `酒馆后端返回的不是 JSON…`），
+ *   调用方再拼一次就变成「酒馆后端：酒馆后端 HTTP 502：…」⇒ 玩家读着像我们复读 ✗
+ *   所以：已经带了就不叠第二遍，没带的才补上 ✓
+ */
+export function backendLabel(err) {
+    const s = String(err || '');
+    return s.startsWith('酒馆后端') ? s : '酒馆后端：' + s;
+}
+
+/**
  * ★ 这个报错像不像「接口不认我们多加的那一项」？
  *
  * 为什么要认：`thinking`（关闭原生思考）与 `response_format`（强制 JSON）都是
@@ -226,7 +239,7 @@ export async function chatCompletion(messages, opts = {}) {
         if (mode === 'backend') {
             const r = await chatViaTavern(cfg, body, ctrl.signal, useJson);
             return r.ok ? { ...r, via: 'backend' }
-                : { ok: false, text: '', usage: null, error: '酒馆后端：' + r.error, cancelled };
+                : { ok: false, text: '', usage: null, error: backendLabel(r.error), cancelled };
         }
 
         // ② 直连（自动档与手动"只用直连"都走这儿）
@@ -251,7 +264,7 @@ export async function chatCompletion(messages, opts = {}) {
         if (back.ok) return { ...back, via: 'backend', fellBack: true };
         return {
             ok: false, text: '', usage: null, cancelled,
-            error: `直连：${direct.error}；酒馆后端：${back.error}（${CROSS_HINT}）`,
+            error: `直连：${direct.error}；${backendLabel(back.error)}（${CROSS_HINT}）`,
         };
     } finally {
         clearTimeout(timer);
@@ -420,7 +433,7 @@ export async function listModels(cfgIn = null) {
     try {
         if (mode === 'backend') {
             const r = await modelsViaTavern(cfg, ctrl.signal);
-            return r.ok ? r : { ...r, error: '酒馆后端：' + r.error };
+            return r.ok ? r : { ...r, error: backendLabel(r.error) };
         }
 
         const direct = await tryDirect();
@@ -435,7 +448,7 @@ export async function listModels(cfgIn = null) {
         if (back.ok) return { ...back, fellBack: true };
         return {
             ok: false, models: [], via: 'backend',
-            error: `直连：${direct.error}；酒馆后端：${back.error}`,
+            error: `直连：${direct.error}；${backendLabel(back.error)}`,
         };
     } finally {
         clearTimeout(timer);

@@ -685,6 +685,9 @@ function buildShim({ raw, chat, chatId, avatarScope = 'nochat', userName, theme,
       img.alt = '';
       img.src = url;
       el.insertBefore(img, el.firstChild);
+      // ★ 2026-11-16：有图就把预设那张（紫色渐变 + U）撤掉 ——
+      //   透明底的头像会把底下那层紫色透出来（玩家报的"透明底头像盖在预设头像上面"✗）
+      el.classList.add('has-img');
     }catch(e){}
   };
  }catch(_bcShimErr){
@@ -1039,6 +1042,11 @@ export class BodycordPanel {
                 this._avatar = url;
                 try { this.iframe?.contentWindow?.__bodycordSetAvatar?.(url); } catch { /* 忽略 */ }
             } else {
+                // ★ 2026-11-16：解析不到就**明确告诉面板"这次真的没有"** ——
+                //   面板为了不闪 U 一直保留旧图，只给一句提示它不会清 ✗
+                //   症状：点了「重置头像」，提示说面板会用自带的图标，旧头像却还挂着 ✗
+                this._avatar = '';
+                try { this.iframe?.contentWindow?.__bodycordClearAvatar?.(); } catch { /* 忽略 */ }
                 try { window.toastr?.info?.('这次没抓到当前用户角色的头像，面板会用自带的图标'); } catch { /* 忽略 */ }
             }
         } else if (d.type === 'esc') {

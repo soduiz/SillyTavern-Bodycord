@@ -126,6 +126,13 @@ body{background:transparent;font-family:"Inter","PingFang SC","Microsoft YaHei",
 .user-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#5a65f0,#8a6cf5);color:#fff;display:flex;align-items:center;justify-content:center;font-size: calc(13px * var(--bc-fs-scale, 1));font-weight:700;flex-shrink:0;position:relative;letter-spacing:0}
 .user-avatar .avatar-letter{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:0}
 .user-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;z-index:1;display:block}
+/* ★ 2026-11-16：图一进来，就把**预设那张**（紫色渐变 + 那个 U）藏掉 ——
+   透明底的头像会把底下的紫色渐变和 U **透出来**（玩家报的症状：
+   "透明底的头像盖在了预设头像上面" ✗）。
+   ⚠️ 这里**不要加 !important**：下面 `.masked` 那条 `#000` 要压得住它（打码时仍是黑块 ✓）；
+      判据是"有没有图"，所以由 JS 在插图 / 清图时加删这个类 ✓ */
+.user-avatar.has-img{background:none}
+.user-avatar.has-img .avatar-letter{display:none}
 .user-avatar.masked{background:#000!important}
 .user-avatar.masked img{display:none!important}
 .user-avatar.masked .avatar-letter{display:none!important}
@@ -1557,6 +1564,10 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
 
   var customAvatarUrl = null;
   var autoAvatarUrl = null;
+  // ★ 2026-11-16：外壳**已经就"这个聊天有没有头像"给过结论**（推了一张图 = 有 / 明确说没有 = 清掉）✓
+  //   用途只有一处：「重置头像」那个 1.5 秒的兜底自扫要认得它 ——
+  //   外壳都说了没有，面板再自己扫一遍，就会把别人 / 酒馆默认那张又扫回来 ✗
+  var avatarFromShell = false;
   var userStatus = 'online';
   var userSign = '';
   var notesList = [];
@@ -1660,7 +1671,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
          就是单纯没进聊天；别再把这两个概念混在一起 ✗ */
 
   // 面板自己的构建标记：用来确认到底加载了哪一版文件（拿到缓存的旧文件时一眼能看出来）
-  var PANEL_BUILD = '2026-11-15-9';
+  var PANEL_BUILD = '2026-11-16-1';
   // 界面上不显示它，但留个查询口 —— 报 BUG 时能确认加载的是哪一版 ✓
   try{ window.__bodycordPanelBuild = PANEL_BUILD; }catch(e){}
 
@@ -1966,7 +1977,9 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
           var el = nodes[backward ? (nodes.length - 1 - k) : k];
           if(el.tagName === 'IMG'){
             var src = el.src || '';
-            if(src && src.indexOf('data:image/gif;base64,R0lGODlhAQAB') !== 0 && src.length > 40) return src;
+            // ⚠️ 不要再拿酒馆自带的那张（`user-default` = 灰剪影）——
+            //   它不是"这个人的头像"，面板宁可退回自带图标 ✓（2026-11-16）
+            if(src && src.indexOf('data:image/gif;base64,R0lGODlhAQAB') !== 0 && src.length > 40 && !/user-default/i.test(src)) return src;
           } else {
             var id = el.getAttribute('data-avatar-id');
             if(id && id.length > 3 && !/default/i.test(id)){
@@ -2001,13 +2014,26 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
       img.alt = '';
       img.src = url;
       el.insertBefore(img, el.firstChild);
+      // ★ 有图了 ⇒ 预设那张（紫色渐变 + U）撤掉，透明底的地方才不会再透出紫色 ✓
+      el.classList.add('has-img');
     };
     probe.onerror = function(){ /* 保留旧图，不闪默认图标 */ };
     probe.src = url;
   }
+  /** 把面板里那张头像图摘掉，退回自带图标（预设那张的渐变和 U 会重新露出来 ✓） */
+  function clearAvatarImg(){
+    var el = $('userPanelAvatar');
+    if(!el) return;
+    el._bcAvatarWant = null;          // 还在路上的那次 setAvatarEl 一并作废
+    var olds = el.querySelectorAll('img.dc-avatar-img');
+    for(var i = 0; i < olds.length; i++){ olds[i].remove(); }
+    el.classList.remove('has-img');
+  }
   function applyAvatars(){
     var url = customAvatarUrl || autoAvatarUrl;
-    if(!url) return;
+    // ★ 2026-11-16：这个作用域**真的没有**头像 ⇒ 不能留着上一张 ✗
+    //   （症状：点了「重置头像」提示说会用自带图标，旧头像还挂在左下角）
+    if(!url){ clearAvatarImg(); return; }
     setAvatarEl($('userPanelAvatar'), url);
   }
   var avatarTries = 0;
@@ -2058,12 +2084,31 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
    */
   window.__bodycordSetAvatar = function(url){
     if(!url) return;
+    avatarFromShell = true;
     // ★ 自动头像只写 auto 键，绝不动玩家上传的 custom 键 ✓
     if(loadLS(LS_AUTO) !== url){ try{ saveLS(LS_AUTO, url); }catch(err){} }
     autoAvatarUrl = url;
     // 玩家传过图 ⇒ 以它为准（自动值只记着，不抢画面 ✓）
     if(customAvatarUrl) return;
     applyAvatars();
+  };
+  /**
+   * ★ 2026-11-16：外壳**明确**说"这个聊天没有可用头像"时走这里。
+   *
+   * 症状（玩家报的）：点了「重置头像」，提示说面板会用自带的图标，
+   *   但那艘旧头像（她之前自己传的那张）**还挂在左下角** ✗。
+   * 根因：`setAvatarEl` 为了不闪 U，一直是"新图加载完才换、失败就保留旧图"，
+   *   而重置之后外壳解析不到新图 ⇒ 没有任何东西来把那旧图摘掉 ✗
+   * ⇒ 外壳说"没有"就当权威结论：两把钥匙都清掉、图摘掉、退回自带图标 ✓
+   *   （玩家上传的那张也一起清 —— 这正是「重置头像」这个动作的本意 ✓）
+   */
+  window.__bodycordClearAvatar = function(){
+    try{ localStorage.removeItem(LS_AVATAR); }catch(err){}
+    try{ localStorage.removeItem(LS_AUTO); }catch(err){}
+    customAvatarUrl = null;
+    autoAvatarUrl = null;
+    avatarFromShell = true;
+    clearAvatarImg();
   };
   /* ★ 换作用域（换聊天 / 进出聊天）时由外壳喊一次：
      重读"这个作用域自己的"头像 / 签名 / 在线状态。
@@ -2073,7 +2118,10 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     var nextAuto = loadLS(LS_AUTO) || null;
     customAvatarUrl = nextCustom;
     autoAvatarUrl = nextAuto;
-    if(customAvatarUrl || autoAvatarUrl) applyAvatars();
+    // ★ 2026-11-16：这里**要**走 applyAvatars —— 新作用域自己有图就换上（新图加载完才换，不闪 U ✓）；
+    //   自己没有图就清掉（不然会把上一个聊天的头像一直挂着 ✗）。
+    //   别退回"有值才调"：那样换到"没有人设头像"的聊天时，旧头像永远赖在左下角 ✓
+    applyAvatars();
     userStatus = loadLS(LS_STATUS) || 'online';
     applyStatusUI();
     userSign = loadLS(LS_SIGN) || '';
@@ -2170,8 +2218,11 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
       try{ localStorage.removeItem(LS_AVATAR); }catch(err){}
       try{ localStorage.removeItem(LS_AUTO); }catch(err){}
       customAvatarUrl = null; autoAvatarUrl = null;
+      avatarFromShell = false;
       // ⚠️ 不要立刻把 <img> 删掉 —— 外壳回包要一帧，删了就会先闪成默认图标（一直是 U ✗）
       //   外壳把权威值推回来后会直接换图上 ✓
+      //   ★ 2026-11-16：外壳**说"没有"**时也要把它删掉（外壳会调 __bodycordClearAvatar ✓）——
+      //     不然旧头像永远赖着，和提示说的"会用自带的图标"对不上 ✗
       // ★ 先问外壳要**权威值** —— 外壳那份解析是修过的（聊天里取聊天锁定 / 角色连接的人设 ✓）
       var asked = false;
       try{
@@ -2182,8 +2233,10 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
       }catch(err){}
       if(!asked){ avatarTries = 0; tryAutoAvatar(); }
       else setTimeout(function(){
-        // 外壳没接上（或解析不到）⇒ 退回面板自己扫一遍（这份也一起修好了 ✓）
-        if(!customAvatarUrl && !autoAvatarUrl){ avatarTries = 0; tryAutoAvatar(); }
+        // 外壳没接上（或压根没有外壳）⇒ 退回面板自己扫一遍（这份也一起修好了 ✓）
+        // ⚠️ 外壳已经给过结论（推了图 / 明确说没有）就**别再自己扫** ✗：
+        //   自己扫正是"重置完又冒出别人头像 / 酒馆默认头像"的来源 ✓
+        if(!customAvatarUrl && !autoAvatarUrl && !avatarFromShell){ avatarTries = 0; tryAutoAvatar(); }
       }, 1500);
       showToast('头像已重置');
     });

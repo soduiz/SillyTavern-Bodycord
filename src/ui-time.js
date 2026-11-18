@@ -18,7 +18,7 @@
 import { h, clear, button, modal, askConfirm, textInput, debounce } from './dom.js';
 import { getCtx } from './st.js';
 import { shortRef, usedNameOf, usedResultOf } from './dice.js';
-import { timeline, snapshots, state, diffForPanel, canRollbackTo, rollbackToFloor, rollbackUndoInfo, undoRollback, dropSnapshot, dropFloorCandidate, pruneOrphanCandidates, identOf, parseAliases, isImportedTarget, stripDateText } from './store.js';
+import { timeline, snapshots, state, diffForPanel, canRollbackTo, rollbackToFloor, rollbackUndoInfo, undoRollback, dropSnapshot, dropFloorCandidate, pruneOrphanCandidates, identOf, parseAliases, isImportedTarget, stripDateText, rollbackKeepCount } from './store.js';
 import { parsePanelText, stripLeadLabels, judgeBtnSpec, judgeRowText, repaintFloors } from './ui-floors.js';
 import { queueState, cancelRun } from './judge-queue.js';
 
@@ -239,6 +239,9 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
             //   （导入档案模式反而正常，因为那份 list 是同一批稳定对象）
             //   ⇒ 按「序号 + 现实时间」认同一条 ✓
             const isSel = !!selected && (it === selected || (it.序号 === selected.序号 && it.ts === selected.ts));
+            // ★ 2026-11-18：列表上直接标出"这条能不能退" ——
+            //   以前要一条条点开才发现是灰的（大部分记录都灰着，很误导）✓
+            const canBack = !archive && canRollbackTo(it.楼层);
             const row = h('div', {
                 class: 'bc-tm-row' + (isSel ? ' active' : ''),
                 onclick: () => {
@@ -260,7 +263,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                     h('div', { class: 'bc-tm-vt', text: it.剧情时间 || '（无剧情时间）' }),
                     // ★ 一层里有备选回复时标出"这是第几条候选的记录"
                     //   （「这几条的记录都应该存着」⇒ 时光机里同一楼会有好几条，得能分清 ✓）
-                    h('div', { class: 'bc-tm-rt', text: `${fmtReal(it.ts)}　楼层 ${it.楼层 >= 0 ? it.楼层 : '—'}${it.候选 ? '　候选 ' + it.候选 : ''}` }),
+                    h('div', { class: 'bc-tm-rt', text: `${fmtReal(it.ts)}　楼层 ${it.楼层 >= 0 ? it.楼层 : '—'}${it.候选 ? '　候选 ' + it.候选 : ''}${archive ? '' : (canBack ? '　可退' : '　只能看')}` }),
                 ),
             );
             listHost.appendChild(row);
@@ -417,7 +420,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                 detailHost.appendChild(h('div', { class: 'bc-tm-keys' }, btn));
                 detailHost.appendChild(h('div', { class: 'bc-hint', text: can
                     ? '回到第 ' + floor + ' 楼之前的状态：账 / 孩子 / 痕迹 / 判定一起退（正文不动）'
-                    : '这一楼的状态没留着（那次的快照已经被挤掉了）' }));
+                    : '这条只能看：能退的存档只留最近 ' + rollbackKeepCount() + ' 次推演（快照还在，退不回那么早）' }));
 
                 // ★★ 两颗（重新推演 ✗ —— 那入口原来
                 //   只在设置页、还带三个前置条件 ⇒ 搬一份到玩家会找的地方 ✓）。
@@ -484,8 +487,8 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                                     redraw();
                                     afterDataChanged();
                                 } else {
-                                    // 回滚点被挤掉了 ⇒ 撤不掉上一次的结果，如实说一声再往前走 ✓
-                                    window.toastr?.warning?.('这一楼的回滚点已经被挤掉了：这次重推撤不掉上一次的结果，会在现在这份账上再算一遍');
+                                        // 回滚点被挤掉了 ⇒ 撤不掉上一次的结果，如实说一声再往前走 ✓
+                                    window.toastr?.warning?.('这一楼的回滚点没留着（只留最近 ' + rollbackKeepCount() + ' 次推演）：这次重推撤不掉上一次的结果，会在现在这份账上再算一遍');
                                 }
                                 // ★ 重推**不走**"最后一楼必须是正文"那道闸
                                 //   （快照落点已经改成"最后一个正文层"，见 judge.js 的 safeLastMessageIndex ✓）
@@ -493,7 +496,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                             }, { title: '先撤销上一次推演，再按现在的正文重算一遍' }));
                         }
                         acts.push(button('撤销这次推演', async () => {
-                            if (!can) { window.toastr?.warning?.('这一楼的回滚点已经被挤掉了，撤不回去'); return; }
+                            if (!can) { window.toastr?.warning?.('这一楼退不回去（能退的存档只留最近 ' + rollbackKeepCount() + ' 次推演）'); return; }
                             const yes = await askConfirm({
                                 title: redone ? '撤销这次推演？（这一份是刚才重推算的）' : '撤销这次推演？',
                                 msg: '会把插件的账整套退回第 ' + floor + ' 楼之前（账本 / 孩子 / 痕迹 / 受精判定 / 日期推进都跟着退），'
@@ -523,7 +526,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                             ? (redone
                                 ? '「撤销这次推演」＝账退到这一楼之前 ＋ 删掉这条快照（正文不动）。这一楼刚重推过，撤销会把重推的结果一起撤掉'
                                 : '「撤销这次推演」＝账退到这一楼之前 ＋ 删掉这条快照（正文不动）')
-                            : '「撤销这次推演」现在不可用：这一楼的回滚点已经被挤掉了' }));
+                            : '「撤销这次推演」现在不可用：能退的存档只留最近 ' + rollbackKeepCount() + ' 次推演' }));
                     } else {
                         // ★★ 2026-10-23（她报：当前楼没记录、上一楼又不能推演）——
                         //   历史楼层**也给一条重推的路**：整套退回这一楼之前，再按这一楼的正文重算，
@@ -541,7 +544,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                             const b = button('重推这一楼', async () => {
                                 const needBack = !alreadyBack;
                                 if (needBack && !canHist) {
-                                    window.toastr?.warning?.('这一楼的回滚点已经被挤掉了，撤不回那时候，也就没法整套重推');
+                                    window.toastr?.warning?.('这一楼退不回去（能退的存档只留最近 ' + rollbackKeepCount() + ' 次推演），没法整套重推');
                                     return;
                                 }
                                 const yes = await askConfirm({
@@ -717,6 +720,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
             '这里只读：想改数值要回到当前轮，从悬浮球菜单里的「改数值」进',
             '「从这里重新开始」是真倒流用的（时间倒流、那段经历要作废）：把插件的账整套退回那一楼之前，账本 / 孩子 / 痕迹 / 受精判定都会跟着退，正文一个字都不动',
             '每跑一次推演留一份快照，最多留 300 条、总量满了就从最旧的开始丢；被丢掉的楼会灰着、点不了',
+            '「从这里重新开始」能退的只留最近 ' + rollbackKeepCount() + ' 次推演：更早的记录左边标「只能看」，快照还在、退不回那么早',
             '刚退回去还能点「撤销刚才那次回滚」整套回来；它是破坏性操作，所以点之前会弹一次确认',
             '只有「最近一条正文那一楼」才多两颗：「重推这一楼」＝先撤销上一次推演写的账（整套退到这一楼之前），再按现在的正文重算一遍；「撤销这次推演」＝把账退到这一楼之前，并把这条快照删掉（正文不动）。你刚发了新消息、AI 还没回复时，上一楼仍然算最近一条正文；等下一楼正文生成之后，这两颗才会收起来',
             '历史楼层也给了一颗「重推这一楼」：整套退回那一楼之前，再按那一楼的正文重算（补推，只记那一楼、后面的楼层不重算）；如果之前已经退过了，它就直接重算，不会退第二次',

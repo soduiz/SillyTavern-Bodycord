@@ -5593,14 +5593,12 @@ export function setCheckpoint(floor, swipeId = null) {
     };
     // ★★ 顺手往"回滚点"里也放一份（同一份深拷贝，不额外花内存 ✓）——
     //   那是给玩家用的（时光机里「从这里重新开始」⇒ 真倒流 ✓）
-    //   ⚠️ 只留最近 ROLLBACK_KEEP 份：每份 ≈ 18 KB（本机实测），6 份 ≈ 108 KB，
-    //     跟快照那 1.5 MB 预算比起来很小 ✓
+    //   ⚠️ 只留最近 ROLLBACK_KEEP 份：每份 ≈ 18 KB（本机实测），20 份 ≈ 360 KB，
+    //     跟快照那 1.5 MB 预算比起来还是很小 ✓
+    //   ★ 2026-11-18：6 → 20。6 份只够退 3 轮（一轮 = 玩家一层 + 正文一层），
+    //     时光机里绝大多数记录都是灰的 ⇒ 她要求放大到够用 ✓
     try {
-        const f = Number(floor);
-        const pts = (Array.isArray(s.rollbackPoints) ? s.rollbackPoints : [])
-            .filter((p) => Number(p?.floor) !== f);          // 同一楼再来一次 ⇒ 覆盖 ✓
-        pts.push({ floor: f, swipeId: s.checkpoint.swipeId, at: s.checkpoint.at, data: s.checkpoint.data });
-        s.rollbackPoints = pts.slice(Math.max(0, pts.length - ROLLBACK_KEEP));
+        pushRollbackPoint(floor, s.checkpoint.swipeId, s.checkpoint.data);
     } catch (e) { console.warn('[Bodycord] 存回滚点失败', e); }
     // ★ 候选记录只给**最后一楼**留着（能重新生成 / 换候选的只有它）；
     //   换到新的一楼时，把旧楼的候选记录清掉 —— 旧楼的"记录"仍然留在快照里 ✓
@@ -5613,7 +5611,45 @@ export function setCheckpoint(floor, swipeId = null) {
 }
 
 /** 回滚点最多留几份（真倒流用） */
-const ROLLBACK_KEEP = 6;
+const ROLLBACK_KEEP = 20;
+
+/**
+ * 把一份"这一楼之前"的深拷贝放进回滚点（同一楼覆盖，只留最近 ROLLBACK_KEEP 份）。
+ *
+ * ⚠️ 只动 `rollbackPoints` —— 别掺 `checkpoint` / 候选记录。
+ *   补推也要记回滚点，而补推绝对不能碰"最后一楼"的底座和候选记录（会冲掉它们 ✗）。
+ */
+function pushRollbackPoint(floor, swipeId, data) {
+    const s = state();
+    const f = Number(floor);
+    if (!Number.isFinite(f) || f < 0 || !data) return;
+    const pts = (Array.isArray(s.rollbackPoints) ? s.rollbackPoints : [])
+        .filter((p) => Number(p?.floor) !== f);              // 同一楼再来一次 ⇒ 覆盖 ✓
+    pts.push({
+        floor: f,
+        swipeId: (swipeId === null || swipeId === undefined) ? null : Number(swipeId),
+        at: Date.now(),
+        data,
+    });
+    s.rollbackPoints = pts.slice(Math.max(0, pts.length - ROLLBACK_KEEP));
+}
+
+/**
+ * ★ 2026-11-18：指定楼层推演（补推 / 时光机历史重推）开跑前记一份回滚点。
+ *
+ * 为什么现在能记：补推入口已经收紧到"刚好欠着的那一层"（时光机那条路会先整套退回去）——
+ *   开跑时这份账就是"这一楼之前"，跟正常推演的底座是同一个东西 ✓
+ * ⇒ 补推出来的记录在时光机里也能「从这里重新开始」了（以前永远灰着 ✗）。
+ */
+export function rememberRollbackPoint(floor, swipeId = null) {
+    try {
+        pushRollbackPoint(floor, swipeId, cloneStateForRecord());
+        commit();
+    } catch (e) { console.warn('[Bodycord] 存回滚点失败', e); }
+}
+
+/** 回滚点留几份（界面文案用 —— 别在两边各写一个数字，改了一边就静默对不上 ✗） */
+export function rollbackKeepCount() { return ROLLBACK_KEEP; }
 
 
 /** 这一楼能不能点回去（时光机里那颗按钮灰不灰看它 ✓） */
@@ -6193,6 +6229,8 @@ export function dropSnapshotsOfFloor(floor) {
  *   · `floorCandidates`（按楼层存的候选记录）—— 活键 ⇒ 必须挪
  *   · `checkpoint.floor`（"这一楼之前"那个底座）—— 活键 ⇒ 必须挪
  *   · `snapshots[].messageIndex`（时光机里那一楼的号）—— 半活：楼层面板要按它找快照 ⇒ 一起挪
+ *   · `rollbackPoints[].floor`（回滚点）—— 活键 ⇒ 被删那层的作废、比它大的往前挪
+ *   · `lastRollbackFloor` / `rollbackUndo.floor` —— 活键 ⇒ 一起挪（保险的数据留着）
  *   · `insems[].floor`（"哪次做爱中的招"里那个楼层号）—— 纯历史标签 ⇒ **不动**
  *   ★ 被删那一楼自己的**快照已经由 `dropSnapshotsOfFloor()` 整楼删掉**（2026-10-23）——
  *     那一层不存在了，它的快照也就没有对应的正文，留着只会误导 ✗
@@ -6200,7 +6238,7 @@ export function dropSnapshotsOfFloor(floor) {
  * @returns {{excluded:number, floors:number, snapshots:number, candidates:number}} 挪了几处（给日志/诊断用）
  */
 export function migrateFloorIndices(deleted) {
-    const out = { excluded: 0, floors: 0, snapshots: 0, candidates: 0 };
+    const out = { excluded: 0, floors: 0, snapshots: 0, candidates: 0, rollbackPoints: 0 };
     const d = Number(deleted);
     if (!Number.isFinite(d) || d < 0) return out;
     const s = state();
@@ -6240,6 +6278,30 @@ export function migrateFloorIndices(deleted) {
                 out.snapshots++;
             }
         }
+    }
+    // ⑤ 回滚点（2026-11-18 她定的口径：哪一层没了，那一层的东西一起作废，别的往前挪一格）——
+    //   以前漏了这一份 ⇒ 被删那一楼的回滚点还留着、后面的也没挪
+    //   ⇒ 时光机里一部分记录变灰，另一部分点下去退到**早一楼**的状态 ✗
+    if (Array.isArray(s.rollbackPoints)) {
+        const next = [];
+        for (const p of s.rollbackPoints) {
+            const n = Number(p?.floor);
+            if (!Number.isFinite(n)) continue;
+            if (n === d) continue;                              // 这一楼没了 ⇒ 作废
+            next.push(n > d ? { ...p, floor: n - 1 } : p);
+        }
+        out.rollbackPoints = (Array.isArray(s.rollbackPoints) ? s.rollbackPoints.length : 0) - next.length;
+        s.rollbackPoints = next;
+    }
+    // ⑥ "刚退到哪一层" ＋ 回滚保险上挂的楼层号（都是活键，跟着挪）——
+    //   · 保险那一份**数据不删**：它是"退回去之前"的现场，玩家可能还要拿回来；
+    //     楼层被删了就只把标签作废（floor = -1），别静默吞掉她的退路 ✓
+    if (Number(s.lastRollbackFloor) > d) s.lastRollbackFloor = Number(s.lastRollbackFloor) - 1;
+    else if (Number(s.lastRollbackFloor) === d) delete s.lastRollbackFloor;
+    if (s.rollbackUndo) {
+        const uf = Number(s.rollbackUndo.floor);
+        if (Number.isFinite(uf) && uf > d) s.rollbackUndo = { ...s.rollbackUndo, floor: uf - 1 };
+        else if (Number.isFinite(uf) && uf === d) s.rollbackUndo = { ...s.rollbackUndo, floor: -1 };
     }
     commit();
     return out;

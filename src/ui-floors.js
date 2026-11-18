@@ -92,6 +92,38 @@ export function lastContentFloor() {
 }
 
 /**
+ * ★★ 这一楼是不是"刚好欠着的那一层"（补推唯一合法的位置）—— 2026-11-18。
+ *
+ * 为什么要有：补推是"把这一楼的内容叠进**现在这份账**"，只有账正好停在它前面一格时才成立。
+ *   以前只要"这一楼没有自己的记录"就给补推 ⇒ 站在第 20 楼往回补第 5 楼，
+ *   第 5 楼正文里那句"第二天"会按**现在**的日期再 +1 天（时间跳到下一天、正文没变 ✗），
+ *   而且那一楼根本没有"这一楼之前"的底座可记 ⇒ 它在时光机里永远退不回去。
+ *
+ * 判据：从最后一份快照那一楼往上数，这一楼之前**没有别的参与推演的正文层**。
+ *   · 玩家自己的层、空层、被排除的层都不进账 ⇒ 不算"夹了一层"
+ *   · 比最后一份快照更早的楼层一律不放行（账早就走到后面去了）
+ *   · 更早的楼层要重算，走时光机的「重推这一楼」（那条路会先整套退回去 ✓）
+ */
+function isNextUnjudgedFloor(idx) {
+    const list = snapshots();
+    let last = -1;
+    for (const x of list) {
+        const f = Number(x?.messageIndex);
+        if (Number.isFinite(f) && f > last) last = f;
+    }
+    let chat = [];
+    try { chat = getChat() || []; } catch { chat = []; }
+    for (let i = last + 1; i < chat.length; i++) {
+        if (i === Number(idx)) return true;
+        const m = chat[i];
+        if (!m || m.is_user || !String(m.mes || '').trim()) continue;   // 玩家层 / 空层不进账
+        if (isFloorExcluded(i)) continue;                               // 排除的那一楼也不进账
+        return false;                                                   // 中间夹着一层正文 ⇒ 账已经走过它了
+    }
+    return false;
+}
+
+/**
  * 最后一楼是不是被排除了。
  * 自动推演会看这个 —— 被排除的楼**连状态都不记**，不是「记了但不显示」。
  */
@@ -530,7 +562,9 @@ function buildPanel(idx, isUser = false, inputs = null) {
      *   ③ 钥匙（`judgeHandler`）没递进来时不画 —— 别画一颗点了没反应的按钮 ✗
      *   ④ 状态从 `inp.judgeState` 拿（`floorInputs` 里读、`sameInputs` 里比 ✓） */
     const st = inp.judgeState || '';
-    const backfill = !inp.isLast && noOwnRecord;      // 中间那层、自己没有记录 ⇒ 补推
+    // ★ 2026-11-18：补推只给"刚好欠着的那一层"（见 `isNextUnjudgedFloor` 的说明）——
+    //   更早的楼层如果也能补，日期会叠错、还会产生一条永远退不回去的记录 ✗
+    const backfill = !inp.isLast && noOwnRecord && isNextUnjudgedFloor(idx);
     const spec = judgeBtnSpec(st, !borrowed, backfill);
     const judgeBtn = (!excluded && judgeHandler && (inp.isLast || backfill))
         ? h('div', {

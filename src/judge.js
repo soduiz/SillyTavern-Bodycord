@@ -45,7 +45,7 @@ import {
     cycleDayNow, cycleStartDateOf, setCycleDayOf, ensureCycleState,
     beginCycleAfterSettle, drawCycleLenNowOf,
     postpartumOf, postpartumMarkerOf, startPostpartumFor, clearPostpartumFor, handOverPostpartum, inPostpartumOf, conceiveDuringPostpartum,
-    setCheckpoint, checkpointInfo, restoreCheckpoint, hashText, manualEditSeq, syncLastFloorSnapshot,
+    setCheckpoint, checkpointInfo, restoreCheckpoint, rememberRollbackPoint, hashText, manualEditSeq, syncLastFloorSnapshot,
     captureManualOverlay, restoreManualOverlay,
     getFloorCandidate, setFloorCandidate, restoreCandidate, bodyLockOf, periodModeOf, traceOnOf, getOvuJudgment,
     captureStateData, restoreStateData, addAchievements, collectReportedAchievements, addChildren, getImpregnatorLocks, isExcluded,
@@ -3733,9 +3733,10 @@ export async function runJudge({ signal = null, force = false, rejudge = [], all
     //   ★ 回滚之前先抓一份"玩家现在看到的现场"——
     //     这次请求要是失败 / 被取消，就把它套回去，别让数字自己往回退 ✓
     const beforeRun = (() => { try { return captureStateData(); } catch { return null; } })();
-    // ★ 补推**不碰检查点 / 回滚点** ——
-    //   那两个记的是"最后一楼之前那份状态"，是给「重推最后一楼」和时光机真倒流用的。
+    // ★ 补推**不碰检查点 / 候选记录** ——
+    //   那两个记的是"最后一楼之前那份状态"，是给「重推最后一楼」用的。
     //   补推要是把它们改掉，玩家就再也回不到最后一楼之前了 ✗ ⇒ 整段跳过 ✓
+    //   （回滚点另说：补推开跑时自己那一楼也要留一份，见下面 else 那段 ✓）
     if (!hasBackfill) {
         try {
             const cp = checkpointInfo();
@@ -3757,6 +3758,15 @@ export async function runJudge({ signal = null, force = false, rejudge = [], all
                 setCheckpoint(judgeFloor, judgeSwipe);
             }
         } catch (e) { console.warn('[Bodycord] 回滚检查点处理失败', e); }
+    } else if (judgeFloor >= 0) {
+        // ★★ 2026-11-18：指定楼层（补推 / 时光机历史重推）也要留一份回滚点 ——
+        //   以前整段跳过 ⇒ 补推出来的记录在时光机里**永远灰着**（最新那条也退不回去 ✗）。
+        //   现在能记：补推入口收紧到"刚好欠着的那一层"，时光机那条路开跑前已经整套退回去 ⇒
+        //   此刻这份账就是"这一楼之前" ✓
+        //   ⚠️ 只记回滚点，**不碰** checkpoint / 候选记录（那两样是最后一楼的底座，
+        //      补推动它们会让下一次正常推演从错的地方起算 ✗）
+        try { rememberRollbackPoint(judgeFloor, judgeSwipe); }
+        catch (e) { console.warn('[Bodycord] 补推记回滚点失败', e); }
     }
 
     const pool = acquirePool();

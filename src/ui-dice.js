@@ -143,7 +143,7 @@ function renderPoolMode(container, ctx) {
     ));
     container.appendChild(poolCard);
 
-    // ★ 2026-10-24（她：重新 ROLL 后还是不显示同卵/异卵）——
+    // ★ 2026-10-24（需求方：重新 ROLL 后还是不显示同卵/异卵）——
     //   「上一轮取用了哪些」可能因为重生成池子/这一轮没掷而空；胎数、同卵异卵是**这一胎定下的结果**，
     //   直接读 fetusPlan 显示，跟取用记录在不在无关 ✓
     {

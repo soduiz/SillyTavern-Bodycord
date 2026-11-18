@@ -49,7 +49,7 @@ let _q = '';
 let _openId = '';
 let _cat = '';
 let _species = '';
-/** 列表一页 20 条（2026-11-07 她定的：条目只会越来越多，不能一口气翻到底 ✓） */
+/** 列表一页 20 条（2026-11-07 需求方定的：条目只会越来越多，不能一口气翻到底 ✓） */
 const PAGE_SIZE = 20;
 let _page = 1;
 /** 上一次画的是列表还是详情 + 列表当时滚到哪（重画时把滚动位置放回去，见 _paint ✓） */
@@ -195,7 +195,7 @@ function aliasBlock(entry, repaint) {
 // ---------------------------------------------------------------------------
 // ★ 2026-11-06：胎数 / 性别 / 同卵改成「按栏目填」
 //
-// 为什么改：原来是让玩家自己写「D100：1-78 单胎，79-94 双胎…」，她截图问
+// 为什么改：原来是让玩家自己写「D100：1-78 单胎，79-94 双胎…」，需求方截图问
 //   「你这让玩家怎么编写？完全无从下手」✗ ⇒ 现在界面上只有几个格子，
 //   骰子区间由插件折算。**存法没变**（还是那一行文字），判定侧照旧解析，
 //   老存档 / 导入的那份照样读得懂 ✓
@@ -205,7 +205,7 @@ function aliasBlock(entry, repaint) {
 // ---------------------------------------------------------------------------
 
 const DICE_KEYS = new Set(['litter', 'sex', 'twin']);
-/** 混血那三项单独收一张卡（2026-11-07 她定的，不要散在数值表里 ✓） */
+/** 混血那三项单独收一张卡（2026-11-07 需求方定的，不要散在数值表里 ✓） */
 const MIX_KEYS = new Set(['breedGroup', 'breed']);
 
 const bandPct = (from, to) => Math.max(0, Math.round(Number(to) - Number(from) + 1));
@@ -346,7 +346,7 @@ function tierEditor(tiers, onChange, repaint) {
                 list.push({ n: lastN + 1, pct: 10 });
                 build(); commit();
             }),
-            // ★ 2026-11-12（她截图：合计被推到最右边，离上面的数字太远）——
+            // ★ 2026-11-12（需求方截图：合计被推到最右边，离上面的数字太远）——
             //   拿掉中间那个 spacer，合计直接跟在按钮后面 ✓
             sumLine,
         ));
@@ -559,7 +559,7 @@ function valueRow(entry, row, repaint) {
     } else if (row.key === 'breed') {
         control = breedPicker(entry, row, repaint);
     } else if (row.kind === 'select') {
-        // ★ 2026-11-09：下拉里**不许出现没字的选项**（她截图问过为什么有一个没字的 ✗）
+        // ★ 2026-11-09：下拉里**不许出现没字的选项**（需求方截图问过为什么有一个没字的 ✗）
         //   · 空着本身有专门含义的（泌乳：留空 = 按设定）⇒ 给这个空选项一个名字
         //   · 空着就等于某个选项的（发情期：空着 = 无）⇒ 干脆不列空选项，直接显示成那个 ✓
         const opts = (row.options || [])
@@ -641,7 +641,7 @@ function breedPicker(entry, row, repaint) {
 
 /** 混血池：这一条的同组同品种成员，以及和人类配对时的百分比 ✓ */
 /** 混血：把「混血可行性与折算 / 混血组 / 品种 / 混血池」收在一张卡里 ✓
- *  她知道 2026-11-07：混血相关不要散在数值表里、池子也不要离得远 ✓ */
+ *  需求方知道 2026-11-07：混血相关不要散在数值表里、池子也不要离得远 ✓ */
 function mixCard(entry, repaint) {
     const box = cv(section('混血'));
     const body = box.querySelector('.bc-section-body');
@@ -829,7 +829,7 @@ function sexCard(entry, touch = null) {
     }
     const s = entry.sexTrait;
     const card = cv(section('性特征', { help: SEX_HELP }));
-    // ★ 2026-11-08：这张卡的间距单独一套（她截图说太近）⇒ 挂个专属类，别动全局间距 ✓
+    // ★ 2026-11-08：这张卡的间距单独一套（需求方截图说太近）⇒ 挂个专属类，别动全局间距 ✓
     card.classList.add('bc-sex-card');
     const body = card.querySelector('.bc-section-body');
     // 性别术语跟条目的大类走：兽形用雄 / 雌，亚人与兽人用男 / 女 ✓
@@ -870,7 +870,7 @@ function paintDetail(container, entry, repaint, onBack) {
     let resetBtn = null;
     const touchEdited = () => {
         if (!resetBtn) return;
-        // ★ 2026-11-08：点完恢复默认它**不许消失**（她报过按钮会消失）——
+        // ★ 2026-11-08：点完恢复默认它**不许消失**（需求方报过按钮会消失）——
         //   没改过时灰掉但留在原地，让人看得见这条路存在 ✓
         const on = codexIsEdited(entry.id);
         resetBtn.disabled = !on;
@@ -935,7 +935,7 @@ function paintDetail(container, entry, repaint, onBack) {
     container.appendChild(body);
 
     // ---- 性特征（第 0 批）----
-    // ★ 总开关关着时整栏不出现（她定的：关掉后图鉴里也不显示 ✓）
+    // ★ 总开关关着时整栏不出现（需求方定的：关掉后图鉴里也不显示 ✓）
     try {
         if (settings().sexTraitsOn === true) container.appendChild(sexCard(entry, touchEdited));
     } catch { /* 读不到设置就不显示，不拦详情页 ✓ */ }
@@ -1113,7 +1113,7 @@ function _paint(container, repaint, handlers) {
 
     clear(container);
     // ★ 2026-11-09：内置图鉴是用到才读进来的（757KB，不占启动）——
-    //   还没读进来时就别画一个"共 0 条"的空图鉴（她会以为数据丢了 ✗），
+    //   还没读进来时就别画一个"共 0 条"的空图鉴（需求方会以为数据丢了 ✗），
     //   先写一句正在读入，读完这一页自动重画 ✓
     if (!builtinReady()) {
         const waitBox = section('种族图鉴', { help: HELP_LIST });
@@ -1143,7 +1143,7 @@ function _paint(container, repaint, handlers) {
         _page = 1;
         paintList();
     }, { placeholder: '搜名字、其他叫法' });
-    // ★ 2026-11-08（她说图鉴东西多了，要能选一个分类把别的收起来）：
+    // ★ 2026-11-08（需求方说图鉴东西多了，要能选一个分类把别的收起来）：
     //   两个下拉原来各管各的，种类菜单把 33 个种类平铺出来（选了大类也照样全列 ⇒ 看着还是一大堆 ✗）。
     //   现在改成**先大类、再种类**：种类菜单只列当前大类下面真正有的种类（还带条数），
     //   选了大类以后，别的大类的种类在第二层根本不出现；换大类时对不上的旧种类一并清掉 ✓
@@ -1196,7 +1196,7 @@ function _paint(container, repaint, handlers) {
         button('导入图鉴', () => importCodex(repaint)),
         // ★ 2026-11-08：按种类整批停用 / 启用（条目多了，不能一条条点 ✓）
         button('按种类批量停用', () => openBulkStatus(repaint)),
-        // ★ 2026-11-08：按种类整批恢复默认（她手动一条条恢复按不下去了）
+        // ★ 2026-11-08：按种类整批恢复默认（需求方手动一条条恢复按不下去了）
         button('按种类恢复默认', () => openBulkReset(repaint)),
     ));
 
@@ -1206,7 +1206,7 @@ function _paint(container, repaint, handlers) {
     container.appendChild(box);
     // ★ 这个聊天的角色绑到哪一条（锚在编号上；对不上不默认当人类 ✓）
     container.appendChild(bindingsCard(repaint));
-    // ★ 第六批：这一轮到底会发哪几族、哪几段、多少字（她靠这块验收）
+    // ★ 第六批：这一轮到底会发哪几族、哪几段、多少字（需求方靠这块验收）
     container.appendChild(sendCard(repaint));
     // ★ 第三批：条目这边 vs 原来那边的比对结果
     container.appendChild(shadowCard());
@@ -1255,8 +1255,8 @@ function _paint(container, repaint, handlers) {
 // ---------------------------------------------------------------------------
 
 /**
- * ★ 2026-11-08（她要求能按种类整族一起关：条目多了，不能让玩家一条一条点）；
- *   同一天她又补：种类要能多选，也要能单选 ⇒ 这里点一行就是选一族，点几行就选几族 ✓
+ * ★ 2026-11-08（需求方要求能按种类整族一起关：条目多了，不能让玩家一条一条点）；
+ *   同一天需求方又补：种类要能多选，也要能单选 ⇒ 这里点一行就是选一族，点几行就选几族 ✓
  *   分类 / 种类只管分组，停用是每一条自己的状态 ⇒ 走 codexSetStatusBySpecies 整批写 ✓
  */
 /**
@@ -1288,7 +1288,7 @@ function openBulkStatus(repaint) {
         return;
     }
     // ⚠️ 打开时**不预选**任何种类：预填"当前筛选的那一族"会让人以为上一次选的还留着，
-    //   再选一族就变成两族一起动（她 2026-11-08 就是被这个弄懵的）⇒ 每次从空开始，想关哪族自己点 ✓
+    //   再选一族就变成两族一起动（2026-11-08 就是被这个弄懵的）⇒ 每次从空开始，想关哪族自己点 ✓
     const picked = new Set();
     let action = 'off';
 
@@ -1333,7 +1333,7 @@ function openBulkStatus(repaint) {
                     h('span', { class: 'bc-hint', text: `共 ${x.rows.length} 条，在用 ${inUse} 条` }),
                 ),
                 h('div', { class: 'bc-spacer' }),
-                // 选中不靠整行变色（她那边会深蓝底、字看不见 ✗）⇒ 右边勾选框 + 文字两样都给 ✓
+                // 选中不靠整行变色（需求方那边会深蓝底、字看不见 ✗）⇒ 右边勾选框 + 文字两样都给 ✓
                 on ? h('span', { class: 'bc-wi-tick', text: '已选' }) : null,
                 h('span', { class: 'bc-check' + (on ? ' on' : '') }),
             ));
@@ -1386,7 +1386,7 @@ function openBulkStatus(repaint) {
 // ---------------------------------------------------------------------------
 
 /**
- * ★ 她：之前出过一次 bug，一堆条目被标成「改过」，手动一条条恢复按不下去了 ⇒
+ * ★ 需求方：之前出过一次 bug，一堆条目被标成「改过」，手动一条条恢复按不下去了 ⇒
  *   要一个跟「按种类批量停用」同样形状的批量恢复。
  *
  * 口径（跟单条那颗按钮一致）：恢复默认 = 把这一条的覆盖整个删掉，所以
@@ -1652,7 +1652,7 @@ function overrideRow(entry, r, draft, refs) {
         }, () => {}));
         return box;
     }
-    // ★ 2026-11-06：**每一格都预填这一条现在的值**（她要求把默认值摆进格子里，别空着像装饰）——
+    // ★ 2026-11-06：**每一格都预填这一条现在的值**（需求方要求把默认值摆进格子里，别空着像装饰）——
     //   以前空着 = 跟随，看着像装饰 ✗。现在显示的是生效值，改回原值就等于恢复跟随 ✓
     if (r.kind === 'number') {
         const put = (v) => {
@@ -1769,7 +1769,7 @@ export function openCodexOverrideEditor(key, onDone) {
                         ));
                     }
                 } catch { /* 读不到设置就不画这一格 */ }
-                // ★ 2026-11-08（她定的）：周期长度 / 排卵日不在「单独调」里画 ——
+                // ★ 2026-11-08（需求方定的）：周期长度 / 排卵日不在「单独调」里画 ——
                 //   参数面板「身体基础参数」那两格已经是这个人的个人值了，
                 //   再放一份就是两个入口、两份存储互相盖，改哪边都可能对不上 ✗
                 //   ⇒ 数值调整统一收到参数面板那处 ✓
@@ -1934,8 +1934,8 @@ export function openCodexPicker({
  */
 export function codexPickControl(getValue, onPick, opts = {}) {
     const val = h('span', { class: 'bc-pick-value' });
-    // ★ 2026-11-08（她指出：右边那句提示会让人以为只有文字能点，其实整格都能点）——
-    //   ⇒ 右边不放字，改画一个下拉箭头（CSS 画的，不用字符，免得她机器上缺字）✓
+    // ★ 2026-11-08（需求方指出：右边那句提示会让人以为只有文字能点，其实整格都能点）——
+    //   ⇒ 右边不放字，改画一个下拉箭头（CSS 画的，不用字符，免得需求方机器上缺字）✓
     const caret = h('span', { class: 'bc-pick-caret' });
     const el = h('button', {
         class: 'bc-readout-box bc-pick-btn',
@@ -1995,7 +1995,7 @@ function bindActions(r, repaint) {
         });
     });
     // ★ 2026-11-09（B 方案）：名字对不上时，插件**只把候选摆出来**，
-    //   借不借、借哪一条由她点；点了才写 `confirmed` ✓
+    //   借不借、借哪一条由需求方点；点了才写 `confirmed` ✓
     const borrow = (label, entry) => button(label, () => {
         setTempRace(r.race, entry.id, true);
         console.log('[Bodycord] 确认临时种族', r.race, '→', entry.id);
@@ -2022,7 +2022,7 @@ function bindActions(r, repaint) {
             repaint();
         }));
     }
-    // 名字一条都没对上、但确实有"最像的几条" ⇒ 一次点击就能借（她确认过才生效 ✓）
+    // 名字一条都没对上、但确实有"最像的几条" ⇒ 一次点击就能借（需求方确认过才生效 ✓）
     if ((r.status === 'unmatched' || r.status === 'ambiguous') && Array.isArray(r.near) && r.near.length) {
         const top = r.near[0];
         out.push(borrow('借「' + top.name + '」的数据', top));
@@ -2039,7 +2039,7 @@ function bindActions(r, repaint) {
 /**
  * ★ 第六批：这一轮会发什么。
  *
- * 她拿界面当验收台 ⇒ 这里要能直接看出三件事：
+ * 需求方拿界面当验收台 ⇒ 这里要能直接看出三件事：
  *   ① 这一轮在场哪几个对象、发了哪几族；
  *   ② 每一族发的**哪几段**（介绍 / 生理 / 生育 / 补充）＋多少字、多少 token；
  *   ③ 名字对不上的种族会怎么办（发种族目录，不默认当人类）。
@@ -2047,14 +2047,14 @@ function bindActions(r, repaint) {
 function sendCard(repaint) {
     const box = section('这一轮会发什么', { help: SEND_HELP });
     const b = box.querySelector('.bc-section-body');
-    // ★★ 2026-11-13（她定）：**整段正文**（介绍 / 生理 / 繁殖 / 补充）一起管，默认关。
+    // ★★ 2026-11-13（需求方定）：**整段正文**（介绍 / 生理 / 繁殖 / 补充）一起管，默认关。
     //   这四段是科普与外貌那类小知识，判定只用数值表 ⇒ 默认一律不发，想看再打开。
     //   性特征与数值表不受这个开关影响 ✓
     const introOn = settings().codexIntroOn === true;
-    // ★ 2026-11-13（她定）：性特征那条提示要跟开关状态一起变 ——
+    // ★ 2026-11-13（需求方定）：性特征那条提示要跟开关状态一起变 ——
     //   性特征开关关着时还写「只发数值表与性特征」就是假的 ✓
     const sexOn = settings().sexTraitsOn === true;
-    // ★ 2026-11-13（她连着两次提醒「间距改一下」）：开关行**不许自己拿 `.bc-row` 拼** ——
+    // ★ 2026-11-13（需求方连着两次提醒「间距改一下」）：开关行**不许自己拿 `.bc-row` 拼** ——
     //   窄屏那条「行里说明独占一行」会把开关挤到上一行、标题和说明各占一行，间距还全乱 ✗
     //   ⇒ 统一用 `toggleRow`（设置页那套：左边标题＋说明、右边开关、行间有分隔线）✓
     //   以后再加开关，照这个来，不用一处处调间距 ✓
@@ -2064,8 +2064,8 @@ function sendCard(repaint) {
         introOn
             ? '开：这四段正文也会发给主 API，会和角色卡、世界书的说法重复，也更费 token'
             : '关：正文不发，只发数值表' + (sexOn ? '与性特征' : '') + '。这四段是科普与外貌那类小知识，判定用不到'));
-    // ★★ 2026-11-13（她定）：**性特征总开关搬到图鉴页**，跟在「发图鉴正文」下面。
-    //   她的理由：它管的就是图鉴条目里有没有「性特征」那一栏，属于图鉴这一页的事，
+    // ★★ 2026-11-13（需求方定）：**性特征总开关搬到图鉴页**，跟在「发图鉴正文」下面。
+    //   需求方的理由：它管的就是图鉴条目里有没有「性特征」那一栏，属于图鉴这一页的事，
     //   放在「生理周期」那一页既对不上也找不到 ✓
     //   （原来挂在规则补丁 · 世界观 · 生理周期 那一页的最后一屏 ✗）
     swGroup.appendChild(toggleRow('性特征', sexOn,
@@ -2104,7 +2104,7 @@ function sendCard(repaint) {
 
     // 条目一个字都没写的：列出来，别让人以为"发了但看不见" ✓
     // ★ 2026-11-15：分两种说 —— 条目里本来有内容、只是被上面两个开关关掉了的，
-    //   不能说成"还没写正文"（她正是拿这块预览验收的，说错会让她以为数据没了 ✗）✓
+    //   不能说成"还没写正文"（需求方正是拿这块预览验收的，说错会让需求方以为数据没了 ✗）✓
     for (const e of plan.entries) {
         if (e.segments.length) continue;
         b.appendChild(h('div', { class: 'bc-hint', text: e.hidden

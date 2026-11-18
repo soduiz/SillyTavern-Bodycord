@@ -422,7 +422,7 @@ export async function renderTemplate(file, data = {}) {
 }
 
 // 死代码清理：这里的 `isGenerating()` 全仓（含测试）无引用 ⇒ 删掉 ✓
-//   （"这次生成有没有产出消息"由 index.js 的 MESSAGE_RECEIVED / GENERATION_STOPPED 标志判，
+//   （"这次生成有没有产出消息"由 src/gen-gate.js 的门控判，
 //     不再去问酒馆"是不是在生成" ✓）
 
 /**

@@ -95,7 +95,7 @@ import { timerCfgOf, timerBubbles } from './ui-timer.js';
 
 // 面板字段定义（编辑模式 / 手改面板共用）
 const FIELD_DEFS = [
-    // ★★ 2026-10-30（她定的）：这里**只放真正能改的**。
+    // ★★ 2026-10-30（需求方定的）：这里**只放真正能改的**。
     //   插件自己算的那几格（阶段名 / 进度 / 基础率 / 近期性行为）**一个都不摆进来** ——
     //   只读的东西放在"改数值"里只会让人以为能改（and 早先那格就是这么被误记成手改的 ✗）；
     //   想知道当前值就去主面板看，那本来就是它干的事 ✓
@@ -146,7 +146,7 @@ function deviceIcon(size = 26) {
 
 /**
  * 同一套画法的线图标（24 网格 / 1.8 描边 / currentColor / 圆头）。
- * ★ 2026-11-01（她：顶栏那个设置齿轮是 emoji，跟旁边的图标画风不一样）——
+ * ★ 2026-11-01（需求方：顶栏那个设置齿轮是 emoji，跟旁边的图标画风不一样）——
  *   顶栏的齿轮、深浅色都改成这里画的线图标；✕ 和 ← 本来就是线条字形，不用换 ✓
  */
 function lineIcon(size, inner) {
@@ -208,7 +208,7 @@ export class StatusView {
     }
 
     render() {
-        // ★★ 2026-11-09（她报：进出聊天时本地点播直接断掉）——
+        // ★★ 2026-11-09（需求方报：进出聊天时本地点播直接断掉）——
         //   原来这里第一句是 `clear(this.root)`，它会把装着 iframe 的 `.bc-frame-host`
         //   一起从文档里摘掉。**iframe 一旦离开文档，浏览器就把它的文档扔掉**，
         //   再 append 回去等于重新加载（`srcdoc` 重跑）⇒ 里面正在放的音乐立刻断 ✗
@@ -844,7 +844,7 @@ function openFabMenu(x, y) {
     // 最后一项 true = **只在聊天里能用**（读写的都是某个聊天的数据 ✓）
     // ★★ 被排除的角色卡（2026-10-28）：这个卡里不推演、也不记东西 ⇒
     //   跟推演 / 账本有关的那几项**整项不列**（别做成"点了没反应" ✗），只留设置 ✓
-    //   ★ 并且**面板上不占任何一条横条**（她要界面干净）⇒ 恢复入口就放在这里 ✓
+    //   ★ 并且**面板上不占任何一条横条**（需求方要界面干净）⇒ 恢复入口就放在这里 ✓
     const excludedNow = isCardExcluded();
     const judgeItems = excludedNow ? [] : [
         ['📝', '改数值', () => openFieldEditor(null), true],
@@ -863,7 +863,7 @@ function openFabMenu(x, y) {
             const av = currentCardAvatar();
             if (!av) return;
             setCardExcluded(av, false);
-            // 不弹右上角（2026-10-28 她定的），只写控制台 ✓
+            // 不弹右上角（2026-10-28 需求方定的），只写控制台 ✓
             console.log('[Bodycord] 这张卡已恢复推演');
             try { rebuildInjection(); } catch { /* 忽略 */ }
             try { refreshAll(); } catch { /* 忽略 */ }
@@ -1569,7 +1569,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  * ★ 版本号 + 构建号（扩展面板 / 诊断报告 / 诊断面板里那个「版本」）。
  *
  * 格式定稿：**`1.0（年月日-当天第几版）`** —— 版本号在前，构建号用全角括号包起来。
- *   · 版本号 `PLUGIN_VERSION`：**做完一大块才升**，不许提前写（2026-11-06 她定的口径）——
+ *   · 版本号 `PLUGIN_VERSION`：**做完一大块才升**，不许提前写（2026-11-06 需求方定的口径）——
  *     「图鉴」做完升一个大版本（1.0 → 2.0），「世界书绑定」做完升一个小版本（2.0 → 2.1），
  *     之后图鉴解耦 / 发情期 / 产后恢复 / 经期表现这一串各自升一位，到 2026-11-12 是 2.4 ✓；
  *     在那之前，哪怕已经在开发新版本的东西，版本号也还是上一版 ✓
@@ -1579,7 +1579,7 @@ export function resetLyricCfgAndApply() { return resetLyricCfg(); }
  *   · `manifest.json` 的 `version` 也写成同一个完整串（酒馆扩展卡片上显示的就是它）✓
  */
 export const PLUGIN_VERSION = '2.7';
-export const BUILD_STAMP = '2026-11-18-3';
+export const BUILD_STAMP = '2026-11-18-6';
 /** 界面上给人看的完整版本串：`1.0（构建号）` */
 export const BUILD_LABEL = PLUGIN_VERSION + '（' + BUILD_STAMP + '）';
 
@@ -1757,7 +1757,7 @@ const DIAG_COVERED_STATE_KEYS = [
  * 当前环境（不涉及隐私的粗分类）
  * ⚠️ 判据只用那两个函数，**别拿 `getChatKey()` 来判"在不在聊天里"** ✗ ——
  *   它在没有聊天时会退回一个兜底键（可能还是上一个聊天的），
- *   于是非聊天页会被报成"在聊天中"（2026-10-21 她报的）。
+ *   于是非聊天页会被报成"在聊天中"（2026-10-21 需求方报的）。
  *   `inChatPage()` = 有没有 chatId；`inRealChat()` = 这个聊天里有没有正文。
  */
 function diagScope() {
@@ -2461,13 +2461,13 @@ function renderDataTab(body) {
     body.appendChild(h('div', { class: 'bc-section-title', text: `追踪对象（${targets.length}）` }));
     if (!targets.length) body.appendChild(h('div', { class: 'bc-hint', text: '一个都没有' }));
     for (const t of targets) {
-        // ★ 2026-10-23（她报过着床后占卜台还写着待着床、孩子没遗传）：
+        // ★ 2026-10-23（需求方报过着床后占卜台还写着待着床、孩子没遗传）：
         //   把这一胎的**时间线读数**摊在诊断里 —— 全是数字/开关，不含剧情内容 ✓
         //   有了它分辨两件事：着床判定到底掷过没、提示词发出去时孕有没有切 ✓
         const extra = [];
         try {
             if (isTargetLoose(t.key)) {
-                // 轻档＝只登记名字 ⇒ 周期与孕一律不追踪（2026-10-23 她问过轻档为什么有周期）
+                // 轻档＝只登记名字 ⇒ 周期与孕一律不追踪（2026-10-23 需求方问过轻档为什么有周期）
                 // ★ 2026-11-08（发情期第 0 批）：发情记录档也只追发情这一本账 ✓
                 extra.push(kv('说明', trackModeOf(t) === 'estrus'
                     ? '发情记录：只追发情期，不进推演、不追踪周期与孕期'
@@ -2553,7 +2553,7 @@ function renderDataTab(body) {
         jsonBlock('状态摘要全文', diagUnmasked ? pv.state : maskLongText(pv.state)),
     ));
 
-    // ---- 最近一次推给**插件 API** 的提示词（2026-10-23 她要的功能）----
+    // ---- 最近一次推给**插件 API** 的提示词（2026-10-23 需求方要的功能）----
     //   只放内存：F5 就没了；默认**折叠**（一次几万字，全铺开会卡）
     body.appendChild(h('div', { class: 'bc-section-title', text: '最近一次推给插件 API 的提示词' }));
     const lpCard = h('div', { class: 'bc-dump-card' });
@@ -3362,7 +3362,7 @@ function demoOne(name, i) {
         //   （不然样例里出现别的号的人名，点 @名字 跳不过去 ✓）
         row3: '昨夜 23:10 · 示例致孕方·' + ['甲', '乙', '丙'][i % 3] + ' · 内射',
     };
-    // ★ 2026-11-06（第五批）：两份**卵生**样例（她拿预览验收这一批 ✓）
+    // ★ 2026-11-06（第五批）：两份**卵生**样例（需求方拿预览验收这一批 ✓）
     //   · 丙（i=2）：已经产卵、蛋还没破壳 ⇒ 状态是「待孵」，d6 是「无」、d5 未加载
     //   · 戊（i=4）：卵生怀孕中 ⇒ 面板上要能提前看到产卵日 / 破壳日两个日子
     if (i === 2) {
@@ -3655,7 +3655,7 @@ function buildPanelShell() {
         h('div', { class: 'bc-icon-btn', title: '深色 / 浅色', onclick: toggleTheme }, lineIcon(18, CONTRAST_PATHS)),
         // 这个按钮会变身：状态页是齿轮 ⚙，设置页变成返回箭头 ←
         // （iOS / 聊天软件 的做法 —— 不需要额外多一条突兀的返回栏）
-        // ⚠️ 齿轮**不是 emoji**：用同一套线图标画（2026-11-01 她指出 emoji 跟旁边画风不一致 ✓）
+        // ⚠️ 齿轮**不是 emoji**：用同一套线图标画（2026-11-01 需求方指出 emoji 跟旁边画风不一致 ✓）
         h('div', {
             class: 'bc-icon-btn bc-nav-btn', id: 'bc-nav',
             onclick: () => showPane(settings().ui.openTab === 'settings' ? 'status' : 'settings'),
@@ -3671,12 +3671,12 @@ function buildPanelShell() {
         settings: h('div', { class: 'bc-pane', dataset: { pane: 'settings' } }),
     };
 
-    // ★ 被排除的角色卡**不在面板上占一条横条**（2026-10-28 她要"界面干净一点"）——
+    // ★ 被排除的角色卡**不在面板上占一条横条**（2026-10-28 需求方要"界面干净一点"）——
     //   恢复入口挪进悬浮球快捷菜单；设置页那边本来就有开关和清单 ✓
 
     const paneWrap = h('div', { class: 'bc-panes' }, panes.status, panes.settings);
 
-    // ★ 2026-11-01（她：手机版上有三颗退出键）⇒ 只留**这一排最右边那颗 ✕**。
+    // ★ 2026-11-01（需求方：手机版上有三颗退出键）⇒ 只留**这一排最右边那颗 ✕**。
     //   删掉的两颗：①面板自己顶栏那颗（和 复制/遮罩/搜索 挤一排，容易点错到搜索）；
     //   ②右下角浮着的那颗（挡内容；它当初是因为苹果手机上顶栏那颗被刘海盖住才加的，
     //     现在顶栏按 env() 留了安全区、点按范围也放到 44px，够得着 ✓）。
@@ -3699,7 +3699,7 @@ function tickClock() {
     //   ⇒ 换成 `inChatPage()`（**只要有聊天 id 就算在聊天页** ✓）—— 这正是项目里记过的那条坑：
     //      「『在不在聊天里』不能拿『有没有正文』凑数」✓
     // ★★ 2026-10-28：**被排除的角色卡是个例外** —— 那个卡里没有推演、标题栏也不会有
-    //   「这一楼待推演」，右上角空着；她要看现实时间就从这儿给 ✓
+    //   「这一楼待推演」，右上角空着；需求方要看现实时间就从这儿给 ✓
     //   （正常卡里照旧藏起来：聊天里那块位置留给推演状态，概览里另有时间 ✓）
     if (inChatPage() && !isCardExcluded()) {
         els.clock.textContent = '';
@@ -3791,7 +3791,7 @@ function syncNavButton(pane) {
 }
 
 /**
- * ★ 让 iframe 里的面板按**现在的**尺寸重排一次（2026-10-22 她报的"从左上角挪到正常位置"）——
+ * ★ 让 iframe 里的面板按**现在的**尺寸重排一次（2026-10-22 需求方报的"从左上角挪到正常位置"）——
  *   面板本体住在 iframe 里；只要它是"还看不见 / 宽度接近 0"的时候建好的，
  *   iframe 内部就会先按 0 宽排一遍版，等切过去有尺寸了再重排 ⇒ 看着像内容从左上角滑进来 ✗
  *   ⚠️ 光派一个 resize 事件没用：重排是被**容器的真实尺寸**驱动的
@@ -3853,7 +3853,7 @@ function renderSettingsPane(force = false) {
 
     // 返回入口在顶部那个变身按钮上（状态页是⚙️，设置页是←），
     // 所以这里不再需要额外一条返回栏 —— 之前那条浮在页签上面很突兀。
-    // ★ 2026-11-01（她选的方案 A）：窄屏上整条左侧导航收成**一行「设置 / 当前页 ▼」**，
+    // ★ 2026-11-01（需求方选的方案 A）：窄屏上整条左侧导航收成**一行「设置 / 当前页 ▼」**，
     //   点开就在下面弹出一张分组清单。清单用的还是**同一份导航 DOM**，不另建一份
     //   （⇒ 只有样式和开合两件事，两边的项目永远不会对不上 ✓）。
     //   ⚠️ 桌面（>720）照旧是左侧竖排，这条栏 `display:none`（见 style.css 的 .bc-setbar）✓
@@ -3874,7 +3874,7 @@ function renderSettingsPane(force = false) {
     },
         h('span', { class: 'bc-setbar-label', text: '设置' }),
         barCur,
-        // ⚠️ 用「▼」这一个常见字符，别找冷门符号（她机器上会变豆腐块 ✓）
+        // ⚠️ 用「▼」这一个常见字符，别找冷门符号（需求方机器上会变豆腐块 ✓）
         h('span', { class: 'bc-setbar-arrow', text: '▼' }),
     );
     const wrap = h('div', { class: 'bc-pane-inner bc-setlayout' }, bar, mask, sub, content);
@@ -3891,7 +3891,7 @@ function renderSettingsPane(force = false) {
         ['补丁与档案', [['modules', '规则补丁'], ['codex', '种族图鉴'], ['archive', '记录档案'], ['ach', '成就记录']]],
         // ★ 设置里面的推演与追踪拆成两个：一个是推演、一个是追踪 ✓
         // ⚠️ 组名**不许也叫「推演」**：组名和项目名一模一样时，清单里会连着出现两个「推演」
-        //   （2026-10-31 她手机截图里就长这样，看着像重复渲染 ✗）⇒ 组名写全「推演与追踪」✓
+        //   （2026-10-31 需求方手机截图里就长这样，看着像重复渲染 ✗）⇒ 组名写全「推演与追踪」✓
         ['推演与追踪', [['judge', '推演'], ['tracking', '追踪']]],
     ];
     // 窄屏那条栏要显示"现在在哪一页"：id → 中文名
@@ -4258,7 +4258,7 @@ function buildKnownFactsBox(t) {
     // ★ 造精子批次 / 手加痕迹（先做这俩）
     const insBy = textInput('', () => {}, { placeholder: '例：示例角色·甲（可以是没建档的人）' });
     const insLife = textInput('', () => {}, { placeholder: '例：3（留空＝按提供方那一族掷）' });
-    // ★ 2026-10-24：意识状态的手动保底（她报：没人知道怀孕，面板却写成已确认）
+    // ★ 2026-10-24：意识状态的手动保底（需求方报：没人知道怀孕，面板却写成已确认）
     const man0 = awarenessManualOf(key);
     const knowIn = textInput(man0.knownName ?? '', (v) => {
         try { setAwarenessManualOf(key, { knownName: String(v || '').trim() }); } catch { /* 忽略 */ }
@@ -4341,7 +4341,7 @@ function buildKnownFactsBox(t) {
 
     // ★★ 2026-10-18（记录改成可折叠、按对象分组，不然越叠越多）——
     //   整块默认收起；展开后按对象分组，组内最新的在上 ✓
-    // ★ 2026-10-30：标题从「内射记录」改成「性行为记录」（她点的：这里记的是性行为）✓
+    // ★ 2026-10-30：标题从「内射记录」改成「性行为记录」（需求方点的：这里记的是性行为）✓
     const insemSec = section('性行为记录（按对象分组）', {
         collapsible: true,
         open: false,
@@ -4381,10 +4381,10 @@ function buildKnownFactsBox(t) {
             clearOvuJudgmentOf(key);
             t.vars.Is_Pregnant = 'false';
             // ★ 2026-10-23：**判定整条撤掉** ⇒ 里面那条"着床成功"也跟着没了
-            //   （她追问"是不是推演一次就把成功率锁死了"——撤销之后必须重新掷 ✓）
+            //   （需求方追问"是不是推演一次就把成功率锁死了"——撤销之后必须重新掷 ✓）
             try { setFetusPlanOf(key, null); } catch { /* 忽略 */ }
             clearProfileFix(key, 'd6', { silent: true });
-            // ★ 2026-10-23（她报：设为未孕后面板 / 气泡还挂着怀孕）——
+            // ★ 2026-10-23（需求方报：设为未孕后面板 / 气泡还挂着怀孕）——
             //   胎儿行（d6）与这一胎的血脉标记也得归零；只撤孕不撤这些，
             //   面板就是"未孕 + 单胎；子1…"的自相矛盾状态 ✗
             try {
@@ -4402,15 +4402,15 @@ function buildKnownFactsBox(t) {
                 if (t.vars && t.vars.impregnator_xeno != null) delete t.vars.impregnator_xeno;
                 if (t.vars && t.vars.impregnator_side != null) delete t.vars.impregnator_side;
             } catch { /* 忽略 */ }
-            // ★ 2026-10-23（她报：设为未孕后气泡还挂着"已着床完成"）——
+            // ★ 2026-10-23（需求方报：设为未孕后气泡还挂着"已着床完成"）——
             //   那段提醒是"未读提醒"，不撤掉的话硬刷新也会再弹 ✗
             try { dropConceiveAlerts(key); } catch { /* 忽略 */ }
             // ★ 冻结：设为未孕之后，时间同步 / 自动结算 / 切分支恢复候选都不许再把孕带回来；
-            //   只有她自己点一次推演才解冻（judge 那边会清 ✓）
+            //   只有需求方自己点一次推演才解冻（judge 那边会清 ✓）
             try { state().conceiveHold = true; } catch { /* 忽略 */ }
             finish();
-            // ★ 2026-10-23：**回读一次**，把"到底写进去没有"直接说给她看
-            //   （她连着两次报"没用"，靠猜没用；这一句能把对象键和实际值摊出来 ✓）
+            // ★ 2026-10-23：**回读一次**，把"到底写进去没有"直接说给需求方看
+            //   （需求方连着两次报"没用"，靠猜没用；这一句能把对象键和实际值摊出来 ✓）
             try {
                 const now = String(state().targets?.[key]?.vars?.Is_Pregnant ?? '');
                 if (now.toLowerCase() === 'true') {
@@ -4492,7 +4492,7 @@ function buildKnownFactsBox(t) {
             say(false, '这个对象还没有周期日：先让推演跑一轮，或者去「角色基础信息」里定周期起始');
             return;
         }
-        // ★ 2026-11-13（她定的）：手动写的存活期不设上界，写多少就按多少
+        // ★ 2026-11-13（需求方定的）：手动写的存活期不设上界，写多少就按多少
         //   （只挡非数字和小于 1；0 天等于没设存活期，那是另一条路 ✓）
         let lifeRoll = null;
         const lifeIn = String(insLife.value || '').trim();
@@ -4783,12 +4783,12 @@ function openBodyInfo() {
                     host.appendChild(h('div', { class: 'bc-hint', text: '这一份跟着【这个聊天】走：换聊天就是另一套' }));
                 }
 
-                // ★★ 2026-11-10（她截图说过想把周期模式挪到上面）——
+                // ★★ 2026-11-10（需求方截图说过想把周期模式挪到上面）——
                 //   周期模式是这一页最顶层的一件事（这个人有没有周期），所以摆在四项前面，
                 //   跟「补丁页 · 人物视图」那边「周期模式在最上面」排法一致 ✓
                 //   ⚠️ 只动位置，一个字的数据都不改 ✓
                 {
-                    // ★★ 2026-11-10（她定的）：三层显示 —— 你选的 / 推演判的 / 跟随默认 ✓
+                    // ★★ 2026-11-10（需求方定的）：三层显示 —— 你选的 / 推演判的 / 跟随默认 ✓
                     const badge = cycleModeBadgeOf(key);
                     const explicit = (() => {
                         if (isUserKey(key)) return String(settings().userCycleMode || '');
@@ -4946,7 +4946,7 @@ function openChildrenEditor() {
                     fetusHolder.value = String(v ?? '');
                     if (!t.profile || typeof t.profile !== 'object') t.profile = {};
                     t.profile.d6 = fetusHolder.value;
-                    // ★ 2026-10-23（她：只是改了性别，插件应该继续接管）——
+                    // ★ 2026-10-23（需求方：只是改了性别，插件应该继续接管）——
                     //   d6 是插件管的字段：这里先按"手改"记一笔，紧接着把性别同步回判定、
                     //   并把这一格交回插件（下一轮照常重写头/性别/致孕方，种族与描述素材保留 ✓）
                     try { setProfileFix(t.key, 'd6', fetusHolder.value, before); } catch { /* 忽略 */ }
@@ -4959,7 +4959,7 @@ function openChildrenEditor() {
                 // ★ 卵群那种（几十上百枚）就在这儿按批填 ——
                 //   我说的是这个✓（共用同一个编辑器 ✓）
                 buildSourceEditor(t.key, () => { try { commit(); } catch { /* 忽略 */ } }),
-                // ★ 2026-10-24（她的设计：别让人为了重写还得点出去）——
+                // ★ 2026-10-24（需求方的设计：别让人为了重写还得点出去）——
                 //   一个弹窗里既能重掷（不花调用），也能让模型按现在的结果重写（花一次调用）
                 (() => {
                     const rerollBtn = button('重掷天赋与来源', () => {
@@ -5046,10 +5046,10 @@ function openChildrenEditor() {
                             try { refreshAll(); } catch { /* 忽略 */ }
                         };
                         paint();
-                        // ★ 2026-10-24（她：取消这个词容易被误会）—— 这里没有"执行/放弃"的语义，只是关窗
+                        // ★ 2026-10-24（需求方：取消这个词容易被误会）—— 这里没有"执行/放弃"的语义，只是关窗
                         modal({ title: '重掷天赋与来源', width: 620, saveText: '关闭', hideCancel: true, build: (b) => b.appendChild(box) });
                       } catch (e) {
-                        // ★ 2026-10-24（她报：点了没反应）—— 先把原因弹出来，别再静默
+                        // ★ 2026-10-24（需求方报：点了没反应）—— 先把原因弹出来，别再静默
                         console.warn('[Bodycord] 重掷弹窗没打开', e);
                         window.toastr?.error?.('重掷弹窗没打开：' + String(e?.message || e));
                       }
@@ -5360,7 +5360,7 @@ function openFieldEditor(focusKey) {
     // ★★ 手改锁：打开时留一份"现在是什么值" —— 保存时一比对就知道玩家动过哪几格 ✓
     let profileAtOpen = { ...(t.profile || {}) };
     // ★ 2026-10-26：孕周 / 预产期那几格也要吃「保存」那颗按钮
-    //   （她填了周数直接点保存 ⇒ 原来只有那颗「设为这个孕周」才生效，保存等于没反应 ✗）
+    //   （需求方填了周数直接点保存 ⇒ 原来只有那颗「设为这个孕周」才生效，保存等于没反应 ✗）
     let pregApply = null;
     // ★ 敏感带表（延后模式）留给我们的落地入口：保存时调它（只有真改过才写 ✓）
     let flushZones = null;
@@ -5420,7 +5420,7 @@ function openFieldEditor(focusKey) {
                 refresh: () => { try { refreshAll({ force: true }); } catch { /* 忽略 */ } },
                 rebuild: () => { try { refreshAll({ force: true }); } catch { /* 忽略 */ } },
             });
-            // ★★ 2026-11-01（她：插件 API 把剧情时间认错了，改数值里要能直接改日期）——
+            // ★★ 2026-11-01（需求方：插件 API 把剧情时间认错了，改数值里要能直接改日期）——
             //   「剧情日期」是**整条时间轴**（一个聊天一根），不是当前这个对象一个人的 ⇒
             //   卡片名和明面那行都写清「对所有人一样」，别让人以为只改这个人 ✓
             {
@@ -5579,7 +5579,7 @@ function openFieldEditor(focusKey) {
                 body.appendChild(sec);
             }
 
-            // ★ 2026-11-01：整块从「时间与日历」搬过来的（她：放那儿不合适）——
+            // ★ 2026-11-01：整块从「时间与日历」搬过来的（需求方：放那儿不合适）——
             //   直接改日期给准确值、这里按天数走并当场结算，两件事挨着放才找得到 ✓
             //   弹窗里默认收起：它比日期格长，常开会把下面的数值挤下去 ✓
             shiftDaySection(body, () => { try { refreshAll({ force: true }); } catch { /* 忽略 */ } },
@@ -5683,7 +5683,7 @@ function openFieldEditor(focusKey) {
                         try { syncLastFloorSnapshot(); } catch { /* 忽略 */ }
                         refreshAll();
                         nowLine.textContent = `现在是 孕${w}周+${d}天`;
-                        // ★ 写完立刻回读（她说"哪里都没有变"时，这句能把失败面直接摊出来）
+                        // ★ 写完立刻回读（需求方说"哪里都没有变"时，这句能把失败面直接摊出来）
                         const back = String(state().targets?.[t.key]?.profile?.sub ?? '');
                         if (!back.includes('孕')) {
                             window.toastr?.warning?.('没写进去：进度那格现在是「' + (back || '空') + '」（对象 ' + t.key + '）');
@@ -5746,9 +5746,9 @@ function openFieldEditor(focusKey) {
                         ),
                         // ★ 2026-10-26：**还没有预产期**时的那条路 ——
                         //   预产期本来只在推演那一步由插件定下来（每轮调一次那个"定预产期"的流程），
-                        //   可她那一档三个孩子都没写「孕期」这一格 ⇒ 哪里都没有预产期
+                        //   可需求方那一档三个孩子都没写「孕期」这一格 ⇒ 哪里都没有预产期
                         //   （＝ 日历上也没得标、提醒里也没有）✗
-                        //   ⇒ 给她一颗"现在就算"的按钮：规则跟推演那条一模一样
+                        //   ⇒ 给需求方一颗"现在就算"的按钮：规则跟推演那条一模一样
                         //     （人类没写孕期 ⇒ 按 280 天；人外漏写 ⇒ 算不出来，如实说 ✓）
                         //   已经定下的那胎不会重掷（锁定 ✓）
                         h('div', { class: 'bc-row bc-row-wrap', style: { marginTop: '6px' } },
@@ -5885,7 +5885,7 @@ function openFieldEditor(focusKey) {
                 }
                 try { refreshRaw({ force: true }); } catch { /* 忽略 */ }
                 commit();
-                // ★ 改数值 / 交回插件之后，最后一楼的「本楼状态」也要跟着改（她 2026-10-23 报的）
+                // ★ 改数值 / 交回插件之后，最后一楼的「本楼状态」也要跟着改（2026-10-23 报的）
                 try { syncLastFloorSnapshot(); } catch { /* 忽略 */ }
                 try { refreshAllFloors(); } catch { /* 忽略：楼层面板没开着也无所谓 */ }
                 refreshAll();
@@ -5894,7 +5894,7 @@ function openFieldEditor(focusKey) {
                     : '已交回插件：这一格下一轮推演会按判定重拼');
             };
             for (const f of FIELD_DEFS) {
-                // ★★ 2026-10-30（她报：快照里的近期性行为不更新）——
+                // ★★ 2026-10-30（需求方报：快照里的近期性行为不更新）——
                 //   这几格是**多行文本**，原来塞进单行 input ⇒ 一打开保存换行就被抹平，
                 //   和"打开那一刻"的值不一样 ⇒ 被误判成"手改"，然后每轮把旧文本写回去 ✗
                 //   ⇒ 多行的一律用多行框（由 `multiline` 那一项决定）✓
@@ -6114,16 +6114,16 @@ async function doJudge(rejudge = [], opts = {}) {
             //   发言（没有正文）⇒ 如实说一句就行，别弹红色"失败" ✗
             window.toastr?.info?.(r.error);
         } else if (r.cancelled) {
-            // ★ 2026-10-23 她报过停止推演会弹两次：手动取消的那条提示**按钮那边已经弹过了**
+            // ★ 2026-10-23 需求方报过停止推演会弹两次：手动取消的那条提示**按钮那边已经弹过了**
             //   （楼层那颗 / 悬浮球那颗 / 时光机那颗），这里再弹一条就是重复 ✗
             //   ⇒ 这条路只在"被后发起的那次接管"时说一句 ✓
             if (r.superseded) window.toastr?.info?.('这次推演被后发起的那次接管了');
-            // ★ 2026-10-24（她报：时光机撤销之后，楼层里点推演没反应）——
+            // ★ 2026-10-24（需求方报：时光机撤销之后，楼层里点推演没反应）——
             //   不是被接管、也不是自己取消，却什么都没弹 ⇒ 那才是"点了没反应"。
             //   这里补一句，让下回点的时候至少有话说 ✓
             else window.toastr?.warning?.('这次推演没跑到：' + String(r.error || '原因不明'));
         } else {
-            // ★ 2026-11-14：报错后面补一句「可能的原因」（她定的：光有接口原话玩家看不懂 ✓）
+            // ★ 2026-11-14：报错后面补一句「可能的原因」（需求方定的：光有接口原话玩家看不懂 ✓）
             //   多显示几秒，不然一句长报错还没读完就消失了
             window.toastr?.error?.('推演失败：' + r.error + (r.hint ? '｜' + r.hint : ''), '', { timeOut: 12000 });
         }
@@ -6685,7 +6685,7 @@ function openAchievementsView() {
             const w = v?.panel?.iframe?.contentWindow;
             if (w && typeof w.__bodycordSwitchView === 'function') {
                 // ★ 2026-10-28：这条成就不一定属于当前查看的对象 ⇒ 先切到「全部」，
-                //   不然默认的「只看当前对象」会把刚弹出来的那条藏掉（她报过"点进去没有" ✓）
+                //   不然默认的「只看当前对象」会把刚弹出来的那条藏掉（需求方报过"点进去没有" ✓）
                 try { w.__bodycordAchievementsShowAll?.(); } catch { /* 忽略 */ }
                 w.__bodycordSwitchView('achievements');
                 return true;
@@ -7345,7 +7345,7 @@ function placeRoot(root) {
  * 换个更小的窗口 / 更小的屏，那对坐标会把面板顶出屏幕（右侧和下侧看不见），
  * `style.css` 里 ≤900 那档给拖过的面板写了明确尺寸，尺寸一变大就更容易顶出去 ✓
  * ⇒ 每次打开 / 窗口尺寸变化时夹一次：
- *   · 横向要求整块都在屏幕内（左右各留 4px）—— 她在窄窗口里撞上的就是这条
+ *   · 横向要求整块都在屏幕内（左右各留 4px）—— 需求方在窄窗口里撞上的就是这条
  *   · 纵向：**放得下就整块放进来**；真放不下时至少让顶栏那条留在屏幕里（48px）✓
  */
 function clampRootIntoView() {

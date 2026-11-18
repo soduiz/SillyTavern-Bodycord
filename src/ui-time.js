@@ -117,7 +117,7 @@ function periodFields(raw) {
 
 export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
     // ★ 2026-10-23：先清掉"没有快照的孤儿候选记录" —— 旧版撤销只删快照、没删候选记录，
-    //   那一楼在时光机里已经看不到、点不掉了 ⇒ 这些残渣要插件自己清，不能指望她点 ✓
+    //   那一楼在时光机里已经看不到、点不掉了 ⇒ 这些残渣要插件自己清，不能指望需求方点 ✓
     try { pruneOrphanCandidates(); } catch { /* 忽略 */ }
     // ★ **每次打开都从"本聊天"开始** ——
     //   以前模块级 `archive` 一直留着 ⇒ 关窗再打开会停在上一次导入的档案上，
@@ -182,7 +182,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
     const detailHost = h('div', { class: 'bc-tm-detail' });
     const headInfo = h('div', { class: 'bc-tm-info' });
     const statusHost = h('div', { class: 'bc-tm-status' });
-    // ★ 2026-10-23（她截图报的：上一层的时光机里撤销刚才那次回滚看着像属于这一楼）——
+    // ★ 2026-10-23（需求方截图报的：上一层的时光机里撤销刚才那次回滚看着像属于这一楼）——
     //   那是**全聊天**动作，挪到列表外面单独放，不跟选中的楼层绑在一起 ✓
     const globalHost = h('div', { class: 'bc-tm-global' });
 
@@ -195,9 +195,9 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
     };
 
     /**
-     * ★★ 2026-10-23（她报：改完之后不能重推之前的楼层了）——
+     * ★★ 2026-10-23（需求方报：改完之后不能重推之前的楼层了）——
      *   推演认的"这一楼"不是聊天最后一条消息，而是**最近一条正文**（玩家刚发、还没回复的那条不算）。
-     *   我一开始拿 `chat.length - 1` 当判据 ⇒ 她发了一条新消息（玩家层）之后，
+     *   我一开始拿 `chat.length - 1` 当判据 ⇒ 需求方发了一条新消息（玩家层）之后，
      *   上一楼明明仍是"最近一条正文"、本来可以重推，却被我判成"你已经在下一层"藏掉了 ✗
      *   ⇒ 跟 judge 的 `safeLastMessageIndex()` 同一个口径：从后往前找第一条有字、不是玩家的消息 ✓
      */
@@ -293,7 +293,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
             h('div', { class: 'bc-tm-head-title', text: `#${selected.序号}　${selected.剧情时间 || '（无剧情时间）'}` }),
             h('div', { class: 'bc-tm-head-sub', text: `${fmtReal(selected.ts)}　·　${archive ? '导入的档案' : '本聊天记录'}` }),
         ));
-        // ★ 2026-10-23（她报：上一层的时光机看着像在说当前这一楼）——
+        // ★ 2026-10-23（需求方报：上一层的时光机看着像在说当前这一楼）——
         //   把"这条记录是哪一楼、你现在在哪一楼"写在最上面，按钮就不会被误读 ✓
         try {
             if (!archive) {
@@ -433,7 +433,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                 try {
                     const list = currentList();
                     const last = list.length ? list[list.length - 1] : null;
-                    // ★★ 2026-10-23（她报：上一层时这两颗还在）——
+                    // ★★ 2026-10-23（需求方报：上一层时这两颗还在）——
                     //   「重推 / 撤销」只对**你现在停留的那一楼**有意义：
                     //   判据除了"是最后一条快照"，还要"这一楼就是聊天当前的最后一楼" ✓
                     //   （以前只看最后一条快照 ⇒ 人已经到下一楼了，按钮还亮着，
@@ -446,7 +446,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                         && atCurrentFloor;
                     if (isLatest) {
                         const can = Number.isFinite(floor) && floor >= 0 && canRollbackTo(floor);
-                        // ★★ 2026-10-31（她叠着点了「重推」再点「撤销」，把重推的结果也撤掉了）——
+                        // ★★ 2026-10-31（需求方叠着点了「重推」再点「撤销」，把重推的结果也撤掉了）——
                         //   `重推这一楼` 本身就含一次回滚（退到这一楼之前再算）⇒ 重推之后的账
                         //   是"重新算出来的那一次"。此时再点「撤销这次推演」不是"只撤重推那半"，
                         //   而是**连这次结果一起撤掉**，退回产下之前（原来那份账也回不来）✗
@@ -528,7 +528,7 @@ export function openTimeMachine({ onClose, onJudge, onDataChanged } = {}) {
                                 : '「撤销这次推演」＝账退到这一楼之前 ＋ 删掉这条快照（正文不动）')
                             : '「撤销这次推演」现在不可用：能退的存档只留最近 ' + rollbackKeepCount() + ' 次推演' }));
                     } else {
-                        // ★★ 2026-10-23（她报：当前楼没记录、上一楼又不能推演）——
+                        // ★★ 2026-10-23（需求方报：当前楼没记录、上一楼又不能推演）——
                         //   历史楼层**也给一条重推的路**：整套退回这一楼之前，再按这一楼的正文重算，
                         //   快照只记在这一楼（补推那条路 ✓）。不然人走到下一楼之后，这一楼就再也重推不了 ✗
                         const fl = Number(selected.楼层);

@@ -25,7 +25,7 @@ import { pregPhaseOf } from './derive.js';
 import { isPregnant, hasSperm } from './prompt.js';
 
 /**
- * 孕期那张图该出场了没 —— 2026-10-23 定稿（她的口径）
+ * 孕期那张图该出场了没 —— 2026-10-23 定稿（需求方的口径）
  *
  * **着床有它自己那张配图**：刚着床那几天要显示「着床」那张（并且保留子宫层），
  * 不能被孕期那张盖掉、更不能提前显示胚胎。
@@ -35,7 +35,7 @@ import { isPregnant, hasSperm } from './prompt.js';
 function pregnancyArtReady(k, t) {
     try {
         if (!isPregnant(t)) return false;
-        // ★★ 2026-10-23（她报：刚着床内视图就有胚胎）——
+        // ★★ 2026-10-23（需求方报：刚着床内视图就有胚胎）——
         //   切孕那一轮胎数 / 性别还没掷（`fetusPlanPending`）⇒ 继续用「着床」那张＋子宫层。
         //   这个判据必须读**插件自己的结构**，不能只读 d6：d6 是模型能写的字段，
         //   它这一轮会自己编「单胎（女），孕3周，胚胎已完成着床…」✗
@@ -265,7 +265,7 @@ export const BUILTIN_LAYER_FILES = {
     fertilized: 'fertilized.webp',
     implanted: 'implanted.webp',
     // ★ 2026-11-06（第五批）：待孵那一档。**先用「卵子」那张顶着** ——
-    //   她画好专门的图之后，放进 assets/stages/incubating.webp（或在设置页里传）就自动换 ✓
+    //   需求方画好专门的图之后，放进 assets/stages/incubating.webp（或在设置页里传）就自动换 ✓
     incubating: 'egg.webp',
 };
 
@@ -357,7 +357,7 @@ export function nearestIn(kind, mode, tier) {
  *   ★ 2026-10-30：`sealed`（孕期）⇒ **一律不抬子宫**。
  *     为什么：孕期宫颈被封着，子宫那本永远是空；可这两条联动会把
  *     「阴道满」抬成「子宫少」，于是读数和图下文字又冒出个「少」✗
- *     （她当天就看到了「从满溢变成少了」）
+ *     （需求方当天就看到了「从满溢变成少了」）
  * @param {boolean} [sealed] 孕期（子宫不收任何东西）
  */
 export function effectiveLoads(vaginaTier, wombTier, sealed = false) {
@@ -402,7 +402,7 @@ export function pickStageLayers(f = {}) {
     const wombStored = SPERM_TIERS.includes(String(f.wombTier || '')) ? String(f.wombTier) : 'empty';
     // ★ 显示用的两档都按联动抬一抬；孕期子宫那一本**不参与抬升**（见 effectiveLoads）
     //   `wombSealed` 单独给：刚着床那几天画面还是「着床」那张（pregnant=false），
-    //   但她已经在孕期了 ⇒ 抬升得按"真孕期"封，不能按"孕期图出没出场"封 ✗
+    //   但需求方已经在孕期了 ⇒ 抬升得按"真孕期"封，不能按"孕期图出没出场"封 ✗
     const sealed = (f.wombSealed !== undefined) ? !!f.wombSealed : !!f.pregnant;
     const eff = effectiveLoads(vaginaStored, wombStored, sealed);
     const vaginaTier = eff.vagina;
@@ -492,7 +492,7 @@ export function composeStageLayers(mode, picked, fetus = {}) {
         const src = useN ? stageImageFor('pregnant', mode, useN) : '';
         if (src) layers.push({ src, dx: 0, dy: 0, s: 1 });
         return {
-            // ★ 2026-10-24（她：但我子宫是空）—— 孕期图不贴子宫层，但**文字读数**要真实档；
+            // ★ 2026-10-24（需求方：但我子宫是空）—— 孕期图不贴子宫层，但**文字读数**要真实档；
             //   以前这里写死 `wombTier:'empty'` ⇒ 图下文字永远显示「子宫：空」✗
             vaginaTier: picked.vaginaTier, vaginaStored: picked.vaginaStored, wombTier: picked.wombTier,
             usedTier: vUse, wombUsedTier: '', pregnantUsed: useN,

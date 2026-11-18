@@ -505,9 +505,9 @@ const MODULE_HELP = {
 };
 
 /**
- * ★ 2026-11-08（她定的）：**产后恢复单独一张卡**。
+ * ★ 2026-11-08（需求方定的）：**产后恢复单独一张卡**。
  *
- * 原来那三格塞在「受孕基础率与防护系数」那张卡里，她要求剥出来单独做一条 ——
+ * 原来那三格塞在「受孕基础率与防护系数」那张卡里，需求方要求剥出来单独做一条 ——
  * 理由是「有人不想要」⇒ 所以这张卡最上面挂一个**总开关**：
  * 关掉之后分娩那一轮照旧直接拨回周期第 1 天，跟加这个功能之前一模一样。
  *
@@ -516,7 +516,7 @@ const MODULE_HELP = {
  */
 function postpartumCard(H) {
     const s = settings();
-    // ★ 默认**关**（她 2026-11-08 定的：有人不想要 ⇒ 不主动碰她的周期）
+    // ★ 默认**关**（2026-11-08 定的：有人不想要 ⇒ 不主动碰需求方的周期）
     const on = s.postpartumOn === true;
     const rerender = () => { if (H && H.rebuild) H.rebuild(); };
     const card = h('div', {
@@ -565,7 +565,7 @@ function postpartumCard(H) {
 /**
  * ★ 2026-11-08（发情期第 0 批）：发情期总开关 ＋ 自动追踪开关。
  *
- * 她定的：开关放规则补丁页、默认关；关着时整条不发，档位「发情记录」也不可选 ✓
+ * 需求方定的：开关放规则补丁页、默认关；关着时整条不发，档位「发情记录」也不可选 ✓
  * 自动追踪只对「仅致孕、不能被受孕、这一族有发情期」的对象生效，默认关 ✓
  */
 function estrusCard(H) {
@@ -699,19 +699,19 @@ function moduleCard(mod, targetKey, handlers) {    // 这个变体依赖的本�
 
     card.appendChild(h('div', { class: 'bc-card-desc', text: mod.desc }));
 
-    // ★ 2026-11-08（她说没对齐）：附加在卡身里的这些行（提示 / 档位 / 规则行）统一放进同一个
+    // ★ 2026-11-08（需求方说没对齐）：附加在卡身里的这些行（提示 / 档位 / 规则行）统一放进同一个
     //   `.bc-card-body`，左右内边距才跟卡头和说明同源；没有附加内容时它自己 display:none ✓
     const extraBody = h('div', { class: 'bc-card-body' });
     card.appendChild(extraBody);
 
-    // ★ 2026-10-24（她：给继承加三档运气）——
+    // ★ 2026-10-24（需求方：给继承加三档运气）——
     //   不做加权：一键只是把「怀孕判定模块」里那两行区间**换成对应的一套**，
     //   换完照样能在参数面板逐格改 ✓（预设是"换表"，不是"改概率偏向"）
     if (mod.id === 'heritage') {
-        // ★ 2026-10-24（她：三颗按钮看不出现在用的是哪档）⇒ 改成下拉，当前档位一眼可见 ✓
+        // ★ 2026-10-24（需求方：三颗按钮看不出现在用的是哪档）⇒ 改成下拉，当前档位一眼可见 ✓
         const curPreset = (() => { try { return detectTalentPreset(useTarget); } catch { return 'custom'; } })();
         const curLabel = { normal: '正常', lucky: '好运', super: '超好运' }[curPreset] || '自定义（现在这套）';
-        // ★ 2026-11-08（她说这里没对齐）——
+        // ★ 2026-11-08（需求方说这里没对齐）——
         //   `.bc-card-hint` 自带 10+2 的左缩进，本来只适合放在卡身里再额外缩一点；
         //   这一段和下面两行都进了 `extraBody`，提示自己的缩进清零，左边缘跟卡头对齐 ✓
         extraBody.appendChild(h('div', {
@@ -724,7 +724,7 @@ function moduleCard(mod, targetKey, handlers) {    // 这个变体依赖的本�
             ['lucky', '好运'],
             ['super', '超好运'],
         ];
-        // ★ 2026-10-24（她：咋四个）——「自定义」只在当前值认不出预设时才出现在列表里 ✓
+        // ★ 2026-10-24（需求方：咋四个）——「自定义」只在当前值认不出预设时才出现在列表里 ✓
         if (curPreset === 'custom') presetOpts.push(['custom', curLabel]);
         extraBody.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
             h('span', { class: 'bc-label', text: '运气档位' }),
@@ -735,7 +735,7 @@ function moduleCard(mod, targetKey, handlers) {    // 这个变体依赖的本�
             }),
             h('span', { class: 'bc-hint', text: '当前：' + curLabel + (curPreset === 'custom' ? '（参数面板里改过，选上面三档可以覆盖回去）' : '') }),
         ));
-        // ★ 2026-10-24（她：显性单独一个档位，跟天赋隔开）——
+        // ★ 2026-10-24（需求方：显性单独一个档位，跟天赋隔开）——
         //   显性外貌从哪一边取，单独一颗下拉：默认双方相同概率 / 偏向受孕方 / 偏向致孕方 ✓
         const curDom = (() => { try { return detectDominantPreset(useTarget); } catch { return 'custom'; } })();
         const domLabel = { equal: '双方相同概率', mat: '偏向受孕方', pat: '偏向致孕方' }[curDom] || '自定义（现在这套）';
@@ -975,7 +975,7 @@ function moduleCard(mod, targetKey, handlers) {    // 这个变体依赖的本�
                 handlers.onDraftClear?.(mod.id);
                 handlers.rebuild?.();
             }) : null,
-            // ★★ 2026-11-02（她截图：手机上这段说明被挤成一字一行）——
+            // ★★ 2026-11-02（需求方截图：手机上这段说明被挤成一字一行）——
             //   说明必须排在这一行**最后**：窄屏那条规则让说明独占一行、落在按钮下面
             //   （见 style.css 的 `@media (max-width: 560px)` 那段）。
             //   它原来夹在按钮中间 ⇒ 手机上按钮把宽度吃光，说明只剩一个字的宽 ✗
@@ -1559,10 +1559,10 @@ function periodModeSwitch(handlers) {
 function personBasicInfoCard(targetKey, rerender) {
     const body = h('div', { class: 'bc-card-body' });
     const onChange = () => { try { rerender?.(); } catch { /* 忽略 */ } };
-    // ★ 2026-11-06（她：人物里凭什么不能设种族）：这张卡**现在**带「种族 / 属于哪个大类」，
+    // ★ 2026-11-06（需求方：人物里凭什么不能设种族）：这张卡**现在**带「种族 / 属于哪个大类」，
     //   下面身体补丁的参数面板不再重复画那两格 ⇒ 一个动作一个入口，而且人待的地方就有 ✓
     //   ⚠️「属于哪个大类」是**临时的**：等图鉴那一批种族数据接管人外表，这一格就退休；
-    //     长期留在这张卡上的是「种族」那格（她说这一格之后会删掉 ✓）
+    //     长期留在这张卡上的是「种族」那格（需求方说这一格之后会删掉 ✓）
     bodyLockRows(body, targetKey, { onChange });
     // ★ 2026-10-24：察觉档位（A~E）——这里也能改；玩家自己存全局，别的存本聊天
     // ★ 2026-11-13：不能怀孕 ⇒ 藏起来（它是怀孕后才用的，留着会被误会还在发）
@@ -1743,7 +1743,7 @@ function personCycleModeRow(targetKey, rerender) {
         if (isUserKey(targetKey)) return String(settings().userCycleMode || '');
         return String(state().targets?.[targetKey]?.cycleMode || '');
     };
-    // ★★ 2026-11-10（她定的）：三层显示（锁定 / 推演判 / 跟随默认），
+    // ★★ 2026-11-10（需求方定的）：三层显示（锁定 / 推演判 / 跟随默认），
     //   跟设置页、悬浮球弹窗共用 `cycleModeBadgeOf` 这一份，别各写一份 ✓
     const badgeInfo = cycleModeBadgeOf(targetKey);
     const opts = [
@@ -2009,7 +2009,7 @@ export function renderModulesTab(container, handlers = {}) {
         //   ⚠️ 只放进「角色基础信息」（悬浮球弹窗 + 设置页）的话，人物里面看不到 ✗
         //     ⇒ 补在人待着的地方（补丁页 · 人物视图的对象选择器旁边 ✓
         //        原则：入口要放在"那一刻人在哪" ✓）
-        // ★★ 2026-11-10（她截图说过想把周期模式挪到上面）——
+        // ★★ 2026-11-10（需求方截图说过想把周期模式挪到上面）——
         //   三个页面（设置页 / 悬浮球弹窗 / 这里）统一：**周期模式排在最前面**，
         //   四项锁定跟在它后面。周期模式是这个人的顶层事实（有没有周期），
         //   摆在下面要滚下去才看得到 ✓
@@ -2102,7 +2102,7 @@ export function renderModulesTab(container, handlers = {}) {
         container.appendChild(periodNamesCard(handlers));
 
         // ---- 自动门控（放在这里而不是设置页：它管的就是「哪些提示词发出去」） ----
-        // ★ 2026-11-08（她提的：这张卡平常没人去动，摆在页面上占格子）——
+        // ★ 2026-11-08（需求方提的：这张卡平常没人去动，摆在页面上占格子）——
         //   折成一条可折叠行、默认收起，标题右边带状态字「N 个开着」：
         //   不展开也一眼看得出开没开（跟「别名与备注」那条同一个做法 ✓）。
         //   折叠状态放**模块级** ⇒ 分类页签重建 / 整页重画之后不会自己弹回去 ✓
@@ -2182,7 +2182,7 @@ export function renderModulesTab(container, handlers = {}) {
     // ★ 2026-11-09：这几页末尾**另挂**了几张全局开关卡（没有正文、不算「模块」）——
     //   页签名必须把它们也说一句，否则页签数字会跟下面数出来的卡片数对不上 ✗
     //   ⚠️ 这个数要跟下面 `pane` 里真正 append 的那几张一致（改一处就一起改 ✓）
-    // ★ 2026-11-13：性特征总开关搬去「种族图鉴」页（她：生理周期那一页不该放性特征）⇒ period 只剩发情期 1 张 ✓
+    // ★ 2026-11-13：性特征总开关搬去「种族图鉴」页（需求方：生理周期那一页不该放性特征）⇒ period 只剩发情期 1 张 ✓
     const EXTRA_SWITCHES = isWorld ? { pregnancy: 1, period: 1 } : {};
     for (const [id, label] of TABS) {
         // ★ 页签上的"几条 / 多少 tk"必须和**下面真正列出来的**是同一份清单 ✓
@@ -2234,7 +2234,7 @@ export function renderModulesTab(container, handlers = {}) {
             pane.appendChild(moduleCard(m, isWorld ? '__global__' : targetKey, H));
         }
         // ★ 2026-11-08：这几张卡是**全局开关**（卡头徽章就写着「全局」），不是有正文的模块 ——
-        //   原来只按「是不是生理期这一页」挂，结果**人物视图也画了一份**（她问过人物视图里
+        //   原来只按「是不是生理期这一页」挂，结果**人物视图也画了一份**（需求方问过人物视图里
         //   为什么也有性特征和产后恢复）⇒ 那些开关按人不分，画在人物里只是同一个开关的副本 ✗
         //   ⇒ 只在**世界观**视图挂 ✓
         //   ⚠️ 判据仍然用**页面**；加的是"哪个视图"这一条，

@@ -135,7 +135,7 @@ export const PARAM_SPECS = [
                 //   夹一道：排卵日 1~（周期 − 2）
                 // ⚠️ 2026-11-13（2.7 第三批修）：周期长度**不再夹上限 90** ——
                 //   图鉴里狗 180 / 象 112 / 狼 365 都是真的，经期波动又能自定义任意天数，
-                //   夹到 90 等于把玩家写的数悄悄改掉（她的红线：不夹玩家写的值 ✗）
+                //   夹到 90 等于把玩家写的数悄悄改掉（需求方的红线：不夹玩家写的值 ✗）
                 const cur = parseBodyCycleParams(out);
                 const cyc = Math.max(5, Math.round(Number(hasCycle ? v.cycle : cur.cycle) || 28));
                 const ovu = Math.max(1, Math.min(Math.round(Number(hasOvu ? v.ovu : cur.ovu) || 14), cyc - 2));
@@ -376,7 +376,7 @@ export const PARAM_SPECS = [
             //     `renderParamFields` 只渲染 `specOf()` 拿到的**第一条** ✗
             //   ⇒ 同一 moduleId 的所有字段都收在这一条里 ✓
             { key: 'internal', label: '防护 · 内射', type: 'number' },
-            // ★ 2026-11-15（她拍的 A 案）：面板名只给玩家看，AI 报的那个词（「外部摩擦」）不动。
+            // ★ 2026-11-15（需求方拍的 A 案）：面板名只给玩家看，AI 报的那个词（「外部摩擦」）不动。
             //   原名「外部摩擦／无套外射」的位置感是反的：外射实际是射在**远离入口**的地方（0.1），
             //   而这一档是**蹭到入口**（体外蹭射 / 隔衣渗到 / 龟头摩擦，0.3）⇒ 改成"碰到 / 没碰到"一对 ✓
             { key: 'friction', label: '防护 · 蹭到入口', type: 'number' },
@@ -822,8 +822,8 @@ export const PARAM_SPECS = [
         },
     },
     {
-        // ★★ 2026-11-08（她定的）：产后恢复**单独一张卡** ——
-        //   原来这三格塞在「受孕基础率与防护系数」里，她要求剥出来单独做一条，
+        // ★★ 2026-11-08（需求方定的）：产后恢复**单独一张卡** ——
+        //   原来这三格塞在「受孕基础率与防护系数」里，需求方要求剥出来单独做一条，
         //   理由是「有人不想要」⇒ 这张卡的最上面挂一个总开关，关掉就整条不生效
         //   （分娩那轮照旧直接拨回周期第 1 天，跟加这个功能之前一样）。
         //   ⚠️ 它**不是** modules.js 里的模块：这一块没有要发给 AI 的规则正文，
@@ -844,7 +844,7 @@ export const PARAM_SPECS = [
             },
             { key: 'postpartumMin', label: '自定义 · 最短', suffix: '天', type: 'number' },
             { key: 'postpartumMax', label: '自定义 · 最长', suffix: '天', type: 'number' },
-            // ★ 2026-11-08（她指出的现实）：排卵常常比第一次月经先回来 ⇒
+            // ★ 2026-11-08（需求方指出的现实）：排卵常常比第一次月经先回来 ⇒
             //   填几天就把恢复期最后这几天算"排卵已恢复"；默认 0 ＝ 简化成跟月经同一天 ✓
             { key: 'postpartumOvulationDays', label: '排卵提前恢复（0 ＝ 跟月经同一天）', suffix: '天', type: 'number' },
         ],
@@ -1034,7 +1034,7 @@ export function applyFertilityTierReport(key, word) {
 /** 这个对象还没定过档（推演名单里有这种人时，契约才多问那一行 ✓） */
 export function needsFertilityTier(key) {
     if (!key || isUserKey(key)) return false;
-    // ★ 2026-11-14（她拍）：明确不能怀孕的人**不问这一档** ——
+    // ★ 2026-11-14（需求方拍）：明确不能怀孕的人**不问这一档** ——
     //   界面已经不画卵子那两格，问了只会让模型填一个永远不显示的值 ✗
     if (isCannotBePregnantOf(key)) return false;
     if (fertilityTierOf(key)) return false;
@@ -1044,7 +1044,7 @@ export function needsFertilityTier(key) {
 // ---------------------------------------------------------------------------
 // ★ 2026-11-13（第六批）：精子致孕力也按「建档时判一次档」
 //
-// 第五批只把**卵子质量**那一侧接了模型判档，精子那一侧漏了（她 2026-11-13 点出来的）。
+// 第五批只把**卵子质量**那一侧接了模型判档，精子那一侧漏了（2026-11-13 点出来的）。
 //   两边判据完全相同：按角色设定与长期体质判一次，不能拿这一楼的临时状态判。
 // 落法：档位写到**那个对象自己**身上（`targets[key].spermPowerTier`），
 //   数值由「这一族基准 × 档位倍率」实时算 ⇒ 换绑别的族会跟着变 ✓
@@ -1065,7 +1065,7 @@ export function applySpermPowerTierReport(key, word) {
 /** 这个对象还没定过精子致孕力那一档 */
 export function needsSpermPowerTier(key) {
     if (!key || isUserKey(key)) return false;
-    // ★ 2026-11-14（她拍）：明确不能让别人怀孕 ⇒ 不问精子致孕力这一档（同上一条）✓
+    // ★ 2026-11-14（需求方拍）：明确不能让别人怀孕 ⇒ 不问精子致孕力这一档（同上一条）✓
     if (isCannotImpregnateOf(key)) return false;
     return !spermPowerTierOf(key);
 }

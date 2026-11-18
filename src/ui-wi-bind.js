@@ -7,7 +7,7 @@
  *   · 弹窗里书要有搜索、条目也要有搜索；都分页（库里上百本，一次全摊会卡 ✓）
  *   · 排在最前的是**当前在用的那几本**（当前角色卡那本置顶），其余按名字排 ✓
  *   · 「从世界书建角色」：勾哪条建哪条，**不勾就什么都不发生**；建完可以整批撤销 ✓
- *   · **不自动扫世界书**（她 2026-11-06 点掉的）：页面上那行一个字都不读，玩家不点就不读；
+ *   · **不自动扫世界书**（2026-11-06 点掉的）：页面上那行一个字都不读，玩家不点就不读；
  *     「疑似设定」只在打开挑选弹窗、点开某本书时，在已读到的条目上标一下（默认不自动绑）✓
  *
  * ⚠️ 这里只改插件自己的绑定关系，**绝不写世界书文件、也不动酒馆的勾选** ✓
@@ -28,7 +28,7 @@ import {
 
 const PAGE_BOOKS = 14;
 const PAGE_ENTRIES = 20;
-// ★ 2026-11-12（她截图问过这里点选之后为什么没有分页、直接一个大列表）——
+// ★ 2026-11-12（需求方截图问过这里点选之后为什么没有分页、直接一个大列表）——
 //   角色卡那两份清单（选描述 / 从角色卡建角色）当初漏了分页，现在跟世界书条目同一个量 ✓
 const PAGE_CARDS = 20;
 
@@ -49,7 +49,7 @@ function bookRank(name, pinned, inUse) {
 }
 
 /** 一次列出所有书 ＋ 某本书的条目（懒读，按需读那本 ✓）
- *  ★ 2026-11-06 她定的形态：条目要出现在**被展开的那本书下面**（不是整张列表的末尾 ✗）✓ */
+ *  ★ 2026-11-06 需求方定的形态：条目要出现在**被展开的那本书下面**（不是整张列表的末尾 ✗）✓ */
 function browser({ selected, mode, onToggle, scrollEl, suspect }) {
     const wrap = h('div');
     const bookHost = h('div');
@@ -180,7 +180,7 @@ function browser({ selected, mode, onToggle, scrollEl, suspect }) {
                 const on = selected.has(wiBindKey(item));
                 const sus = mode === 'bind' && !!suspect?.(item.title);
                 if (mode === 'build') {
-                    // ★ 她 2026-11-06 点掉的：选中之后**满行变蓝、字看不见** ✗
+                    // ★ 2026-11-06 点掉的：选中之后**满行变蓝、字看不见** ✗
                     //   ⇒ 不再换底色，右边放一个勾选框（勾上就有 √）✓
                     //   ⚠️ 勾选框**自己画**，不用裸 <input type=checkbox>：
                     //     酒馆主题会把这个原生控件重新刷一遍样式，跟插件不是一套 ✓
@@ -194,7 +194,7 @@ function browser({ selected, mode, onToggle, scrollEl, suspect }) {
                             h('span', { class: 'bc-hint', text: e.disable ? '酒馆里关着' : `${e.chars} 字` }),
                         ),
                         h('div', { class: 'bc-spacer' }),
-                        // 文字 ＋ 勾选框两样都给：颜色万一被她主题改掉，字也还在 ✓
+                        // 文字 ＋ 勾选框两样都给：颜色万一被需求方主题改掉，字也还在 ✓
                         on ? h('span', { class: 'bc-wi-tick', text: '已选' }) : null,
                         h('span', { class: 'bc-check' + (on ? ' on' : '') }),
                     ));
@@ -237,9 +237,9 @@ const BIND_HELP = [
 ];
 
 // ---------------------------------------------------------------------------
-// ★ 2026-11-09（她提的：给角色绑一段角色描述，和绑定世界书是一类东西）——
+// ★ 2026-11-09（需求方提的：给角色绑一段角色描述，和绑定世界书是一类东西）——
 //   · 绑的是**那张卡的角色描述那一段**，不是整张卡（性格、卡内嵌书都不带 ✓）
-//   · 只存卡名，描述每次现取 ⇒ 她改卡立刻生效 ✓
+//   · 只存卡名，描述每次现取 ⇒ 需求方改卡立刻生效 ✓
 //   · 入口两处：追踪那张卡里的「从角色卡建角色…」＋ 人物页「设定来源」里的「选…」
 // ---------------------------------------------------------------------------
 
@@ -344,7 +344,7 @@ export function openCardPicker(key, onDone) {
  */
 export function openCardBuildTargets(onDone) {
     const sel = new Map();               // 卡名 -> {name, chars}
-    const tier = { mode: 'light' };      // ★ 默认轻档（她 2026-11-09 定的）
+    const tier = { mode: 'light' };      // ★ 默认轻档（2026-11-09 定的）
     return modal({
         title: '从角色卡建角色',
         width: 760,
@@ -456,7 +456,7 @@ export function openCardBuildTargets(onDone) {
 }
 
 // ---------------------------------------------------------------------------
-// ★ 2026-11-09（她提的：建角色默认就成正式档会污染数据）——
+// ★ 2026-11-09（需求方提的：建角色默认就成正式档会污染数据）——
 //   「从世界书建角色」/「从角色卡建角色」都先问一句建出来是哪一档，**默认轻档** ✓
 //   · 轻档：只记名字和种族，不进推演、不占追踪名额（想追再点「开始追踪」✓）
 //   · 发情记录：只多追一本发情期；总开关关着时这一档不存在，不列出来 ✓
@@ -490,8 +490,8 @@ export function wiBindRows(key, onChange = () => {}) {
     const btnPick = button('选…', () => openWiBindPicker(key, () => { paint(); try { onChange(false); } catch { /* 忽略 */ } }),
         { title: '从世界书里挑这个人的设定条目' });
 
-    // ⚠️ 这里**一个字都不读世界书**（2026-11-06 她点掉的：玩家没打开就别自动扫）——
-    //   只读绑定关系（纯本地数据）；要看条目、要检查条目还在不在，都等她点「选…」再读 ✓
+    // ⚠️ 这里**一个字都不读世界书**（2026-11-06 需求方点掉的：玩家没打开就别自动扫）——
+    //   只读绑定关系（纯本地数据）；要看条目、要检查条目还在不在，都等需求方点「选…」再读 ✓
     const paint = () => {
         clear(line);
         let list = [];
@@ -527,7 +527,7 @@ export function wiBindRows(key, onChange = () => {}) {
         }
     };
     box.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
-        // ★ 标签和小灰字字号不同 ⇒ 包一组按基线对齐（不然灰字会比标签低 1px 多，她 2026-11-10 截图报过）
+        // ★ 标签和小灰字字号不同 ⇒ 包一组按基线对齐（不然灰字会比标签低 1px 多，2026-11-10 截图报过）
         h('span', { class: 'bc-textpair' },
             h('span', { class: 'bc-label', text: '角色描述（来自角色卡）' }),
             cardLine,
@@ -655,7 +655,7 @@ export function openWiBindPicker(key, onDone) {
 export function openWiBuildTargets(onDone) {
     const sel = new Map();           // key -> {book,uid,title}
     const selectedKeys = new Set();  // 给列表画"已选"用（跟 sel 同步 ✓）
-    const tier = { mode: 'light' };  // ★ 默认轻档（她 2026-11-09 定的）
+    const tier = { mode: 'light' };  // ★ 默认轻档（2026-11-09 定的）
     return modal({
         title: '从世界书建角色',
         width: 800,

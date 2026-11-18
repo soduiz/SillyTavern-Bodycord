@@ -207,7 +207,7 @@ body{background:transparent;font-family:"Inter","PingFang SC","Microsoft YaHei",
    ⚠️ 以后凡是给"单独一个功能的整页/整块"套 `.msg-block`，都要在这里补一条透明悬停 ✗ */
 .msg-block.bc-timer-block:hover{background:transparent}
 .msg-block.stage-block:hover{background:transparent}
-/* ★ 2026-10-24（她：只删子嗣列表那一块）——只有「子嗣列表」这块大卡不参加灰色悬停，
+/* ★ 2026-10-24（需求方：只删子嗣列表那一块）——只有「子嗣列表」这块大卡不参加灰色悬停，
    心声 / 总体两块保持原样 ✓ */
 .msg-block.fetus-block:hover{background:transparent}
 .block-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
@@ -877,7 +877,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
 @media (max-width:640px){
   body{padding:12px 8px}
   /* ⚠️ 这里原来还有个 `max-height:700px`：560~640 那一档（iframe 有 800 多高时）
-     它会在面板底下留一百来像素空白（2026-10-31 她缩窗口时看到的）✗
+     它会在面板底下留一百来像素空白（2026-10-31 需求方缩窗口时看到的）✗
      ⇒ 去掉上限，高度跟着 iframe 走；外壳那边本来就有自己的高度上限，不会无限长 ✓ */
   .bc-app{height:calc(100vh - 24px);border-radius:8px}
   .channel-sidebar{width:180px}
@@ -1671,7 +1671,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
          就是单纯没进聊天；别再把这两个概念混在一起 ✗ */
 
   // 面板自己的构建标记：用来确认到底加载了哪一版文件（拿到缓存的旧文件时一眼能看出来）
-  var PANEL_BUILD = '2026-11-18-3';
+  var PANEL_BUILD = '2026-11-18-6';
   // 界面上不显示它，但留个查询口 —— 报 BUG 时能确认加载的是哪一版 ✓
   try{ window.__bodycordPanelBuild = PANEL_BUILD; }catch(e){}
 
@@ -2096,7 +2096,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
    * ★ 2026-11-16：外壳**明确**说"这个聊天没有可用头像"时走这里。
    *
    * 症状（玩家报的）：点了「重置头像」，提示说面板会用自带的图标，
-   *   但那艘旧头像（她之前自己传的那张）**还挂在左下角** ✗。
+   *   但那艘旧头像（需求方之前自己传的那张）**还挂在左下角** ✗。
    * 根因：`setAvatarEl` 为了不闪 U，一直是"新图加载完才换、失败就保留旧图"，
    *   而重置之后外壳解析不到新图 ⇒ 没有任何东西来把那旧图摘掉 ✗
    * ⇒ 外壳说"没有"就当权威结论：两把钥匙都清掉、图摘掉、退回自带图标 ✓
@@ -2362,7 +2362,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
      · 插件拼给面板那一行用的是全角竖线 —— `当前时间：… ｜ 当前防护：… ｜ 近期风险：…`
        （judge.js 的 minorWithNow 里写明"斜杠可能是日期写法的一部分"所以改用竖线 ✓）
      · 这里原来按 `/` 切 ⇒ 竖线那版**整行都落进「当前时间」那一格**，
-       概览顶上那颗时间胶囊就显示一长串、右边被切掉（她 2026-10-31 截图报的 ✗）
+       概览顶上那颗时间胶囊就显示一长串、右边被切掉（2026-10-31 截图报的 ✗）
      ⇒ 改法：先把所有「标签：」扫出来，一格的值取到**下一个标签**为止（值里带逗号、斜杠、竖线都不切），
         标签以外那些零碎照旧并进「备注」，一个字不丢 ✓ */
   function parseMinorInfo(text){
@@ -2408,7 +2408,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
       //   只靠「下一个键名」划界；按逗号切只会剩前半句 ✗
       var talM = inner.match(/(?:^|[，,；;、｜|])\s*天赋\s*[：:]\s*([\s\S]*?)(?=\s*(?:[，,；;、｜|]\s*)?(?:强度|致孕方|受孕方|孕期|预产期|显性|隐性携带|隐性|父|母)\s*[：:]|$)/);
       if(talM){
-        // ⚠️ 2026-10-24（她定的）：前缀/程度词**不在这里剔**（提示词该管，读取时剔会误伤）✗
+        // ⚠️ 2026-10-24（需求方定的）：前缀/程度词**不在这里剔**（提示词该管，读取时剔会误伤）✗
         talText = talM[1].trim();
         inner = inner.replace(talM[0], '');
       }
@@ -2459,7 +2459,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     return out;
   }
   /* ★ 2026-10-29：概述里那个「孕 11-14 周」是孕周表的**表头**，被推演连着原句一起抄进来了。
-     它跟上面那行孕周是同一个事实，留在概述里只会看着像两个孕周打架（她截图问过）。
+     它跟上面那行孕周是同一个事实，留在概述里只会看着像两个孕周打架（需求方截图问过）。
      面板这一份是**自己的解析器**（跟 src/fetus.js 分开的），所以两边都要剥。
      只认区间写法；「孕10周」那种老写法不动；**存档原文一个字都不改** ✓ */
   function stripWeekBand(s){
@@ -2791,7 +2791,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     }catch(e){}
   };
 
-  /* ★ 「改名 / 起名」（2026-10-31，她：孩子名字只能在悬浮球改，这不正常）——
+  /* ★ 「改名 / 起名」（2026-10-31，需求方：孩子名字只能在悬浮球改，这不正常）——
      面板**不写数据**，只把"要改哪一个"报给外壳（弹输入框 / 落库 / 刷新都是外壳的事 ✓）
      ⚠️ 传**下标**不传 id：id 是数据，塞进 onclick 字符串里遇到引号就坏 ✗
      （跟「改种族」那颗 `__contactsRace` 同一条规矩：从现取的那份数据里拿 ✓） */
@@ -2851,7 +2851,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     if(c.sex) facts.push(safe(c.sex));
     if(c.race) facts.push(safe(c.race));
     var dateLine = [];
-    // ★ 2026-10-31（她圈出来的）—— 这一行只写「哪一天出生」；
+    // ★ 2026-10-31（需求方圈出来的）—— 这一行只写「哪一天出生」；
     //   「现在多大」在右上角那颗 `child-age` 里，两个都写就是同一个数印两遍 ✗
     if(c.birthDate) dateLine.push('出生 ' + safe(c.birthDate));
     return '<div class="child-card">' +
@@ -2967,7 +2967,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
        做成弹层那种、和聊天软件一样；这时右边的面板被替换为咱们说的简单追踪
        按当前对象显示：切换到 1 就显示 AC，切换到 2 就显示 OHK
        一个对象还没跟谁做过，不是不显示 —— 有这个 💬，但点进去没东西
-       关系人换成"联系人"；但如果选择的角色是 {{user}} 本人，显示的应该是联系人而不是她的联系人
+       关系人换成"联系人"；但如果选择的角色是 {{user}} 本人，显示的应该是联系人而不是需求方的联系人
        如果这个人只能怀孕不能致孕，那就 X 的致孕记录不要显示（扶他 / 两者皆可 ⇒ 两个都显示 ✓）
      ⇒ 两个视角：①谁跟我做过（联系人）②我致孕过谁（致孕记录，含精子数据）
      数据由外壳算好推过来（只读 ✓）：__bodycordGetContacts / __bodycordSetContacts
@@ -2982,7 +2982,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
   // 正序 / 倒序查看：默认正序（旧的在上、新的在下 = 正常时间顺序）✓
   var contactOrder = 'asc';
   // ★ 联系人详情默认画多少条（展开/收起都在面板里，不请求、不重推 ✓）
-  //   2026-10-23 她定的数：默认 10（一屏约 5~6 条，10 是“一屏多一点”），每次加 10 ✓
+  //   2026-10-23 需求方定的数：默认 10（一屏约 5~6 条，10 是“一屏多一点”），每次加 10 ✓
   var ctVisible = 10, ctVisibleOwner = '';
   var contactsQuery = '';         // 搜索词（只在客户端筛 ✓）
   var contactsAddOpen = false;    // "添加致孕方"的输入行是否展开
@@ -3185,7 +3185,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
           hiddenHit = beforeHit - recs.length;
         }
         // ★ 隐藏"没有贡献判定"的记录（口交这类，`contrib` 根本没有）——
-        //   贡献 0 **算致孕记录**，要留着（她 2026-10-23 明确纠正）✓
+        //   贡献 0 **算致孕记录**，要留着（2026-10-23 明确纠正）✓
         var hiddenPreg = 0;
         if(contactsOnlyPreg){
           var beforePreg = recs.length;
@@ -3224,7 +3224,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
             })()) + '</div>');
         // ★ 默认只画 10 条；展开 / 收起都在面板里完成 ✓
         //   ⚠️ 「收起」只在**当前真的显示超过 10 条**时才给 ——
-        //      筛选把记录筛到 10 条以下时，不能再挂一个点了没用的收起 ✗（她 2026-10-23 报的）
+        //      筛选把记录筛到 10 条以下时，不能再挂一个点了没用的收起 ✗（2026-10-23 报的）
         var remain = Math.max(0, totalFiltered - recs.length);
         if(remain > 0 || recs.length > 10){
           parts.push('<div class="bc-ct-more" style="gap:6px;flex-wrap:wrap">' +
@@ -3391,7 +3391,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
   };
 
   /* 详情正文：字段有什么写什么（老存档缺字段就跳过，不写占位 ✓）
-     ⚠️ **不写「和谁」那一行**（2026-10-22 她定的）：这条记录本身就是"和谁"，
+     ⚠️ **不写「和谁」那一行**（2026-10-22 需求方定的）：这条记录本身就是"和谁"，
         两处入口再写一遍会重复，从联系人进来时还会读成"这个人和他自己" ✗
         ⇒ 人名只在「受孕记录」那个入口的标题里出现（见 __openInsemDetail）*/
   function recordDetailHtml(x){
@@ -3671,7 +3671,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     }
 
     // ── 卵生：三个日子（起点 / 产卵日 / 破壳日）＋ 每一窝 ──
-    // ★ 2026-11-06（第五批）：她验这一批就看这里 —— 怀着的时候两个日子都要提前看得到，
+    // ★ 2026-11-06（第五批）：需求方验这一批就看这里 —— 怀着的时候两个日子都要提前看得到，
     //   产卵之后这里换成"在孵"的窝 ＋ 离破壳还有几天 ✓
     var eg = data.eggs || null;
     if(eg && (eg.pregnant || (Array.isArray(eg.clutches) && eg.clutches.length))){
@@ -4132,7 +4132,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
                (line ? '<span class="stage-line">' + safe(line) + '</span>' : '') +
              '</div>';
     }
-    // ★ 2026-10-24（她：孕期图上看不见子宫的精液量）——
+    // ★ 2026-10-24（需求方：孕期图上看不见子宫的精液量）——
     //   图下面补一行文字：阴道 / 子宫现在是什么档（空 / 残留 / 少 / 中 / 多 / 满）✓
     var TIER_CN = { empty: '空', residue: '残留', low: '少', mid: '中', many: '多', max: '满' };
     var loadBits = [];
@@ -4249,7 +4249,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
       var barVal = d1Num !== null ? d1Num : 0;
       var barLbl = p.d1[0] || '基础';
       // ⚠️ 2026-10-31：这里的值**本来就是百分数**（parseNumeric 只认带 % 的串）⇒
-      //   别再把它当"0~1 的小数"又乘 100 —— 那会把 1% 画成满格（她报的那个 ✗）
+      //   别再把它当"0~1 的小数"又乘 100 —— 那会把 1% 画成满格（需求方报的那个 ✗）
       var barPct = barVal;
       var barCls = phaseBarClass(p.phase);
       vizHtml = '<div class="stat-viz">' +
@@ -4283,7 +4283,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
         '</div>' +
         '<div class="embed-panel blue">' +
           vizHtml +
-          // ⚠️ 2026-10-31（她定）：底下那行「进度 % · 阶段」删掉 ——
+          // ⚠️ 2026-10-31（需求方定）：底下那行「进度 % · 阶段」删掉 ——
           //   进度在上面那张公告卡里已经有了，阶段也在，重复一遍只是多一行 ✗
           (fieldsHtml ? '<div class="fields-grid">' + fieldsHtml + '</div>' : '') +
         '</div>' +
@@ -4292,7 +4292,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
     // ★★ 生理监测并回概览 ✓：这一页就是"看身体状态"的地方 ⇒ 读数并进来，
     //   侧栏那个频道去掉了（内容薄、单开一页不值当 ✓）。
     //   ★ 2026-11-11：没有经期数据也照样放一块、写「不适用」——
-    //     整块消失会被当成吞数据（她的口径：直接写不适用就行 ✓）
+    //     整块消失会被当成吞数据（需求方的口径：直接写不适用就行 ✓）
     parts.push(renderPeriodPanel());
     // ⚠️ 这里**不要** push `renderStageBlock()`（透视那块）——
     //   插画只在「透视」频道那一页出现（数据同源 ✓）
@@ -4383,7 +4383,7 @@ html.bc-outside-chat .top-clock{display:inline-flex;align-items:center}
   function renderPeriodPanel(){
     if(!currentPeriods || !currentPeriods.length){
       // ★ 2026-11-11：没有经期数据也**不放空**，写「不适用」——
-      //   整块消失会被当成吞数据（她的口径：直接写不适用就行 ✓）
+      //   整块消失会被当成吞数据（需求方的口径：直接写不适用就行 ✓）
       return '<div class="msg-block">' +
         '<div class="block-head">' +
           '<div class="block-avatar period">'+ICO.period+'</div>' +

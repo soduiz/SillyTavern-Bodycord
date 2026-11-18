@@ -88,7 +88,7 @@ export function renderAchTab(container, handlers = {}) {
     ));
     // ★ 直接测气泡——
     //   只弹一张样例卡，不写成就记录、不花推演 token ✓
-    //   ⚠️ 这张样例卡**故意写得皮一点**（2026-10-21 她要求的）：它就是让人确认"弹窗活得好不好"，
+    //   ⚠️ 这张样例卡**故意写得皮一点**（2026-10-21 需求方要求的）：它就是让人确认"弹窗活得好不好"，
     //     所以开场那句像在对屏幕外的人喊话；停留时长也走上面那格 ✓
     bOn.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
         h('span', { class: 'bc-label', text: '测试气泡' }),
@@ -139,7 +139,7 @@ export function renderAchTab(container, handlers = {}) {
     bP.appendChild(h('div', { class: 'bc-label', text: '固定部分（只读）' }));
     bP.appendChild(structEl);
     // 风格段：可编辑
-    // ★ 这一组跟上面那段只读正文**拉开距离**（2026-10-21 她报"间隔太近"）——
+    // ★ 这一组跟上面那段只读正文**拉开距离**（2026-10-21 需求方报"间隔太近"）——
     //   固定部分是几行长文字，紧贴着小标题会糊成一片；留白写在 CSS 的 .bc-ach-style-group ✓
     const styleGroup = h('div', { class: 'bc-ach-style-group' });
     styleGroup.appendChild(h('div', { class: 'bc-label bc-label-block', text: '吐槽风格（可以自己改）' }));

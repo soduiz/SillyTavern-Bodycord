@@ -53,7 +53,7 @@
 
 /* ---------------------------------------------------------------------------
    窄屏（≤720）：左侧竖排收成**一行「设置 / 当前页 ▼」＋ 点开的分组清单**
-   （她 2026-11-01 选的方案 A）
+   （2026-11-01 选的方案 A）
 
    为什么不沿用折行那版：组名和项目名在同一行连排时只差 1px 字号，
    界面上会连着出现两个「推演」，看着像重复渲染；整条导航还要吃掉约 200px 高度 ✗
@@ -349,7 +349,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 /* ⚠️ 居中方式：`inset:0` ＋ 自动外边距，**不用 `transform:translate(-50%,-50%)`**。
    为什么改（2026-10-23）：面板里装着一个 iframe，而"父级带 transform ＋ 圆角 ＋
    overflow 裁切"是 Chrome 里会让**那块内嵌内容整块位置画错**的经典组合 ——
-   症状就是她报过的：打开之后内容从右下角移动到中间；坐标是对的、只有画面歪，
+   症状就是需求方报过的：打开之后内容从右下角移动到中间；坐标是对的、只有画面歪，
    而且偶发（画错那一两帧后自己纠正）✓
    顺带的好处：10-14 那个「少了半个身位就蹦到右下角」的坑（行内 transform 没清）
    从根上没有了 —— 现在复位只需要清 left/top ✓ */
@@ -367,7 +367,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
     font-size: calc(14px * var(--bc-fs-scale, 1));
     line-height: 1.6;
-    /* ★★ 2026-10-31：她报顶栏下面那两行字有荧光包边。
+    /* ★★ 2026-10-31：需求方报顶栏下面那两行字有荧光包边。
        我们自己的 CSS 里没有字阴影 / 描边；同一条 DOM 在无头浏览器里渲染是清楚的，
        而且面板 iframe 里的字也是清楚的 ⇒ 差别就在**外壳挂在宿主页面里**，继承了宿主
        （TT 手机 / 主题）给页面文字加的字阴影或描边。
@@ -384,7 +384,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 }
 .bc-root.show { display: flex; }
 /* 挂在 body 上那几层（悬浮球 / 右键菜单 / 弹窗 / 气泡 / 歌词）同样别继承宿主的字阴影 ✓
-   ★ 2026-10-31 她截图指出：右键菜单里每一行也带包边 —— 这些层挂在 body 上，
+   ★ 2026-10-31 需求方截图指出：右键菜单里每一行也带包边 —— 这些层挂在 body 上，
    宿主的字效果加在**每个元素**上 ⇒ 光清层本身不够，要把里面的元素也清一遍 ✓ */
 #bc-fab,
 .bc-fab-menu,
@@ -400,16 +400,16 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     -webkit-text-stroke-width: 0 !important;
     -webkit-text-stroke-color: transparent !important;
     filter: none !important;
-    /* ★ 2026-11-06（她截图：下拉选项文字模糊）——
+    /* ★ 2026-11-06（需求方截图：下拉选项文字模糊）——
        宿主题常给页面设 `-webkit-font-smoothing: antialiased`（灰度抗锯齿，小字发虚）；
        外壳里我们写了 auto，但这些挂在 body 上的层不在外壳里 ⇒ 一直继承宿主的灰度抗锯齿 ✗
        ⇒ 跟字阴影一样，在"挂到 body 的层"这张表里一起拉回 auto ✓ */
     -webkit-font-smoothing: auto !important;
 }
-/* ★★ 2026-10-31：她截图指出过：上面（外壳）被包边、下面（面板里）正常。
+/* ★★ 2026-10-31：需求方截图指出过：上面（外壳）被包边、下面（面板里）正常。
    宿主的字效果是加在**子元素**上的（不是只加在根上），之前只清了 .bc-root 自己，
    里面那几行字照样继承到 ⇒ 这里把外壳里的**每个元素**都清一遍 ✓
-   ★★ 2026-11-03（她又报：手机版设置页的字还是描边）——
+   ★★ 2026-11-03（需求方又报：手机版设置页的字还是描边）——
    宿主的"包边"不只走 text-shadow / -webkit-text-stroke：有的主题用
    `filter: drop-shadow()` 做同一件事（11-01 那条注释里就写过），而外壳里这一样一直没清 ✗
    ⇒ filter 也一起复位（!important 同样必须有）。清掉的只是**宿主**那层滤镜；
@@ -422,7 +422,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     -webkit-text-stroke-color: transparent !important;
     filter: none !important;
 }
-/* ★★ 2026-11-01（她：手机版**聊天里那条挂件**外面还有包边）——
+/* ★★ 2026-11-01（需求方：手机版**聊天里那条挂件**外面还有包边）——
    宿主的字效果是加在**每个元素**上的（上面那条已经踩过同一个坑），而这条挂件挂在
    聊天消息里、根本不在 `.bc-root` 里 ⇒ 只清 `.bc-floor` 自己不够，里面的字照样带包边 ✗
    ⇒ 把**所有挂在外壳之外**的插件节点连子元素一起清（以后再加挂到 body / 聊天里的东西，
@@ -626,7 +626,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-status-bar {
     display: flex;
     align-items: center;
-    /* ★ 2026-10-31 她截图报过上面的文字变了样：窄屏上左边一句 + 右边一句各占一半，
+    /* ★ 2026-10-31 需求方截图报过上面的文字变了样：窄屏上左边一句 + 右边一句各占一半，
        各自换行 ⇒ 两行字错位叠在一起 ✗ ⇒ 允许换行，挤不下就各占一整行 ✓ */
     flex-wrap: wrap;
     row-gap: 2px;
@@ -793,7 +793,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-pick-btn:hover { border-color: var(--bc-blurple); background: var(--bc-hover); }
 .bc-pick-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bc-pick-btn.is-empty .bc-pick-value { color: var(--bc-tx-3); }
-/* 下拉箭头用边框画：不用 ▾ 这类字符，免得她机器上缺字变豆腐块 ✓ */
+/* 下拉箭头用边框画：不用 ▾ 这类字符，免得需求方机器上缺字变豆腐块 ✓ */
 .bc-pick-caret {
     flex: none;
     width: 0;
@@ -851,7 +851,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     overflow-x: hidden;
     padding: 4px;
     border-radius: 10px;
-    /* ★ 2026-11-06（她截图：下拉选项文字模糊）——
+    /* ★ 2026-11-06（需求方截图：下拉选项文字模糊）——
        菜单挂在 body 上，原来跟着宿主的字体和抗锯齿走；这里显式用回插件这一套字体 ✓ */
     font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: auto;
@@ -907,7 +907,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-fert-body { margin-top: 10px; }
 .bc-fert-row { margin-bottom: 12px; }
 .bc-fert-row:last-child { margin-bottom: 0; }
-/* ★ 2026-11-01（她截图：开关那一行和下面那格标签贴在一起了）——
+/* ★ 2026-11-01（需求方截图：开关那一行和下面那格标签贴在一起了）——
    `.bc-inline` 本身只有横向排版、没有下边距 ⇒ 紧跟一个字段时上边距是 0。
    这里跟字段自己的下边距取同一个数（12px），一整页的节奏才一致 ✓
    ⚠️ 只补「卡里直接相邻」的那一对，不碰包在 div 里 / 行内并排的那些 ✓ */
@@ -954,7 +954,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: nowrap; }
 .bc-row-wrap { flex-wrap: wrap; }
 /* 模型名那一行：输入框占满、按钮留在右边（「拉取模型列表」那颗 ✓） */
-/* ★ 2026-11-10（她截图报的那行：角色描述（来自角色卡））——
+/* ★ 2026-11-10（需求方截图报的那行：角色描述（来自角色卡））——
    小灰字 / 参数小字挤进 flex 行跟标签并排时，它们自带的 `margin-top: 4px`
    会把文字往下推，跟旁边的标签差半个行距 ⇒ 看着就是没对齐 ✗
    行里的间距一律交给 `gap`，这两种小字在行内不再带自己的上边距 ✓
@@ -963,7 +963,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-row > .bc-param-sub { margin-top: 0; }
 
 /* 搜索框单独占一行、下面紧跟列表 / 分区标题时，原来底下是贴着的
-   （她 2026-11-10 截图报的记录档案那一页）⇒ 统一留一行呼吸，跟 `.bc-field` 同一档 12px ✓ */
+   （2026-11-10 截图报的记录档案那一页）⇒ 统一留一行呼吸，跟 `.bc-field` 同一档 12px ✓ */
 .bc-search-row { margin-bottom: 12px; }
 .bc-search-row > .bc-input { flex: 1 1 auto; min-width: 0; }
 
@@ -971,7 +971,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
    因为 `.bc-row > .bc-field` 把那几格自己的下边距归零了 ⇒ 给**后面那一格**补回同一档 12px ✓ */
 .bc-row + .bc-field { margin-top: 12px; }
 
-/* ★ 2026-11-10（她截图报的那行：角色描述（来自角色卡））——
+/* ★ 2026-11-10（需求方截图报的那行：角色描述（来自角色卡））——
    一行里字号不同的两块字（标签 13px ＋ 小灰字 12.5px）各自按行盒居中时，
    行盒高不一样 ⇒ 基线差 1px 多，看着就是一高一低 ✗
    ⚠️ 不能给整行改 `align-items: baseline`：那样按钮 / 开关也会跟着基线走、被拽下来 ✓
@@ -989,7 +989,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-textpair > .bc-hint,
 .bc-textpair > .bc-param-sub { margin-top: 0; }
 
-/* ★★ 2026-11-13（她连着两次提醒「间距改一下」）——
+/* ★★ 2026-11-13（需求方连着两次提醒「间距改一下」）——
    一张卡里**连着几行开关**时，一律用 `toggleRow()` 画（就是 `.bc-toggle-row` 那套：
    左边标题＋说明、右边开关、行间一条分隔线、上下各 9px 内边距）。
    为什么不能用 `.bc-row` 自己拼：窄屏那条「行里的说明独占一行」会把开关顶到单独一行，
@@ -1145,7 +1145,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     font-size: calc(10px * var(--bc-fs-scale, 1)); padding: 1px 7px; border-radius: 20px;
     background: rgba(128, 128, 128, .16); color: var(--bc-tx-2); font-weight: 500;
     /* ⚠️ 徽章是"一个词"，不是一段说明 ⇒ 永远不许被挤着换行。
-       2026-11-05 她手机截图：那个表示"正在用"的徽章被压成「使用」/「中」两行 ——
+       2026-11-05 需求方手机截图：那个表示"正在用"的徽章被压成「使用」/「中」两行 ——
        根因是它是 flex 子项、默认 flex-shrink:1，整行放不下时被当成"能缩的软柿子"✗
        ⇒ 不缩 + 不换行；宽度不够就让同一行里**能折行的那块**（名字 / 模型）去让 ✓ */
     flex: 0 0 auto;
@@ -1185,7 +1185,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
    追踪对象
    ========================================================================= */
 .bc-target-list { margin-top: 8px; }
-/* ★ 2026-11-12（她手机截图："这里的文字排版很奇怪"）——
+/* ★ 2026-11-12（需求方手机截图："这里的文字排版很奇怪"）——
    这一行原来是**不换行**的 flex：名字那半被挤到只剩一个字的宽度，
    「用户本人」四个字就竖着排成一列（看着像一条灰条），
    右边四颗按钮又顶出卡片外面被裁掉 ✗
@@ -1253,7 +1253,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-chip-pick { cursor: pointer; }
 /* ★★ 悬停**不许**长成"选中"的样子（两颗胶囊都蓝、看不出选了哪个 ✗）——
    原来 hover 和 `.bc-chip-on` 用的是**同一套底色 + 字色** ⇒ 鼠标停在没选的那颗上，
-   看着就像两颗都选中了，她当场判：这俩在左右脑互博✗。⇒ 悬停只加一层**圈**（底色只加深一点），
+   看着就像两颗都选中了，需求方当场判：这俩在左右脑互博✗。⇒ 悬停只加一层**圈**（底色只加深一点），
    实心蓝**只留给真正选中的那颗** ✓（同族：不许靠"淡"区分状态 ⇒ 这里靠"圈 + 实心"两种形态区分 ✓） */
 .bc-chip-pick:hover { background: rgba(90, 101, 240, .26); box-shadow: 0 0 0 2px var(--bc-sel-bg-2, var(--bc-sel-bg)); }
 .bc-chip-on, .bc-chip-pick.bc-chip-on:hover { background: var(--bc-sel-bg); color: var(--bc-sel-tx); box-shadow: none; }
@@ -1654,7 +1654,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     margin: 6px 0 2px;
     /* ★★ 这一行挂在**聊天消息**上、不在 `.bc-root` 里 ⇒ 拿不到那套主题变量 ✗
        （原来底色的兜底是 `rgba(128,128,128,.05)` ⇒ 看着就是"透明的一条"，
-        而且深色主题下也不会变 —— 她 2026-10-14 报的）
+        而且深色主题下也不会变 —— 2026-10-14 报的）
        ⇒ 自己带一份（跟 `.bc-lyrics` / 气泡那几层同一个做法 ✓）：
          浅色这份写在这儿，深色那份在下面那条 `.bc-floor[data-theme="dark"]` 里 ✓
        ⚠️ 对应地，`ui-floors.js` 必须自己给它带上 `data-theme` / `data-vision`（不带就永远匹配不上 ✗） */
@@ -1664,14 +1664,14 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     --bc-tx: #0b0c0e;
     --bc-tx-2: #4a4d55;
     --bc-tx-3: #666b73;
-    /* ★★ 字色也**自己定**（2026-11-02 她报：白天配色下正文那几行值看不清）——
+    /* ★★ 字色也**自己定**（2026-11-02 需求方报：白天配色下正文那几行值看不清）——
        这一行挂在聊天消息里 ⇒ 没写字的颜色时会**继承宿主聊天那边的字色** ✗：
        聊天那边是深色档（浅字）而插件开着白天配色 ⇒ 值那一列是浅字压白底，几乎看不见；
        反过来插件开夜间配色、聊天是浅色档时，同一处又会变成深字压深底 ✓（两头都会坏）
        ⇒ 在这里把整块的字色定成自己那份，别让宿主的主题决定它 ✓ */
     color: var(--bc-tx);
     /* ★★ 字体 / 字渲染也**自己指定**，别继承聊天那边的 ——
-       她 2026-10-14：这一行的字：很模糊，跟酒馆原生 UI 一比就糊，浏览器缩放是 100%、
+       2026-10-14 的问题：这一行比酒馆原生 UI 糊（浏览器缩放 100%），
        深浅两档都糊 ⇒ 判据落在"字渲染不一样"上：
        这一行挂在**聊天消息**里 ⇒ 继承的是宿主主题给消息区那套字
        （可能是偏细的字体、或者带字阴影/关掉次像素抗锯齿），而面板里同样的字是清楚的 ✓
@@ -1920,7 +1920,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 }
 /* 一行里"靠右那颗按钮"（既成事实那块用的 ✓）：flex 行里用 margin-left:auto 顶到右边 ✓ */
 /* ⚠️ 它自己也得是 flex ＋ gap —— 里面放**两颗**按钮时（例如「来源 / 分批」那排的
-   「加一批」＋「清掉 / 交回插件」），不设 gap 两颗会**贴在一起**（她 2026-10-14 报过 ✓）
+   「加一批」＋「清掉 / 交回插件」），不设 gap 两颗会**贴在一起**（2026-10-14 报过 ✓）
    放一颗按钮时行为一字不变 ✓ */
 /* ★★ 竖向对齐：**跟输入框那一行对齐**，不是跟"标签＋输入框"整块居中 ——
    整块居中会让按钮看着**偏上**（这仨都歪了，太靠上✓）。
@@ -1955,11 +1955,11 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     margin-left: 2px;
 }
 /* ★ 「来源 / 分批」那个小节标题：原来是个**裸 `.bc-label`** ⇒ 上下一点外边距都没有，
-   在「胎儿 / 孩子」那一页直接贴着上面那段说明和下面的输入框 ⇒ 她 2026-10-14 说
+   在「胎儿 / 孩子」那一页直接贴着上面那段说明和下面的输入框 ⇒ 2026-10-14 说
    「这里的间隔太小了」✓ ⇒ 按六档给足：上面 10px（分区内块）、下面 4px（更紧）✓ */
 .bc-src-title { margin: 10px 0 4px; }
 /* ★ 「亚人选类人」那句提示：它跟上面那两条说明是**两个话题**，下面又紧挨着选项列表
-   ⇒ 上下都按「分区内块」给 10px（她 2026-10-14 截图说这里的间隔有问题 ✓）
+   ⇒ 上下都按「分区内块」给 10px（2026-10-14 截图说这里的间隔有问题 ✓）
    ⚠️ 必须写在 `.bc-hint` 那条之后（同权重靠顺序赢 ✓） */
 .bc-hint-gap { margin: 10px 0; }
 
@@ -2120,7 +2120,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     }
     /* ⚠️⚠️ 拖过面板之后（`.bc-positioned` 把 inset 解成 auto），上面那条 `width/height:auto`
        会让整块塌成「只剩顶上一条横条、下面一片空白」——实测 `.bc-panes` 高度变 0，
-       iframe 跟着 0（2026-10-31 她缩窗口撞上，量过：267x51、panes=0 ✗）
+       iframe 跟着 0（2026-10-31 需求方缩窗口撞上，量过：267x51、panes=0 ✗）
        ⇒ 拖过的面板给回**明确尺寸**，宽高仍然跟着窗口走 ✓ */
     .bc-root.bc-positioned {
         width: min(1180px, calc(100vw - 16px));
@@ -2642,7 +2642,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 /* ---------- 成就解锁气泡（右上角） ----------
    挂在 <body> 上 ⇒ 主题 / 易读模式自己带（跟番茄钟气泡一个道理 ✓）
    它不走 `.bc-root` 那套变量，避免和面板里的成就卡片样式互相影响 ✓ */
-/* ---- 成就页「吐槽风格」那一组（2026-10-21 她报"跟上面的文字间隔太近"）------ */
+/* ---- 成就页「吐槽风格」那一组（2026-10-21 需求方报"跟上面的文字间隔太近"）------ */
 /* 它上面是几行只读正文（固定部分），紧贴着下面的小标题会糊成一片 ⇒ 这一组整体往上留白 ✓
    ⚠️ 只给成就页这一组用，别去改全局 `.bc-label` 的 margin —— 别的页间距是按原来的排的 ✗ */
 .bc-ach-style-group { margin-top: 18px; }
@@ -3068,7 +3068,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 /* =========================================================================
    预览效果的大按钮（临时功能，正式发布前可删）
    ========================================================================= */
-/* ---- 预览效果条：**已删除**（2026-10-15 她点的）----
+/* ---- 预览效果条：**已删除**（2026-10-15 需求方点的）----
    ⚠️ 这条（`.bc-preview-bar` / `.bc-preview-fold` / `.bc-preview-btn`）原来长在面板最上面，
    踩过三次：① 压住名字栏 ✗ ② 挪到最上面还是挡住（两个按钮各占一整行）✗
    ③ 收起成一个小按钮后跟状态条挤在一起（那颗提示胶囊位置有点奇怪就是它 ✓）
@@ -3553,7 +3553,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
 }
-/* ★ 2026-10-24（她：重掷窗口里显性来源和上面的选项贴在一起）——
+/* ★ 2026-10-24（需求方：重掷窗口里显性来源和上面的选项贴在一起）——
    弹窗里每一段之间留开距离，行内控件之间也留 gap ✓ */
 .bc-reroll-sec { margin-top: 14px; }
 .bc-reroll-sec:first-child { margin-top: 0; }
@@ -3952,14 +3952,14 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
         padding-left: calc(14px + min(env(safe-area-inset-left, 0px), 80px));
         padding-right: calc(12px + min(env(safe-area-inset-right, 0px), 80px));
     }
-    /* ★ 2026-11-01（她：手机版上有三颗退出键）⇒ 只留顶栏这一颗 ✕。
+    /* ★ 2026-11-01（需求方：手机版上有三颗退出键）⇒ 只留顶栏这一颗 ✕。
        右下角那颗浮着的和面板里那颗都删了（原因见 src/ui.js 顶上那段注释）；
        点按范围按苹果人机指南给到 44×44 ✓ */
     .bc-head .bc-icon-btn { width: 44px; height: 44px; }
     /* 整屏之后**拖不动了**（拖出去就再也够不着）⇒ 头别再显示"能抓"的手型 ✓ */
     .bc-head,
     .bc-head:active { cursor: default; }
-    /* 手机上顶栏那一行要装下：品牌字 + 时钟 + 三个图标（她不想割舍品牌字 ✓）
+    /* 手机上顶栏那一行要装下：品牌字 + 时钟 + 三个图标（需求方不想割舍品牌字 ✓）
        ⇒ 品牌字缩到 12.5px、时钟把内边距和字号各收一点（收完 320 宽也放得下，量过 ✓） */
     .bc-brand-text { font-size: 12.5px; }
     /* 状态条：手机上那句提示单独占一整行，别和左边「还没进入聊天」挤成两行错位 ✓ */
@@ -4000,7 +4000,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     .bc-zone-arch-dd { min-width: 0; width: 100%; }
     /* 接口渠道那一行：窄屏拆两行 —— 第一行「名称 + 模型」，第二行「使用中 + 编辑 + 删除」。
        ⚠️ 原来是一行硬挤五样东西：320 宽时整行差几像素放不下，
-          flex 就把唯一能缩的**徽章**压成「使用 / 中」两行（2026-11-05 她手机截图）✗
+          flex 就把唯一能缩的**徽章**压成「使用 / 中」两行（2026-11-05 需求方手机截图）✗
        ⇒ 和上面那条同一条规矩：放不下就拆开，宁可页面长一点，别把字挤碎 ✓ */
     .bc-api-row { flex-wrap: wrap; row-gap: 6px; }
     .bc-api-row-main { flex: 1 1 100%; }
@@ -4017,10 +4017,10 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
        ⚠️ 只拆**表单字段**（`.bc-field` / `.bc-param-field`），按钮组照旧并排（`.bc-row-wrap`）✓ */
     .bc-row:has(> .bc-field + .bc-field) { flex-wrap: wrap; }
     .bc-row:has(> .bc-field + .bc-field) > .bc-field { flex: 1 1 100%; }
-    /* ★★ 2026-11-02（她截图：手机「全文可改」那张卡里，说明被挤成一字一行）——
+    /* ★★ 2026-11-02（需求方截图：手机「全文可改」那张卡里，说明被挤成一字一行）——
        两个毛病其实是同一条：这一行是 `flex-wrap: nowrap`，而按钮又不许缩
        （`white-space: nowrap`）⇒ 一行放不下时，
-         · 有说明 ⇒ 被压扁的是**说明**（她这张卡一行挤了「展开全文编辑」＋说明＋
+         · 有说明 ⇒ 被压扁的是**说明**（需求方这张卡一行挤了「展开全文编辑」＋说明＋
            「看一下全文（只读）」＋「恢复内置默认」四个东西）✗
          · 没说明 ⇒ 按钮直接被**挤出卡片右边**（预设条目那排五颗按钮就是）✗
        ⇒ ① 窄屏下按钮行**一律允许折行**（放得下时排版跟原来一模一样）；
@@ -4033,7 +4033,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     .bc-ff-bar { flex-wrap: wrap; }
     .bc-row:has(> .bc-hint) > .bc-hint,
     .bc-ff-bar > .bc-hint { flex: 1 1 100%; }
-    /* ★★ 2026-11-13（她手机截图：数值表那一行「280 到 280 天」被拆成了四行）——
+    /* ★★ 2026-11-13（需求方手机截图：数值表那一行「280 到 280 天」被拆成了四行）——
        上面那条「行里的说明独占一行」只该管**整句说明**；夹在控件中间的短词
        （到 / 天 / 小时 / 单位）是控件的一部分，必须跟数字并排，
        不然每行数值就变成「数 / 到 / 数 / 单位」四行，一行占掉半屏 ✗
@@ -4289,7 +4289,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 
 /* ★ 2026-11-09：一串勾选框（图鉴「发情季节」那几个月）。
    方块自己画（`.bc-check`），整行都能点；选中只体现在方块上，
-   整行不变色（她那边整行深蓝会让字看不见 ✗ ✓） */
+   整行不变色（需求方那边整行深蓝会让字看不见 ✗ ✓） */
 .bc-check-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
@@ -4339,7 +4339,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 .bc-codex-grid > .bc-codex-wide { grid-column: 1 / -1; }
 
 /* ★ 2026-11-08：图鉴详情里「性特征」那一张卡的间距。
-   她截图说太近了 ⇒ 组内 12、两组之间 20、字段名到控件 6、四列之间 12/18。
+   需求方截图说太近了 ⇒ 组内 12、两组之间 20、字段名到控件 6、四列之间 12/18。
    ⚠️ 只作用于 `.bc-sex-card`：**别去改 `.bc-label` / `.bc-codex-grid` 的全局间距**，
       别的页（数值表、混血卡）是按原来的排的 ✓ */
 .bc-sex-card .bc-section-body {
@@ -4420,7 +4420,7 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 }
 .bc-period-fold { margin: 10px 0 6px; }
 .bc-period-foldbody { margin-top: 8px; }
-/* ★ 2026-11-12（她：间距呢）：展开区下面紧跟的那一格也要留间距（PMS 那格就贴在它下面） */
+/* ★ 2026-11-12（需求方：间距呢）：展开区下面紧跟的那一格也要留间距（PMS 那格就贴在它下面） */
 .bc-period-fold + .bc-field { margin-top: 12px; }
 .bc-period-say {
     color: var(--bc-tx-2);
@@ -4467,9 +4467,9 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
 }
 .bc-period-days { width: 64px; }
 .bc-period-lead { width: 60px; }
-/* ★ 2026-11-12（她截图：合计被推到最右边、离数字太远）—— 合计就跟在「＋加一档」后面 */
+/* ★ 2026-11-12（需求方截图：合计被推到最右边、离数字太远）—— 合计就跟在「＋加一档」后面 */
 .bc-tier-sum { margin-left: 10px; }
-/* ★ 2026-11-12（她：五个下拉铺满整行太占地方）—— 每天一格窄下拉、两列排；
+/* ★ 2026-11-12（需求方：五个下拉铺满整行太占地方）—— 每天一格窄下拉、两列排；
    窄屏（320 宽）也放得下两列，不会挤成一条缝 */
 .bc-pain-days {
     display: grid;

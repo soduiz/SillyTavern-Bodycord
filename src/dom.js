@@ -247,7 +247,7 @@ export function dropdown(value, options, onChange, opts = {}) {
         if (left + rr.width > vw - 8) left = Math.max(8, vw - 8 - rr.width);
         let top = rr.bottom + gap;
         // ★ 2026-11-06：坐标取整 —— 弹层是 fixed 定位、会被提到自己的图层上，
-        //   落在半个像素上时文字会发虚（她截图的那条模糊下拉就是这么来的之一）✓
+        //   落在半个像素上时文字会发虚（需求方截图的那条模糊下拉就是这么来的之一）✓
         menu.style.left = Math.round(left) + 'px';
         menu.style.top = Math.round(top) + 'px';
 
@@ -355,7 +355,7 @@ export function toggle(checked, onChange) {
 /**
  * 一行「标题 + 说明 + 开关」（开关在右，说明换行时整行跟着长高）。
  *
- * ★ 2026-11-13：从设置页搬到 dom.js 共用 —— 她那天连着两次让我「间距再改一下」：
+ * ★ 2026-11-13：从设置页搬到 dom.js 共用 —— 需求方那天连着两次让我「间距再改一下」：
  *   新加的开关行如果自己用 `.bc-row` 拼，行距就得每次手调，而且和设置页那批开关
  *   长得不一样 ✗ ⇒ 新开关一律调这个，别自己拼 ✓
  *   （行距、分隔线、开关与两行文字的对齐都归 `.bc-toggle-row` 管 ✓）
@@ -375,9 +375,9 @@ export function toggleRow(label, value, onChange, hint, opts = {}) {
  *
  * ★ 2026-11-09：**裸 `<input type="checkbox">` 不许直接用** —— 它会被酒馆主题
  *   重新刷一遍样式，长成酒馆的样子，跟插件不是一套 ✗（图鉴「发情季节」那 12 个月
- *   就是这么漏出去的，她截图问过是不是又没用插件的选择框）。
+ *   就是这么漏出去的，需求方截图问过是不是又没用插件的选择框）。
  *   方块本身是 CSS 画的 `.bc-check`（对勾用两条边框转 45 度，不吃字体里的符号 ✓）。
- * ★ 选中**不靠整行变色**：只画方块（她那边整行变深蓝会让字看不见 ✗）。
+ * ★ 选中**不靠整行变色**：只画方块（需求方那边整行变深蓝会让字看不见 ✗）。
  * `onToggle` 收的是「点完之后应该是勾上还是取消」。
  */
 export function checkRow(labelText, checked, onToggle, opts = {}) {

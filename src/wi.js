@@ -360,12 +360,12 @@ export function packWorldInfo(opts = {}) {
     // ⚠️ 「开关开着」和「当前这张卡有描述」是两件事：绑了卡的对象要的是开关，不是当前卡有没有正文
     const descOn = src ? (src.desc === true) : (opts.skipDesc !== true && wiDescOn());
     const desc = descOn ? characterDescription() : '';
-    // ★ 2026-10-23：用户自己那份人设描述（她提过用户角色信息也要一颗开关）——
+    // ★ 2026-10-23：用户自己那份人设描述（需求方提过用户角色信息也要一颗开关）——
     //   没开就不取；`forcePersona` 是遗传判定那一轮的临时放行（**不改开关的存值** ✓）
     const persona = src
         ? (src.persona === true ? personaDescriptionForChat() : '')
         : ((wiPersonaOn() || opts.forcePersona === true) ? personaDescriptionForChat() : '');
-    // ★ 2026-11-09（她提的：给对象绑一段角色描述）——
+    // ★ 2026-11-09（需求方提的：给对象绑一段角色描述）——
     //   绑定的卡描述跟「当前角色描述」是**同一个概念**，常驻只看那一颗开关；
     //   遗传那一轮用它自己那份来源表（`bindDesc`），所以这里允许调用方单独指定 ✓
     //   ⚠️ 只发**这一轮在场**的那些（调用方按在场对象算好传进来）✓

@@ -1065,7 +1065,7 @@ export class BodycordPanel {
         } else if (d.type === 'contactsRace') {           // 「联系人」详情里那颗「改种族」—— 玩家自己点的，所以允许写 ✓
             this._editContactRace(String(d.name || '').trim());
         } else if (d.type === 'childRename') {
-            // ★★ 2026-10-31（她：孩子名字只能在悬浮球改，这不正常）——
+            // ★★ 2026-10-31（需求方：孩子名字只能在悬浮球改，这不正常）——
             //   「孩子」频道每张卡上那颗「改名 / 起名」⇒ 外壳弹输入框、落库、再刷新 ✓
             //   ⚠️ 面板只报 id（它手上只有那份 payload）⇒ **写库永远在外壳** ✓
             //   ⚠️ 预览里的样例孩子没有真实 id ⇒ 面板那颗按钮已经按 `readonly` 收起来了；
@@ -1106,7 +1106,7 @@ export class BodycordPanel {
             } else {
                 try { window.toastr?.warning?.('这个对象现在没有经期记录'); } catch { /* 忽略 */ }
             }
-        } else if (d.type === 'childMute') {            // ★ 2026-11-07（她：找不到哪里勾选不发送某个孩子）——
+        } else if (d.type === 'childMute') {            // ★ 2026-11-07（需求方：找不到哪里勾选不发送某个孩子）——
             //   「孩子」频道每张卡上那颗「发送 / 不发送」。
             //   ⚠️ 账本一条都不删，只是这一段不写他 ⇒ 数据还在，面板上也看得见 ✓
             const id = String(d.id || '');
@@ -1351,7 +1351,7 @@ export class BodycordPanel {
             if (!t) { try { window.toastr?.warning?.('这个名字用不了'); } catch { /* 忽略 */ } return; }
             const write = (raceName) => {
                 const ok = writeParams(specFor('body_base'), t.key, { raceName: String(raceName).trim() });
-                // ★ 2026-11-09（B 方案）：不再自动记临时映射（借哪一族的数据由她在图鉴页确认 ✓）
+                // ★ 2026-11-09（B 方案）：不再自动记临时映射（借哪一族的数据由需求方在图鉴页确认 ✓）
                 try { window.toastr?.[ok ? 'success' : 'info']?.(ok ? '已记下' : '没有变化'); } catch { /* 忽略 */ }
                 this.update();
             };
@@ -1708,7 +1708,7 @@ export class BodycordPanel {
      */
     _calendarPayload() {
         try {
-            // ★★ 被排除的角色卡：日历按**现实日期**显示（2026-10-28 她定的）——
+            // ★★ 被排除的角色卡：日历按**现实日期**显示（2026-10-28 需求方定的）——
             //   剧情日期是推演账本里的东西，这个卡里没有账本 ⇒ 传 `inChat=false`，
             //   于是"今天 / 节日 / 月相"整块跟着现实日期走，不会一半现实一半剧情 ✓
             const inChat = inChatPage() && !isCardExcluded();
@@ -1916,7 +1916,7 @@ export class BodycordPanel {
         // 重建 = 新文档，历史得整份补一遍（指纹作废 ✓）
         this._pushedChatSig = '';
         // ★ 2026-11-13（B3）：新文档一起步就停在概览页 ⇒ `p.calendar` 可能是 undefined（为了不白算）。
-        //   但重建时**必须**带一份种子进去，不然她点进日历页会先看到"还没算出来"再被补上 ✗
+        //   但重建时**必须**带一份种子进去，不然需求方点进日历页会先看到"还没算出来"再被补上 ✗
         const seedCalendar = (p.calendar === undefined) ? this._calendarPayload() : p.calendar;
         this.iframe.srcdoc = buildDoc(_tpl, { ...p, calendar: seedCalendar ?? null, avatar: this._avatar });
     }

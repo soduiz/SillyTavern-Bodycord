@@ -9,6 +9,7 @@
  */
 
 import { initST, getEventSource, getEventTypes, getCtx, renderTemplate, toast, installSaveFlushHooks } from './src/st.js';
+import { createGenGate } from './src/gen-gate.js';
 import { settings, save, sanitizeModuleExclusivity, currentApi } from './src/settings.js';
 import { ensureBaseTargets, state, commit, targetList, displayName, clearCandidateRecords, dropSnapshotsOfFloor, pruneOrphanSnapshots, syncFloorIds, resolveDeletedFloor, migrateFloorIndices, rekeyEditedFloor, healConceiveHold, repairFetusPending, recoverEventAchievementsFromLastRaw, syncPlanSexesFromD6, repairHeritageRetry } from './src/store.js';
 import { runJudge, refreshRaw, restoreCachedCandidate } from './src/judge.js';
@@ -142,7 +143,7 @@ async function doJudge(reason = '') {
             try { noteSkip('没有正文'); } catch { /* 忽略 */ }
         } else {
             console.warn('[Bodycord] 推演失败：', r.error);
-            // ★ 2026-11-14：报错后面补一句「可能的原因」（她定的：光有接口原话玩家看不懂 ✓）
+            // ★ 2026-11-14：报错后面补一句「可能的原因」（需求方定的：光有接口原话玩家看不懂 ✓）
             //   多显示几秒，不然一句长报错还没读完就消失了
             toast('状态推演失败：' + r.error + (r.hint ? '｜' + r.hint : ''), 'error', { timeOut: 12000 });
         }
@@ -194,7 +195,7 @@ function onChatChanged() {
         try { healConceiveHold(); } catch (e) { console.warn('[Bodycord] 冻结期自愈失败', e); }
         // ★ 2026-10-23：「刚着床那一轮」的尾巴（模型自己写的 d6 / 没被消费的待判标记）
         try { repairFetusPending(); } catch (e) { console.warn('[Bodycord] 刚着床残留清理失败', e); }
-        // ★ 2026-10-23：手改 d6 时把性别同步回 fetusPlan（她：两男一女）
+        // ★ 2026-10-23：手改 d6 时把性别同步回 fetusPlan（需求方：两男一女）
         try { syncPlanSexesFromD6(); } catch (e) { console.warn('[Bodycord] 同步胎性别失败', e); }
         // ★ 2026-10-23：血脉遗传特质没写进 d6 ⇒ 清掉"已发"标记，下一轮重发
         try { repairHeritageRetry(); } catch (e) { console.warn('[Bodycord] 安排重发血脉遗传失败', e); }
@@ -268,27 +269,20 @@ function bindEvents() {
      *   ②空回/报错直接不推演 ③没跑成时按设置的重试间隔再试。
      */
     /**
-     * 这次生成到底有没有**真的产出消息**。
+     * 这一轮生成到底有没有产出消息 —— 两个信号都到了才算数（详见 src/gen-gate.js）。
      *
-     * 「报错就不推演」—— 400 / 524 这类报错会让生成失败，
-     * **失败就不会有新消息** ✓ ⇒ 所以不用去解析状态码（插件也看不到主 API 的状态码 ✗），
-     * 只要看"有没有新消息"就够了 ✓
+     * 「报错就不推演」：400 / 524 这类报错会让生成失败，**失败就不会有新消息** ✓
+     *   ⇒ 不用解析状态码（插件也看不到主 API 的状态码 ✗），只看有没有新消息 ✓
+     *   这一套同时覆盖：报错 ✓ 被中止 ✓ 空回 ✓
      *
-     * 这一套同时覆盖三种情况：报错 ✓ 被中止 ✓ 空回 ✓
-     * ⚠️ 不覆盖"截断"（文字被掐断时**里面是有字的**，只有人读得出来 ✗）——
-     *    截断的里面其实也有字，只是看着像是没有写完的样子
+     * ⚠️ 两条生成路径的先后正好相反：
+     *   非流式：先「新消息」，后「生成结束」
+     *   流式（真流、假流都走同一条路）：先「生成结束」，后「新消息」
+     *   原来只看「新消息」这个标记有没有先到 ⇒ 流式下标记还没到，就被当成空回跳过 ✗
+     *   ⇒ 现在不假设顺序：两个都记下，都到了才排；只看到「生成结束」= 报错 / 被中止 / 空回
+     * ⚠️ 不覆盖"截断"（文字被掐断时里面是有字的，只有人读得出来 ✗）
      */
-    let _gotMessageThisGen = false;
-
-    /**
-     * 这次生成是不是**被玩家按了停止**（酒馆的 GENERATION_STOPPED）。
-     *
-     * 为什么值得单独记：报错和按停止都"没有产出消息"，跳过推演的行为一样，
-     *   但原因不一样。分开记之后，「诊断报告」能说出到底是哪一种 ✓
-     * ⚠️ 它的信号比 GENERATION_ENDED **晚一步**（酒馆是先发 ENDED、再发 STOPPED，
-     *   见 script.js 的 stopGeneration）⇒ 所以跟它有关的原因要**等一拍再定** ✗（见下）
-     */
-    let _genAborted = false;
+    const genGate = createGenGate();
 
     function scheduleJudge(reason) {
         const s = settings();
@@ -345,38 +339,52 @@ function bindEvents() {
     }
 
     on('GENERATION_ENDED', () => {
-        // ★ 这次生成没产出任何消息（报错 / 被中止 / 空回）⇒ 不推演，别白烧 token ✓
-        const sawMessage = _gotMessageThisGen;
-        _gotMessageThisGen = false;      // 读完就重置，保证下次是干净的 ✓
-        if (settings().judgeSkipEmpty !== false && !sawMessage) {
-            // ⚠️ 这里**不能立刻定原因**：酒馆是先发 ENDED、后发 STOPPED
-            //   （stopGeneration 里 hideStopButton 先跑 ⇒「被中止」的信号晚一步到 ✗）
-            //   ⇒ 等一拍（同一轮事件循环结束）再记，那时两种信号都齐了 ✓
-            setTimeout(() => {
-                const why = _genAborted ? '被中止' : '没有产出内容';
-                _genAborted = false;
-                console.log(`[Bodycord] 这次生成${why}，跳过自动推演`);
-                try { noteSkip(why); } catch { /* 忽略 */ }
-            }, 0);
+        genGate.onEnded();
+
+        // ★ 玩家把「空回跳过」关了 ⇒ 老口径：结束就排，不看有没有新消息 ✓
+        if (settings().judgeSkipEmpty === false) {
+            if (genGate.claimEndedOnly()) scheduleJudge('GENERATION_ENDED');
             return;
         }
-        scheduleJudge('GENERATION_ENDED');
+
+        // ★★ 两个信号都到了 ⇒ 排（非流式是这条：新消息先到）✓
+        if (genGate.claim()) {
+            scheduleJudge('GENERATION_ENDED');
+            return;
+        }
+
+        // ★ 只看到「生成结束」、没看到「新消息」⇒ 报错 / 被中止 / 空回，不推演
+        // ⚠️ 这里**不能立刻定原因**：酒馆是先发 ENDED、后发 STOPPED
+        //   （stopGeneration 里 hideStopButton 先跑 ⇒「被中止」的信号晚一步到 ✗）
+        //   ⇒ 等一拍（同一轮事件循环结束）再记，那时两种信号都齐了 ✓
+        // ⚠️ 流式下「新消息」就在后面几行：它会先把这次排上，这里等一拍后看到
+        //   已经有消息了就什么都不做（靠序号认出自己是不是过期的那一轮 ✓）
+        const my = genGate.serial();
+        setTimeout(() => {
+            if (my !== genGate.serial()) return;
+            if (genGate.got()) return;
+            const why = genGate.aborted() ? '被中止' : '没有产出内容';
+            console.log(`[Bodycord] 这次生成${why}，跳过自动推演`);
+            try { noteSkip(why); } catch { /* 忽略 */ }
+        }, 0);
     });
 
     // ★ 玩家按了停止（也可能被别的扩展中止）—— 记下来，好和"报错"分开 ✓
-    on('GENERATION_STOPPED', () => { _genAborted = true; });
+    on('GENERATION_STOPPED', () => { genGate.onStopped(); });
 
     on('MESSAGE_RECEIVED', () => {
         // ★ 真的有消息进来了 ⇒ 这次生成是成功的 ✓（报错的路径不会走到这里）
-        _gotMessageThisGen = true;
+        genGate.onMessage();
         // 多了一楼 ⇒ 楼层指纹跟着记一份（删楼时靠它反推被删的是哪一楼 ✓）
         try { syncFloorIds(); } catch { /* 忽略 */ }
         // ★ 多了一楼 ⇒ 标题栏那颗「这一楼待推演」要立刻亮起来。
         //   手动推演档下 `scheduleJudge()` 第一句就 return、全程不会 `refreshAll()`
         //   ⇒ 原来这颗胶囊会一直停在上一次推演完的样子（隐藏着）✗
         try { refreshStatusHints(); } catch { /* 忽略 */ }
-        // 有些版本没有 GENERATION_ENDED，这里兜底
-        if (!getEventTypes().GENERATION_ENDED) scheduleJudge('MESSAGE_RECEIVED');
+        // ★ 有些版本没有 GENERATION_ENDED ⇒ 新消息就是这轮的结束信号
+        if (!getEventTypes().GENERATION_ENDED) genGate.onEnded();
+        // ★★ 结束信号先到的（流式就是这条）⇒ 这里把这次排上 ✓
+        if (genGate.claim()) scheduleJudge('MESSAGE_RECEIVED');
     });
 
     on('MESSAGE_SWIPED', (mesId) => {
@@ -443,7 +451,7 @@ function bindEvents() {
     });
 
     // 改了正文 ⇒ 楼层指纹跟着更新（不然下次删楼会认错是哪一楼 ✗）
-    //   ★ 2026-10-23 她报过修改正文之后记录会丢失：候选记录与时光机快照都按正文指纹认哪一条，
+    //   ★ 2026-10-23 需求方报过修改正文之后记录会丢失：候选记录与时光机快照都按正文指纹认哪一条，
     //     正文一改指纹就变 ⇒ 记录对不上，楼层面板说"本楼暂无推演记录"，下次清理还会当孤儿删掉 ✗
     //     ⇒ 先把这一楼的记录换到新指纹上，再同步楼层号 ✓
     //   ⚠️ 不在这里再挂一个 MESSAGE_SWIPED —— 上面已经有一个了（重复挂虽然不炸，但没必要）
@@ -462,9 +470,8 @@ function bindEvents() {
     on('MESSAGE_UPDATED', onEdited);
 
     on('GENERATION_STARTED', () => {
-        // ★ 新一次生成开始 ⇒ 先假设这次什么都产不出来，等 MESSAGE_RECEIVED 来翻案 ✓
-        _gotMessageThisGen = false;
-        _genAborted = false;
+        // ★ 新一次生成开始 ⇒ 门控清干净（这一轮的两个信号都还没到）✓
+        genGate.reset();
         // 生成前确保注入是最新的
         try { rebuildInjection(); } catch { /* 忽略 */ }
     });
@@ -478,7 +485,7 @@ function bindEvents() {
 // ---------------------------------------------------------------------------
 // 左下角「魔法棒」菜单入口
 //
-// 她 2026-10-31 报「手机版本没有悬浮球」，要一个左下角扩展菜单的入口。
+// 2026-10-31 报「手机版本没有悬浮球」，要一个左下角扩展菜单的入口。
 // 那个菜单就是酒馆的 wand 菜单（容器 `#extensionsMenu`，别的插件也是往这里加一条）。
 // ⚠️ 容器是酒馆在启动时现渲染出来的（wandMenu 模板），可能比我们晚 ⇒ 没拿到就重试几次 ✓
 // ---------------------------------------------------------------------------
@@ -652,7 +659,7 @@ async function mountDrawer() {
     }
 
     // ★ 抽屉里的「打开面板」：手机上找不到悬浮球时的进面板入口
-    //   （她 2026-10-31 报「手机版本没有悬浮球」⇒ 在这里给一颗按钮，位置就在酒馆左边的「扩展」里 ✓）
+    //   （2026-10-31 报「手机版本没有悬浮球」⇒ 在这里给一颗按钮，位置就在酒馆左边的「扩展」里 ✓）
     const openBtn = wrap.querySelector('#bc-drawer-openpanel');
     if (openBtn) {
         openBtn.addEventListener('click', () => {

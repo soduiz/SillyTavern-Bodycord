@@ -8,7 +8,7 @@
  *      自由补充常驻（有才发）；性特征那一段另有自己的总开关（`sexOn`，调用方按设置传）；
  *   3) 拼成一段进系统段的文字，同时给出每条的字数与大概 token（界面拿它做预览）。
  *
- * 口径（她 2026-11-02 定的计划，2026-11-06 又当面纠了一次）：
+ * 口径（2026-11-02 定的计划，2026-11-06 又当面纠了一次）：
  *   · 只发**在场的种族** —— 不是把整本图鉴都塞进提示词（那才是"文字量明显下降"的由来）✓
  *   · **人类也走条目**：人类数据要从主规则里剥离、只走图鉴，所以这里不特判人类；
  *     场景里没有人类在场时就不发人类那一条 ✓
@@ -63,13 +63,13 @@ export function buildSexText(entry) {
     return out.join('\n');
 }
 
-/** 这条文字在提示词里的抬头（她不喜欢破折号；这里也不用 markdown） */const HEADER = [
+/** 这条文字在提示词里的抬头（需求方不喜欢破折号；这里也不用 markdown） */const HEADER = [
     '[种族设定 · 这一轮在场]',
     '下面是这一轮在场对象所属的种族。写正文时按这些事实描写他们的身体与反应。',
     '这些是设定事实，不是让你在正文里判定或计算的规则；数值由系统算好，正文只按结果描写。不要把分项名称和数值格式抄进正文。',
-    // ★ 2026-11-07 她定的：条目写的是这一族的典型样子，个别角色的外貌以他自己的设定为准
+    // ★ 2026-11-07 需求方定的：条目写的是这一族的典型样子，个别角色的外貌以他自己的设定为准
     '这些是这一族的典型样子；某个角色自己的设定里写得不一样的，以那个角色自己的设定为准。',
-    // ★ 2026-11-08：这些设定只用来让描写贴合，别把解剖名词搬进正文（她 2026-11-08 点名担心过）
+    // ★ 2026-11-08：这些设定只用来让描写贴合，别把解剖名词搬进正文（2026-11-08 点名担心过）
     '写正文时只按这些事实写看得见、感觉得到的样子，不要写器官名称或解剖术语，也不要写成说明文。',
 ].join('\n');
 
@@ -103,7 +103,7 @@ export function resolveSendEntry(t) {
     let m = null;
     try { m = resolveRaceWithTemp(race); } catch { m = null; }
     if (m && m.entry && m.entry.status === 'on') {
-        // ★ 2026-11-09（B 方案）：临时映射只在她**确认过**之后才走到这里
+        // ★ 2026-11-09（B 方案）：临时映射只在需求方**确认过**之后才走到这里
         //   （`resolveRaceWithTemp` 里挡着；没确认的一律当"没对上"）
         return { entry: m.entry, race, how: m.how || 'matched', temp: m.how === 'temp' };
     }
@@ -130,12 +130,12 @@ export function buildCodexPlan(targets, opts = {}) {
     const list = Array.isArray(targets) ? targets.filter(Boolean) : [];
     const resolve = typeof opts.resolve === 'function' ? opts.resolve : resolveSendEntry;
     const needRepro = typeof opts.needRepro === 'function' ? opts.needRepro : () => false;
-    // ★★ 2026-11-13（她定）：**整段正文（介绍 / 生理 / 繁殖 / 补充）**一起管，默认关。
+    // ★★ 2026-11-13（需求方定）：**整段正文（介绍 / 生理 / 繁殖 / 补充）**一起管，默认关。
     //   理由：这四段都是科普与外貌那类小知识，判定只用数值表；角色卡自己写了外貌时
     //   图鉴再发一份两处还会打架 ⇒ 默认一律不发，玩家想看再打开。
     //   性特征不受这道闸管（它讲的是结构事实，不是科普），它自己有一个总开关 ✓
     const bodyOn = opts.bodyOn !== undefined ? !!opts.bodyOn : true;
-    // ★★ 2026-11-15（她报的 BUG）：性特征那个总开关以前**只挡了图鉴详情里的编辑栏**，
+    // ★★ 2026-11-15（需求方报的 BUG）：性特征那个总开关以前**只挡了图鉴详情里的编辑栏**，
     //   发送层根本没读它 ⇒ 开关关着也照样把这 69 字发给主模型，界面上的预览也照实显示
     //   "还在发"（预览没错，是发送错了）✗ ⇒ 这道闸必须同时管发送与预览，两边同一个判据 ✓
     const sexOn = opts.sexOn !== undefined ? !!opts.sexOn : true;
@@ -202,7 +202,7 @@ export function buildCodexPlan(targets, opts = {}) {
         return String(a.entry.name).localeCompare(String(b.entry.name), 'zh');
     });
 
-    // ★ 2026-11-08（她定的）：性特征内容完全一样的族**合并成一句**，不重复发。
+    // ★ 2026-11-08（需求方定的）：性特征内容完全一样的族**合并成一句**，不重复发。
     //   同一种类的几个品种（金毛 / 德牧）常常一字不差 ⇒ 只发第一块的，标题里把这些名字都列上 ✓
     const sexByText = new Map();
     for (const g of sorted) {
@@ -244,7 +244,7 @@ export function buildCodexPlan(targets, opts = {}) {
         }
         if (!segs.length) {
             // 这一条这一轮什么都不发：但界面上要能看见"为什么没发" ✓
-            // ★ 2026-11-15（她报 BUG 时顺带要的）：分两种写 ——
+            // ★ 2026-11-15（需求方报 BUG 时顺带要的）：分两种写 ——
             //   · 条目里本来就有内容、只是被上面的开关挡住了 ⇒ 写"被开关关掉了"，不能说"还没写正文" ✗
             //   · 条目里真的一格都没写 ⇒ 照旧写"还没写正文"
             const bodyWritten = CODEX_SEGMENTS.some((s) => String(g.entry[s.key] || '').trim());

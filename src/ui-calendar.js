@@ -496,7 +496,7 @@ export function calendarViewHtml(opts = {}) {
             + (heat ? '<div class="bc-cal-heat">发情</div>' : '')
             // ★ 只在**这一段的第一天**写两个字「预计」（中间那些天只留淡色带，不然格子挤爆 ✓）
             //   ⚠️ 为什么不写「预计月经」四个字：格子内宽 37px（320 宽时 31px），
-            //      9.5px 的四个字放不下、会变成「预计…」（她手机上就是那样 ✗）；
+            //      9.5px 的四个字放不下、会变成「预计…」（需求方手机上就是那样 ✗）；
             //      两个字放得下，全称在脚下那行与点开那一天的下半部分里 ✓
             + (perStart ? '<div class="bc-cal-per">预计</div>' : '')
             + (card ? '<div class="bc-cal-n">' + esc(String(card.label || '').slice(0, 6)) + '</div>' : '')

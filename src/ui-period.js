@@ -98,7 +98,7 @@ export function periodSettingsBlock(targetKey, repaint) {
     const cap = periodDaysCapOf(targetKey);
     /** 本周期**实际**按几天算（读的时候夹过；面板读数 / 共几天都用它 ✓） */
     const effDays = periodDaysOf(targetKey);
-    // ★ 2026-11-14（她拍）：框里放**玩家写的那个数**，不放下限夹过的那份 ——
+    // ★ 2026-11-14（需求方拍）：框里放**玩家写的那个数**，不放下限夹过的那份 ——
     //   上限＝排卵日减 2，排卵日跟着每段掷出的周期长度走 ⇒ 短周期会把它悄悄改小。
     //   现在写的数原样留着，只在本周期算的时候夹、并且明说「本周期按 X 天」✓
     const prefDays = (() => {
@@ -117,7 +117,7 @@ export function periodSettingsBlock(targetKey, repaint) {
     const ovu = (bp.ovu === null || bp.ovu === undefined) ? null : Math.round(Number(bp.ovu));
 
     const setDays = (n) => {
-        // ★ 2026-11-14（她拍）：玩家写多少就存多少（只挡 < 1），**不按上限改掉它** ——
+        // ★ 2026-11-14（需求方拍）：玩家写多少就存多少（只挡 < 1），**不按上限改掉它** ——
         //   上限会随这一段的周期长度变，以前那道上限会把 5 悄悄写成 4 存进去。
         //   本周期实际按几天，由 `periodDaysOf` 读的时候夹、下面那行小字说清 ✓
         const raw = (n === '' || n === null || n === undefined) ? NaN : Number(n);
@@ -253,7 +253,7 @@ export function periodSettingsBlock(targetKey, repaint) {
         '默认逐天减轻；想整个经期都疼，选全程保持'));
 
     if (prefs0.painPattern === 'custom') {
-        // ★★ 2026-11-12（她两次截图）—— ① 自定义要「点击选择」，别一下下循环点；
+        // ★★ 2026-11-12（需求方两次截图）—— ① 自定义要「点击选择」，别一下下循环点；
         //   ② 五个下拉铺满整行太占地方 ⇒ 每天一格窄下拉、两列排，整块默认收起，
         //      收起那一行直接写出「哪几天单独设了」（不看展开也知道现在什么状态 ✓）
         const PAIN_LEVELS = [['', '跟基础档'], ['无', '无'], ['轻', '轻'], ['中', '中'], ['重', '重']];

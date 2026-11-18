@@ -349,7 +349,7 @@ cycleHooks.regularCodex = (key) => readCycleRegularOf(key).text;
 /**
  * ★ 2026-11-08：这个对象是不是「交配后排卵」（兔 / 猫这类）。
  *   读图鉴条目的「排卵方式」那一格；认不出就看老存档的 cycle_ovu 空不空？
- *   —— 不，不做那个推断：空着就是按周期（她定过「空着 = 跟全局」，别偷偷改语义 ✗）
+ *   —— 不，不做那个推断：空着就是按周期（需求方定过「空着 = 跟全局」，别偷偷改语义 ✗）
  */
 export function readOvuModeOf(key, entryArg = null) {
     const entry = entryArg || codexEntryOf(key);
@@ -406,7 +406,7 @@ export function seasonRangesText(ranges) {
 /**
  * 这一族有没有发情期、多久一次、一次几天、一年里哪几个月。
  * 三层跟别的数值一样：个人单独调 > 这一条 > 借用链（`pickRow` 自己会走 ✓）。
- * ⚠️ 只认「有」；「无」与空着都等于不发（发情期**没有全局默认**，她定的按原型来 ✓）
+ * ⚠️ 只认「有」；「无」与空着都等于不发（发情期**没有全局默认**，需求方定的按原型来 ✓）
  * @returns {{on:boolean, cycle:[number,number]|null, days:[number,number]|null, season:Array<[number,number]>|null}|null}
  */
 export function readEstrusOf(key, entryArg = null) {
@@ -548,7 +548,7 @@ export function readBirthModeOf(key, raceText = '') {
  *   · 单位跟着条目的「刻度」走（天 / 周 / 月，月按 30 天 ✓）
  *   · **两段少一段 ⇒ null**（体外孵化缺体内那一段就算不出产卵日；缺孵化那一段就没有待孵）——
  *     这时候调用方退回原来的单段孕期（老行为一字不变），等条目把两段都填好自动接上 ✓
- *     （宁可不接管，也不替她编一个"产卵日 ＝ 起点"）
+ *     （宁可不接管，也不替需求方编一个"产卵日 ＝ 起点"）
  * @returns {{mode:'out'|'in', inLo:number, inHi:number, outLo:number, outHi:number,
  *            unit:string, scale:string, layer:string, entry:object|null}|null}
  */
@@ -577,8 +577,8 @@ export function readEggSpansOf(key, raceText = '') {
     const outS = (bm.mode === 'egg_in') ? { lo: 0, hi: 0, text: '' } : (entry ? span(resolveRowOf(entry, 'preg_out')) : null);
     // ★★ 2026-11-06（第五批）：**两段少一段就不接管** ——
     //   体外孵化缺「体内孕育」⇒ 算不出产卵日；缺「体外孵化」⇒ 没有待孵那一段。
-    //   这时候退回原来的单段孕期（老行为一字不变），等她/图鉴内容那一批把两段都填好，
-    //   这个功能会自动接上 ✓（宁可不接管，也不替她编一个"产卵日 ＝ 起点"）
+    //   这时候退回原来的单段孕期（老行为一字不变），等需求方/图鉴内容那一批把两段都填好，
+    //   这个功能会自动接上 ✓（宁可不接管，也不替需求方编一个"产卵日 ＝ 起点"）
     if (bm.mode === 'egg_in') {
         if (!inS) return null;
     } else if (!inS || !outS) {
@@ -623,7 +623,7 @@ export function readShowWeeksOf(key) {
 /** 显怀五档（顺序就是界面上的顺序） */
 export const SHOW_LEVELS = ['早', '偏早', '正常', '偏晚', '晚'];
 
-/** 五档的分位线（2026-11-06 她定的；每条只占自己的区间，不许重叠） */
+/** 五档的分位线（2026-11-06 需求方定的；每条只占自己的区间，不许重叠） */
 const SHOW_LEVEL_CUTS = [10, 30, 70, 90];
 
 /** 这个周数落在哪一档（0 = 早 … 4 = 晚） */
@@ -676,7 +676,7 @@ export function readShowWeekOf(key) {
     let manual = false;
     try { wk = Number(showWeekOf(key)) || 0; } catch { wk = 0; }
     try { manual = showWeekManualOf(key); } catch { manual = false; }
-    // ★ 2026-11-06（她定的）：**用户本人默认「正常」**，其他角色才随机；
+    // ★ 2026-11-06（需求方定的）：**用户本人默认「正常」**，其他角色才随机；
     //   玩家自己改过（manual）就一直听玩家的 ✓
     if (isUserKey(key) && !manual) {
         const def = showWeekForLevel(r.lo, r.hi, 2);
@@ -796,11 +796,11 @@ export function lifeTierLabelOf(text) {
 }
 
 /**
- * 按档位在这一族的区间里**取一段**（2026-11-13 她定：**不再乘倍率**）。
+ * 按档位在这一族的区间里**取一段**（2026-11-13 需求方定：**不再乘倍率**）。
  *
  * 口径：很短 = 下 1/3、短 = 下 2/3、标准 = 整个区间、长 = 上 2/3、很长 = 上 1/3。
  * 为什么改成取段：图鉴那格填的是**这一族的范围**，再乘 0.5~2 倍会让「很短」掉到范围外、
- *   「很长」冲出上限，跟"这一族的范围"自相矛盾（她的原话：那已经超出极限了）。
+ *   「很长」冲出上限，跟"这一族的范围"自相矛盾（上限之外没有意义）。
  * 跨度不到 3 天的区间取段后会退化成同一个数，档位没有区别 —— 已知代价 ✓
  *   要极端值就直接填天数（个人那一层不设上界 ✓）。
  * @param {number} lo
@@ -828,7 +828,7 @@ export function lifeTierRangeOf(lo, hi, tierText) {
 // ---------------------------------------------------------------------------
 // ★ 2026-11-13（第六批）：存活时间也按「建档时判一次档」定个体那一层
 //
-// 她 2026-11-12 17:21 的原话：正式档下非 {{user}} 的角色由插件自己判这个角色的能力，
+// 2026-11-12 定的口径：正式档下非 {{user}} 的角色由插件自己判这个角色的能力，
 //   判据是角色设定与长期体质，**不能拿这一楼的临时状态判**（跑累了气喘吁吁就判弱 ✗）。
 // 落法：模型报一个五档词 ⇒ 插件在「这一族区间」里取对应的那一段写进个人那一层（不乘倍率），
 //   之后每次射精仍在这段里掷一个天数（见 judgment.js 的 rollSpermLife）。
@@ -851,7 +851,7 @@ export function lifePersonRowOf(key, which) {
 /** 这个对象还没定过存活档（名单里有人没定 ⇒ 契约才多问那一行 ✓） */
 export function needsLifeTier(key, which) {
     if (!key || isUserKey(key)) return false;
-    // ★ 2026-11-14（她拍）：只被受孕的人不显示精子两格、只致孕的人不显示卵子两格 ——
+    // ★ 2026-11-14（需求方拍）：只被受孕的人不显示精子两格、只致孕的人不显示卵子两格 ——
     //   推演那边也照着这个口径问，别问用不上的那半 ✓
     if (which === 'egg' && isCannotBePregnantOf(key)) return false;
     if (which === 'sperm' && isCannotImpregnateOf(key)) return false;
@@ -1080,7 +1080,7 @@ function breedOfEntry(e) {
 }
 
 /**
- * ★ 2026-11-08（她定的）：**混血产物**也要进池子。
+ * ★ 2026-11-08（需求方定的）：**混血产物**也要进池子。
  *
  * 起因：半精灵是人和精灵的混血 —— 光有条目不行，池子里不加它，人类 × 精灵永远掷不出半精灵 ✗
  * 口径：一条规则 = 孩子那一条 ＋ 父母两边各自的编号（任一侧对得上就行）；孩子权重 1，
@@ -1096,7 +1096,7 @@ const HYBRID_RULES = [
 ];
 
 /**
- * 孩子种族的候选池（2026-11-07 她定的）：父母各 2 份，同组同品种的其他成员各 1 份。
+ * 孩子种族的候选池（2026-11-07 需求方定的）：父母各 2 份，同组同品种的其他成员各 1 份。
  * · 父母同族 ⇒ null（不用掷）
  * · 统称的通用形态（品种空）⇒ 只和同组、品种也空的成员混
  * · 具体品种 ⇒ 只和同一品种的成员混，不会凭空出别的品种
@@ -1136,7 +1136,7 @@ export function mixedRacePoolOfEntries(m, f, own = null) {
         }
     };
     if (mg && fg) {
-        // ★ 跨组只在父母两个里选（她 2026-11-07 的口径）；同组才按各自品种层扩展 ✓
+        // ★ 跨组只在父母两个里选（2026-11-07 的口径）；同组才按各自品种层扩展 ✓
         if (mg === fg) { expand(mg, mb); expand(fg, fb); }
     } else if (mg) expand(mg, mb);
     else if (fg) expand(fg, fb);

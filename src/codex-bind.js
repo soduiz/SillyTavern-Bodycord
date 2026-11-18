@@ -56,8 +56,8 @@ export function nearestRaceEntries(texts, limit = 6) {
 /**
  * 对一段种族文字取条目：名字 / 别名 / 包含 → 再退到**这个聊天的临时映射**。
  *
- * ★★ 2026-11-09：临时映射**必须她确认过**才算数（见 store.js 那段说明）——
- *   没确认的记录一律当"没对上"，免得插件悄悄替她借了另一族的数据 ✗
+ * ★★ 2026-11-09：临时映射**必须需求方确认过**才算数（见 store.js 那段说明）——
+ *   没确认的记录一律当"没对上"，免得插件悄悄替需求方借了另一族的数据 ✗
  * @returns {{entry:object|null, cands:object[], how:string, tempName?:string}}
  */
 export function resolveRaceWithTemp(text) {
@@ -259,8 +259,8 @@ export function codexUsageOf(id) {
  * status：
  *   bound        已经绑了一条（且那条还在）
  *   matched      名字 / 别名能对上唯一一条，但还没绑
- *   temp         临时映射，而且**她确认过**（借那一条的数据）
- *   temp-pending 有个自动记下的临时映射，**她还没确认** ⇒ 现在不生效，等她点
+ *   temp         临时映射，而且**需求方确认过**（借那一条的数据）
+ *   temp-pending 有个自动记下的临时映射，**需求方还没确认** ⇒ 现在不生效，等需求方点
  *   ambiguous    撞到多条，要玩家挑
  *   unmatched    一条都算不上
  *   missing      绑的编号在图鉴里找不到了（条目被删 / 以后换数据）
@@ -276,7 +276,7 @@ export function chatBindings() {
         let race = '';
         // ★ 2026-11-09：**推演报的族名也要算进来**（`asked`）——
         //   以前只看 `set`（玩家填的那格），于是"模型报了一个图鉴里没有的族"这种情况
-        //   在绑定表里显示成「还没填种族」，她根本看不到该不该借数据 ✗
+        //   在绑定表里显示成「还没填种族」，需求方根本看不到该不该借数据 ✗
         //   ⚠️ 两个都没有时仍然算"还没填"：`raceJudgeOf().race` 那个兜底是「人类」，
         //     拿它凑数会让每个新对象都显示"名字人类能对上" ✗
         try {

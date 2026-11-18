@@ -53,7 +53,7 @@ let _qe = '';            // 条目搜索词
 let _pageE = 1;          // 条目第几页
 let _poolOpen = false;   // 「已排除的世界书」池子：**默认收起** ✓
 let _poolPage = 1;       // 池子自己也分页（别人可能排除掉很多本 ✓）
-// ★ 2026-10-24（她要的形态）：点「多选」进模式 → 一个个点 → 点确认一下排除 / 放回。
+// ★ 2026-10-24（需求方要的形态）：点「多选」进模式 → 一个个点 → 点确认一下排除 / 放回。
 //   书列表和条目列表各有一套，模式互不影响 ✓
 let _multiBooks = false;
 let _selBooks = new Set();
@@ -88,7 +88,7 @@ export function wiSection(container) {
         toggle(wiDescOn(), (v) => { setWiDescOn(v); paint(); }),
         h('div', { class: 'bc-spacer' }),
     );
-    // ★ 2026-10-23（她要的）：玩家自己那份人设描述也单独一颗开关
+    // ★ 2026-10-23（需求方要的）：玩家自己那份人设描述也单独一颗开关
     const rowPersona = h('div', { class: 'bc-row' },
         h('span', { class: 'bc-label', text: '带用户角色设定' }),
         toggle(wiPersonaOn(), (v) => { setWiPersonaOn(v); paint(); }),
@@ -101,8 +101,8 @@ export function wiSection(container) {
         toggle(wiBindOn(), (v) => { setWiBindOn(v); paint(); }),
         h('div', { class: 'bc-spacer' }),
     );
-    // ★ 2026-10-23（她要的）：遗传判定那一轮临时带上（只看那一轮，不改上面几颗开关）
-    // ★ 2026-10-24（她：自动带一次发送什么要能编辑；遗传那一轮完全按它自己的配置发）——
+    // ★ 2026-10-23（需求方要的）：遗传判定那一轮临时带上（只看那一轮，不改上面几颗开关）
+    // ★ 2026-10-24（需求方：自动带一次发送什么要能编辑；遗传那一轮完全按它自己的配置发）——
     //   四类来源各自可选，编辑结果覆盖常驻那几颗开关（只看遗传那一轮）✓
     const openHeritageSources = () => {
         const host = h('div', {});
@@ -194,7 +194,7 @@ export function wiSection(container) {
                 h('span', { class: 'bc-hint', text: `已排除 ${books} 本 / ${entries} 条（点「编辑世界书…」可以放回）` }),
             ));
         }
-        // ★ 第七批：绑定的那颗开着时给一句"去哪儿绑"（不然她不知道这个人绑了没 ✓）
+        // ★ 第七批：绑定的那颗开着时给一句"去哪儿绑"（不然需求方不知道这个人绑了没 ✓）
         if (wiBindOn()) {
             stat.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
                 h('span', { class: 'bc-hint', text: '角色绑定的世界书条目会每轮带上（去人物页 · 角色基础信息 · 设定来源里绑）' }),
@@ -307,7 +307,7 @@ export function openWiEditor(onDone) {
 
             function paintList() {
                 clear(listHost);
-                // ★ 2026-10-24（她：关着也得能编辑排除）——
+                // ★ 2026-10-24（需求方：关着也得能编辑排除）——
                 //   以前两颗都关就直接不列书，得先开开关才能调排除 ✗
                 //   现在照样列出「当前聊天在用的书」，只是在上面提示一句"推演不会读" ✓
                 if (!wiOn()) {
@@ -329,7 +329,7 @@ export function openWiEditor(onDone) {
                 }
                 const { items, cur, total } = pageSlice(kept, _page, WI_PAGE_BOOKS);
                 _page = cur;
-                // ★ 2026-10-24（她的观察：展开条目时容易下意识点世界书的多选）——
+                // ★ 2026-10-24（需求方的观察：展开条目时容易下意识点世界书的多选）——
                 //   有书展开时**不显示书这一层的多选**（焦点在条目上）；顺手退出书多选模式，
                 //   免得按钮藏了、模式还开着，点行全变成选书 ✗
                 if (_open && _multiBooks) { _multiBooks = false; _selBooks = new Set(); }

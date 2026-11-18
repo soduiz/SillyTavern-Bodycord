@@ -1360,7 +1360,7 @@ function targetSection(container, onChange) {
     }
 
     const targets = targetList().filter((t) => !isTargetLoose(t.key));
-    // ★ 2026-11-13（她报"明明在追踪对象里，推演说没有追踪对象"）——
+    // ★ 2026-11-13（需求方报"明明在追踪对象里，推演说没有追踪对象"）——
     //   这份列表列的是**档案**，推演看的是**按模式筛过的名单**。以前界面上两者长得一模一样，
     //   档案建了、却从来没进过推演，玩家看不出来 ✗ ⇒ 每行标一颗「不在推演名单」✓
     //   ⚠️ 口径就用 `trackingRoster()`（跟推演同一份，不另算一套）
@@ -1484,12 +1484,12 @@ function targetSection(container, onChange) {
     b.appendChild(h('div', { class: 'bc-row' }, input2, button('添加对象', add2)));
 
     // ★ 2026-11-06（第七批）：从世界书建角色 —— 这是"建追踪对象"的事，
-    //   放这张卡里；**不塞到某个人的规则补丁下面**（她 2026-11-06 点掉的形态 ✗）
+    //   放这张卡里；**不塞到某个人的规则补丁下面**（2026-11-06 点掉的形态 ✗）
     const undoRow = (() => { try { return wiBuildUndoRow(() => onChange?.(true)); } catch { return null; } })();
     b.appendChild(h('div', { class: 'bc-row bc-row-wrap' },
         button('从世界书建角色…', () => openWiBuildTargets(() => onChange?.(true)),
             { title: '勾世界书里的条目，一条建一个追踪对象，并绑上那条设定来源' }),
-        // ★ 2026-11-09（她提的）：从角色卡建角色，只绑那张卡的角色描述那一段
+        // ★ 2026-11-09（需求方提的）：从角色卡建角色，只绑那张卡的角色描述那一段
         button('从角色卡建角色…', () => openCardBuildTargets(() => onChange?.(true)),
             { title: '勾角色卡，一张建一个追踪对象，并绑上那张卡的角色描述' }),
         undoRow,
@@ -1644,7 +1644,7 @@ function exportChatArchive(st, withTime) {
     if (!withTime) for (const k of EXPORT_TIME_KEYS) delete payload[k];
     payload.__export = { includeTime: !!withTime, version: 3, storyDate: String(st?.fictionDate || '') };
     if (rel && Object.keys(rel).length) payload.__rel = rel;
-    // ★ 2026-10-26：导入导出**不在右上角弹提示**（她说不要弹）⇒ 只写控制台，界面不打扰
+    // ★ 2026-10-26：导入导出**不在右上角弹提示**（需求方说不要弹）⇒ 只写控制台，界面不打扰
     // ★ 文件名带上**这个聊天的名字**（导出文件要能看出是哪个聊天来的）——
     //   名字取自酒馆的 chatId（就是聊天列表里看到的那一串），文件名非法字符换成下划线 ✓
     const chatName = (() => {
@@ -1863,7 +1863,7 @@ function dataSection(container, onChange) {
                             for (const a of (Array.isArray(cur.alerts) ? cur.alerts : [])) {
                                 if (keys.has(String(a?.target || ''))) a.imported = true;
                             }
-                            // ★★ 2026-10-28（她报：仅状态导入后，旧成就被写上新档的日期）——
+                            // ★★ 2026-10-28（需求方报：仅状态导入后，旧成就被写上新档的日期）——
                             //   成就也有时间线：从旧档搬来的那些，日期属于旧时间轴 ⇒ 打 `imported`，
                             //   面板 / 设置页都不显示它们的日期（新档里正常解锁的没有这个标记 ✓）。
                             //   认法按**文件里那条成就的 id**（复制时原样带过来，不会认错到本聊天自己解锁的）✓
@@ -1887,7 +1887,7 @@ function dataSection(container, onChange) {
                     // 楼层小面板也跟着重画（不然还挂着旧的那几行 ✓）
                     try { const fl = await import('./ui-floors.js'); fl.refreshAllFloors?.(); } catch { /* 忽略 */ }
                     onChange?.(true);
-                    // ★ 2026-10-26：导入完成也不弹右上角提示（她说不要弹）⇒ 只写控制台
+                    // ★ 2026-10-26：导入完成也不弹右上角提示（需求方说不要弹）⇒ 只写控制台
                     console.log('[Bodycord] 已迁移 ' + inKeys.length + ' 个对象进来');
                 } catch (e) {
                     console.warn('[Bodycord] 导入档案失败', e);
@@ -1901,7 +1901,7 @@ function dataSection(container, onChange) {
             // ★ 说明里只写「身体档案」不行 —— 这个动作清的是**整个 state**
             //   （对象数值 / 日程 / 成就 / 随手记 / 占卜台历史 / 孩子 / 历史快照）⇒ 代价会被说小 ✗
             if (!(await askConfirm('把这个聊天里插件存的东西整个清空？\n\n包括对象与数值、日程、成就、随手记、占卜台历史、孩子、历史快照。\n\n{{user}} 本人那一条会留着（建成一份空档案，这一个聊天的数值同样会没），这样列表不会和「追踪本人」那颗开关对不上。\n\n只影响这个聊天，其他聊天不受影响；删了回不来，建议先「导出当前聊天档案」'))) return;
-            // ★ 2026-11-09（她报的 BUG）：整份换新会把本人那条也换掉 ⇒ 清完把本人建回来 ✓
+            // ★ 2026-11-09（需求方报的 BUG）：整份换新会把本人那条也换掉 ⇒ 清完把本人建回来 ✓
             resetAllKeepUser();
             onChange?.(true);
         }, notInChat ? { variant: 'danger', disabled: true, title: '先打开要清的那个聊天（不在聊天里时，可能清到上一次打开的那个）' } : { variant: 'danger' }),
@@ -2886,7 +2886,7 @@ function stageSection(container, onChange, actions = {}) {
         );
         const body = h('div', {});
         if (on) {
-            // ★★ 2026-10-22 她嫌"分类有点奇怪，看着容易混乱" ⇒ 改成**按去处分三组**，
+            // ★★ 2026-10-22 需求方嫌"分类有点奇怪，看着容易混乱" ⇒ 改成**按去处分三组**，
             //   每组里再按 满 / 多 / 中 排三行（原来九格按档位平铺，像九件不相干的事 ✗）
             const SLOTS = [
                 { title: '阴道 · 体内（写进状态条一）', get: spermBellyTextVaginaIn, set: setSpermBellyTextVaginaIn, ph: '阴道那本的体内写法（留空 = 这一段不写）' },
@@ -3823,7 +3823,7 @@ function bubbleSection(container, onChange, actions = {}) {
  *   原来明面挂着一句「⚠️ 时间轴改了就退不回来」，**说错了**：日期本身随时能再改 ✓
  *   ⇒ 那句删掉，只把"已经算过的账退不回来"留在「？」里（那才是真的 ✓）。
  *
- * ★ 2026-11-01：**整块搬去「改数值」弹窗**（她定的：时间跳跃与修正放在时间与日历那页不合适）——
+ * ★ 2026-11-01：**整块搬去「改数值」弹窗**（需求方定的：时间跳跃与修正放在时间与日历那页不合适）——
  *   时间与日历那页只留历法设定；翻天数并当场结算属于运行时修正，跟"直接改日期"住一处 ✓
  *   ⇒ 这里 export 出去，由 ui.js 的改数值弹窗调（本文件里不再有页面调它）。
  * @param {object} [opts] 传给 section 的选项（弹窗里默认收起：`{collapsible:true, open:false}` ✓）
@@ -3986,7 +3986,7 @@ export function shiftDaySection(container, onChange, opts = {}) {
             : shiftDateForward(input.value, { bodyExperienced });
         if (!r.ok) { window.toastr?.warning?.(r.error); paint(); return; }
         const bits = [];
-        // ★★ 2026-11-04（方案甲，她拍的）：痕迹那本钟**只许往前推** ——
+        // ★★ 2026-11-04（方案甲，需求方拍的）：痕迹那本钟**只许往前推** ——
         //   往过去退 ⇒ 一段都不消、锚点留在原来那天（退回后再走回同一天，那一段不会再消一次 ✓）
         //   往未来补 ⇒ 只消"锚点到现在"这么多夜（跳过头也不会把没经过的日子算进去 ✓）
         //   原来这里不分方向一律把锚点改成今天 ⇒ 来回拨几次，同一段痕迹被消了两次 ✗
@@ -4167,7 +4167,7 @@ export function renderCalendarTab(container, onRefresh, onRebuild, actions = {})
     //   ⇒ 只剩两张**按内容命名**的卡：「时间怎么算」和「日期怎么写」
     //     （跟别的页一个规矩：卡片叫内容的名字，不叫页的名字 ✓）
     timeSection(container, onChange);
-    // ★ 2026-11-01：「时间跳跃与修正」**搬去改数值弹窗了**（她：放这儿不合适）——
+    // ★ 2026-11-01：「时间跳跃与修正」**搬去改数值弹窗了**（需求方：放这儿不合适）——
     //   这页只留历法设定（怎么算日子 / 日期怎么写 / 节日 / 提醒气泡 / 番茄钟）✓
     //   ⚠️ 别再把它调回来：玩家改时间走「改数值 → 剧情日期 / 时间跳跃与修正」那一处 ✓
     dateStyleSection(container, onChange);
@@ -4355,7 +4355,7 @@ export function bodyLockRows(host, key, opts = {}) {
     //   （徽章写「未填」跟下拉里那句重复，「恢复自动」也没东西可恢复 ✗）。
     //   ⇒ ① 徽章上到**标签那一行**；② 「恢复自动」挪到**下拉那一行**的右边，
     //   而且**只在锁定时才出现** ⇒ 每格固定两行，一个字都没藏 ✓
-    // ★ 2026-11-12（她定的：异种是相对词，人外才是绝对的；而且图鉴已经能答）——
+    // ★ 2026-11-12（需求方定的：异种是相对词，人外才是绝对的；而且图鉴已经能答）——
     //   能对上图鉴条目的对象，这一行**不再放下拉**：图鉴分类（人类 / 动物 / 亚人 / 兽人 / 其他）
     //   本身就是答案，再摆一个手选等于两个事实源 ✓
     //   ⚠️ 玩家以前锁过的值**照样显示成下拉**（不然他解不开那个锁 ✗）
@@ -4413,7 +4413,7 @@ export function bodyLockRows(host, key, opts = {}) {
             setBodyLockField(key, field, val);
             paintTag(val);                       // ★ 当场同步视觉 ✓
             // ★ 2026-11-13：「能不能让别人怀孕」也要整页重建 ——
-            //   生育数值那块按这两格决定显示哪几格，不重建就停在旧的那一套（她截图撞到的就是它）
+            //   生育数值那块按这两格决定显示哪几格，不重建就停在旧的那一套（需求方截图撞到的就是它）
             onChange(field === 'canBePregnant' || field === 'canImpregnate');
         }, moot ? { disabled: true, title: '这个人不能怀孕，这一格不生效' } : {});
         const box2 = h('div', { class: 'bc-field' },
@@ -4430,7 +4430,7 @@ export function bodyLockRows(host, key, opts = {}) {
     };
 
     row('能不能怀孕', 'canBePregnant', opts3);
-    // ★★ 2026-11-10（她定的）：那个「怀不上也想要月经」的子开关**删掉**——
+    // ★★ 2026-11-10（需求方定的）：那个「怀不上也想要月经」的子开关**删掉**——
     //   它是 2026-11-03 为了补「锁了不能怀孕还显示排卵期」加的口子，
     //   而那个补丁的根子是"把怀不上当成没有周期"，两件事本来不该绑在一起 ✗
     //   ⇒ 现在「有没有月经」由周期模式那三档回答（推演会报「有没有月经」这一格）。
@@ -4439,16 +4439,16 @@ export function bodyLockRows(host, key, opts = {}) {
     // 第四项：能不能跟非人类生 ✓
     row('能不能怀上人外', 'canBearXeno', opts3);
     row('是不是人外', 'isXeno', yesOpts, ['是', '不是'], codexXenoText);
-    // ★ 2026-11-06（她定的）：大类那格**从界面退休** ——
+    // ★ 2026-11-06（需求方定的）：大类那格**从界面退休** ——
     //   它本来就是给玩家做分类看的，不是判定输入；判定只看「种族」那一条图鉴 ✓
     //   → 分类以后由「种族 + 图鉴里的分类标签」承担，这里不再摆那一格。
     //   老档里已经选过大类的值**不删**（推演的旧回退还会读它 ✓），只是界面上不再出现。
     // ★ 基础种族要能自定义名字 ⇒
     //   这一页也带上「这个角色的种族」（自由输入 ＋ 「选…」），和参数面板同一份数据 ✓
     host.appendChild(raceNameField(key, onChange));
-    // ★ 2026-11-08（她的判断：有了图鉴绑定，「真实种族 / 你定的」那行读数没必要留了）——
+    // ★ 2026-11-08（需求方的判断：有了图鉴绑定，「真实种族 / 你定的」那行读数没必要留了）——
     //   那行只是来源说明，不参与任何判定；删掉，只留「种族待确认」这条警告
-    //   （它是要她动手确认的，删了会漏 ✓）
+    //   （它是要需求方动手确认的，删了会漏 ✓）
     const raceWarn = h('div', { class: 'bc-warn', text: '' });
     const paintRace = () => {
         const rj = raceJudgeOf(key);
@@ -4485,7 +4485,7 @@ export function isCannotBePregnant(key) {
 }
 
 /**
- * ★ 2026-11-13（她定）：这个对象是不是被明确锁了「不能让别人怀孕」。
+ * ★ 2026-11-13（需求方定）：这个对象是不是被明确锁了「不能让别人怀孕」。
  *   跟上面那条同一套口径：只有明确 false 才算，留空 = 不知道 ✓
  *   用途：生育数值那块 —— 只被受孕的人不显示精子那两格，只致孕的人不显示卵子那两格。
  */
@@ -4496,7 +4496,7 @@ export function isCannotImpregnate(key) {
 /**
  * ★ 显怀早晚（2026-11-06）—— 跟着「角色基础信息」走的一格。
  *   为什么放这儿：这是**这个人**的体质，跟「我是谁」那几格是一类；
- *   塞进改数值的孕周卡里的话，没怀孕的人根本看不到（她 2026-11-06 就是这么找不到的 ✗）。
+ *   塞进改数值的孕周卡里的话，没怀孕的人根本看不到（2026-11-06 就是这么找不到的 ✗）。
  *   条目没写显怀范围 ⇒ 不给控件，只写清去哪儿补（藏起来 = 等于不存在 ✗）。
  */
 function showField(key) {
@@ -4518,7 +4518,7 @@ function showField(key) {
     const line = h('div', { class: 'bc-hint' });
     let dd = null;
     let num = null;
-    // ★ 2026-11-06（她报过改了档右边数字不变）：换档之后数字框与下拉都要跟着重画，
+    // ★ 2026-11-06（需求方报过改了档右边数字不变）：换档之后数字框与下拉都要跟着重画，
     //   光改下面那行说明是不够的 ✗
     const paint = () => {
         if (!sw) return;
@@ -4556,8 +4556,8 @@ function showField(key) {
 //
 // 住「角色基础信息」那张卡（设置页「你自己」／悬浮球弹窗／补丁页 · 人物 三处共用 ✓）。
 //   · 卵子质量 / 精子致孕力：倍率。默认「跟图鉴」= 这一族基准；5 档只是这一族基准 × 倍率
-//   · 精子存活 / 卵子存活：天。5 档 = 在这一族范围里**取一段**写进个人那一层（2026-11-13 她定：不再乘倍率）
-//   · 个人的数可以超过族范围、不设上界（她 2026-11-13 定的：玩家写多少就是多少 ✓）
+//   · 精子存活 / 卵子存活：天。5 档 = 在这一族范围里**取一段**写进个人那一层（2026-11-13 需求方定：不再乘倍率）
+//   · 个人的数可以超过族范围、不设上界（2026-11-13 定的：玩家写多少就是多少 ✓）
 //
 // ⚠️ 数值本身存在「个人单独调」那一层（codexOverride）；档位存对象身上（或本人全局设置）。
 //   换绑别的族时，档位会跟着新基准重算；填了自定义就固定成那个数 ✓
@@ -4566,7 +4566,7 @@ function showField(key) {
 const _fertOpen = Object.create(null);
 
 export function fertilityNumbersBlock(key, onChange = () => {}) {
-    // ★ 2026-11-13（她定）：四格按这个人**实际能参与的两种角色**显示 ——
+    // ★ 2026-11-13（需求方定）：四格按这个人**实际能参与的两种角色**显示 ——
     //   只被受孕 ⇒ 不显示精子那两格；只致孕 ⇒ 不显示卵子那两格；
     //   两样都能 ⇒ 四格全显示；两样都被锁死 ⇒ 一格都不显示，只留一句说明。
     const canPreg = !isCannotBePregnant(key);
@@ -4577,7 +4577,7 @@ export function fertilityNumbersBlock(key, onChange = () => {}) {
     const wrap = h('div', { class: 'bc-field bc-fert' });
     const body = h('div', { class: 'bc-fert-body' });
     const sumEl = h('span', { class: 'bc-fert-state' });
-    // 展开/收起：**只有按钮能点**（她 2026-11-13：摘要那行文字能点，看着像 BUG）
+    // 展开/收起：**只有按钮能点**（2026-11-13：摘要那行文字能点，看着像 BUG）
     const openBtn = button('', () => {
         _fertOpen[String(key)] = !_fertOpen[String(key)];
         applyOpen();
@@ -4694,7 +4694,7 @@ export function fertilityNumbersBlock(key, onChange = () => {}) {
         const base = () => (which === 'sperm' ? readSpermLifeBaseOf(key) : readEggLifeBaseOf(key));
         // ★ 2026-11-13：从存下来的天数**反推**选的是哪一档。
         //   ⚠️ 5 档缩放后会撞车（人类卵子 1 到 1 天：很短 / 短 / 标准 都是 1~1；长 / 很长 都是 2~2）——
-        //     按顺序取第一个匹配会把她选的「标准」显示成「很短」，读数就成了假话 ✗
+        //     按顺序取第一个匹配会把需求方选的「标准」显示成「很短」，读数就成了假话 ✗
         //   ⇒ 撞车时取**离 1 倍最近**的那一档（选标准就该显示标准），还是一样近才按顺序取 ✓
         const tierOfOv = (ov) => {
             if (!ov) return '';
@@ -4825,7 +4825,7 @@ export function fertilityNumbersBlock(key, onChange = () => {}) {
     };
 
     // ★ 2026-11-13：入口是一颗紧挨标题的按钮（原来贴在行尾被当成装饰）。
-    //   摘要那行**不接点击** —— 文字能点会让她看着像 BUG。
+    //   摘要那行**不接点击** —— 文字能点会让需求方看着像 BUG。
     const headEl = h('div', { class: 'bc-fert-head' },
         h('div', { class: 'bc-label', text: '生育数值' }),
         openBtn,
@@ -4897,7 +4897,7 @@ export function cycleRegularBlock(key) {
         try { np = nextPeriodFactOf(key); } catch { np = null; }
         const out = [];
         if (len > 0) out.push('本周期 ' + len + ' 天');
-        // ⚠️ 算不出来就直说，不拿一个假日期顶上（她的红线：不许编数 ✓）
+        // ⚠️ 算不出来就直说，不拿一个假日期顶上（需求方的红线：不许编数 ✓）
         if (!np) out.push('预计下次月经：暂时算不出来（怀孕、还没定周期，或没有剧情日期）');
         else if (np.kind === 'recovery') out.push('预计恢复周期 ' + np.date + '（距今 ' + np.days + ' 天）');
         else if (np.dateTo) out.push('预计下次月经 ' + np.date + ' 到 ' + np.dateTo + '（距今 ' + np.days + ' 到 ' + np.daysTo + ' 天）');
@@ -4996,13 +4996,13 @@ export function raceNameField(key, onChange = () => {}) {
                 if (!be || be.name !== String(v)) setCodexIdOf(key, '');
             }
         } catch { /* 忽略 */ }
-        // ★ 2026-11-09（B 方案）：不再自动借"最像的一族"的数据 —— 要借得她在图鉴页确认 ✓
+        // ★ 2026-11-09（B 方案）：不再自动借"最像的一族"的数据 —— 要借得需求方在图鉴页确认 ✓
         try { paintBind(); } catch { /* 还没建好 */ }
         try { onChange(false); } catch { /* 忽略 */ }
     };
     const box = h('div', { class: 'bc-field' },
         h('div', { class: 'bc-label', text: '这个角色的种族' }));
-    // ★ 2026-11-08（她的判断：整行大输入框会让人以为只能手打）——
+    // ★ 2026-11-08（需求方的判断：整行大输入框会让人以为只能手打）——
     //   ⇒ 改成「显示当前种族的按钮」，手打也收进选择器里（选择器顶部那行打名字）✓
     const curBindId = () => { try { return codexIdOf(key); } catch { return ''; } };
     const raceCtl = codexPickControl(readOne, (e, nm) => {
@@ -5173,14 +5173,14 @@ function userBodyInfoSection(container, onChange) {
         h('div', { class: 'bc-hint', text: '换人设不会跟着变，要跟着换就自己存一份档案' }),
     ));
 
-    // ★★ 2026-11-10（她截图说过想把周期模式挪到上面）——
+    // ★★ 2026-11-10（需求方截图说过想把周期模式挪到上面）——
     //   周期模式是这一页最顶层的一件事（这个人有没有周期），所以摆在四项前面，
     //   跟「补丁页 · 人物视图」那边「周期模式在最上面」排法一致 ✓
     //   ⚠️ 只动位置，一个字的数据都不改 ✓
     {
         // ★ 档位名统一走 `cycleModeLabel`（三档，三个页面共一份 ✓）——
         //   和「阶段插图」那页里那两档的叫法一致（那边走 periodTierName ✓）
-        // ★★ 2026-11-10（她定的）：三层显示 —— 你选的 / 推演判的 / 跟随默认。
+        // ★★ 2026-11-10（需求方定的）：三层显示 —— 你选的 / 推演判的 / 跟随默认。
         //   以前只有"锁定 / 跟随默认"两层，推演报的「有没有月经」生效了却看不见，
         //   下拉上还写着「跟随默认（月经）」⇒ 看到的和实际生效的是两回事 ✗
         const explicit = String(settings().userCycleMode || '');
@@ -5252,7 +5252,7 @@ function userBodyInfoSection(container, onChange) {
  *   排除后停的是「推演一族」（注入 / 判定 / 推演账本 / 推演按钮），
  *   面板、番茄钟、骰子、随手记、日历（现实日期）照常能用 ✓
  *
- * ⚠️ 这一块**必须能在外面勾**（她 2026-10-28 指出的缺口）：
+ * ⚠️ 这一块**必须能在外面勾**（2026-10-28 指出的缺口）：
  *   原来只按"当前这张卡"认，结果只能先进那个聊天才能排 ——
  *   可进去之后第一轮生成已经跑过、账本已经写下了，那就成"事后才排" ✗
  *   ⇒ 现在改成**列出全部角色卡**，在外面勾一下就行；聊天里那颗保留当快捷方式 ✓
@@ -5286,7 +5286,7 @@ function cardSection(container, onChange) {
                 setCardExcluded(cur, v);
                 // 当场生效：排除 ⇒ 把已经注进去的那段清掉；恢复 ⇒ 重新拼一份 ✓
                 try { rebuildInjection(); } catch { /* 忽略 */ }
-                // ★ 排除 / 恢复都**不弹右上角**（2026-10-28 她要的）——
+                // ★ 排除 / 恢复都**不弹右上角**（2026-10-28 需求方要的）——
                 //   行里那行字和面板顶上那条已经说清了，再弹一下纯属打扰 ⇒ 只写控制台 ✓
                 console.log('[Bodycord] 角色卡' + (v ? '已排除' : '已恢复') + '：' + cardNameOf(cur));
                 onChange?.(true);
@@ -5427,7 +5427,7 @@ export function renderJudgeTab(container, onRefresh, onRebuild, actions = {}) {
     // ★ 推演与追踪拆成两页：
     //   ⇒ 这一页只留「**怎么推**」＋「**推完给谁**」，
     //     「追踪谁 / 那些数据」在 renderTrackingTab ✓
-    // ★ 2026-10-31（她要求重排）：整页顺序＝**一次推演从头到尾**，不再把"总开关"和"注入"拆到页首页尾。
+    // ★ 2026-10-31（需求方要求重排）：整页顺序＝**一次推演从头到尾**，不再把"总开关"和"注入"拆到页首页尾。
     //   1 总开关与时机 → 2 推演谁 → 3 喂给推演什么 → 4 世界书 → 5 角色卡 → 6 记什么 → 7 结果给谁
     //   ⚠️ 那条簇标题「触发与范围」删掉了：它只出现在「角色卡」上面一次，
     //     前面几张卡看着像没有归属，不如让每张卡自己的名字说清 ✓

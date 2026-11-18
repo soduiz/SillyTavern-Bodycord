@@ -181,8 +181,7 @@ const CONTRACT_TEMPLATE = `你必须只输出一个 JSON 对象，结构如下�
     {
       "name": "本轮剧情里出现过、又不在「追踪对象名单」里的名字。照剧情里的写法写，不要加括号说明@@NEWFACE_TRACK_NOTE@@",
       "race": "这个人的种族。优先看世界书设定 / 角色描述 / 名单里写的设定，那里写明了就以它为准；没写明再按剧情线索判。判不出来就留空，不要编",
-      "race_source": "上面那个种族是怎么来的，只填这三个词之一：设定（世界书 / 角色描述 / 名单设定里明写了真相）／推断（设定没写，从剧情或角色卡推的）／存疑（材料里确实没写、也推不出来）",
-      "why": "@@NEW_FACE_WHY_ENUM@@，只填这个词"
+      "race_source": "上面那个种族是怎么来的，只填这三个词之一：设定（世界书 / 角色描述 / 名单设定里明写了真相）／推断（设定没写，从剧情或角色卡推的）／存疑（材料里确实没写、也推不出来）"
     }
   ],
 @@ACHIEVEMENTS_FIELD@@
@@ -243,10 +242,9 @@ const CONTRACT_TEMPLATE = `你必须只输出一个 JSON 对象，结构如下�
 - ⚠️ 只报你真的取用过的：没取就不要填，不要为了让字段好看而补几条。
 
 关于 newFaces：
-- 这一轮剧情里出现过、又不在「追踪对象名单」里的人，在这儿报一条他的名字和种族。
-- 只报真的参与进这一轮剧情的：@@NEW_FACE_WHY@@
-- ⚠️ 这一轮没有上面那种事情发生（只是对话、只是露脸、只是在设定或回忆里被提到）⇒ 这一格就填空数组 []，不要为了填满而报人。
-- 只报名字、种族、种族的依据、以及"为什么值得报"这四样。身体状态那些一概不要报，那是「追踪对象名单」里的人才有的一份。
+- 这一轮剧情里出现过、又不在「追踪对象名单」里的人，在这儿报一条他的名字和种族。这一格只是先登记名字：落成「只登记了名字的对象」，不进推演名单。
+- 只报真的参与进这一轮剧情的：有名字、这一轮真的在剧情里露面的角色就报，还没有发生身体相关的事也照报；只是被提一句名字的路人、只在设定或回忆里一带而过的人不要报。
+- 只报名字、种族、种族的依据这三样。身体状态那些一概不要报，那是「追踪对象名单」里的人才有的一份。
 - 报过的再报一遍也没关系，系统自己会去重；实在没有就填空数组 []。
 
 关于 judgment 字段：
@@ -355,8 +353,8 @@ function buildContract(roster = []) {
         ? '；自动追踪模式下，按【自动追踪提示】新加的角色也写在这里，而且这一条要写完整'
         : '');
     out = out.replace(/@@NEWFACE_TRACK_NOTE@@/g, _autoMode
-        ? '。这一格只登记名字和种族，不会开始追踪；要开始追踪的新角色按【自动追踪提示】写进 targets'
-        : '。这一格只登记名字和种族，不会建身体档案');
+        ? '。这一格只登记名字和种族，不进推演名单；要正式追的新角色按【自动追踪提示】写进 targets'
+        : '。这一格只登记名字和种族，不进推演名单');
     // ★ 钟点 ——
     //   历法那档是「**不记钟点**」时**整行不问**（省 token ✓，也免得模型瞎编 ✓）
     try {
@@ -721,24 +719,10 @@ function buildContract(roster = []) {
     //   匹配不上 ⇒ 「状态条三」这个字段开关**一直是不起作用的**：关掉它，契约照样问 ✗）。
     //   ⇒ 模板那行带逗号，末尾多出来的逗号由下面那条 `,\n(\s*)\}` 兜底清理 ✓
     out = out.replace(/@@ROW3_KEEP@@/g, String(recentSexKeep()));
-    // ★ 新面孔的触发条件：只交代了种族算不算：值得报 ——
-    //   开 ⇒ 人外世界可以提前知道种族；关 ⇒ 只有身体事件才登记，免得把宠物 / 路人拉进来 ✓
-    try {
-        const raceScan = settings().raceScan === true;
-        // ★★ 2026-10-19（没做爱时也输出了其他角色的数据）——
-        //   原来 `why` 那一格的说明里**无论开没开"提前识别非人类种族"，都把「种族设定」列成可选项** ⇒
-        //   模型照着填，一条跟身体无关的人就这么冒出来了（人名 / 种族设定 ✓）。
-        //   ⇒ 枚举跟着开关走：关着时只留「身体事件」这一种，模型没有别的词可挑 ✓
-        out = out.replace(/@@NEW_FACE_WHY_ENUM@@/g, raceScan
-            ? '身体事件（性行为 / 内射 / 植入 / 怀孕 / 分娩发生在该角色身上）／种族设定（剧情明确交代了该角色是什么种族，但没有任何身体事件）'
-            : '身体事件（性行为 / 内射 / 植入 / 怀孕 / 分娩发生在该角色身上）');
-        out = out.replace(/@@NEW_FACE_WHY@@/g, raceScan
-            ? '跟身体有关的事发生在该角色身上（性行为 / 内射 / 植入 / 怀孕 / 分娩），或者剧情明确交代了该角色是什么种族；只是被提一句名字的路人不要报。'
-            : '跟身体有关的事发生在该角色身上（性行为 / 内射 / 植入 / 怀孕 / 分娩）；只是被提一句名字、或者只交代了种族的路人不要报。');
-    } catch {
-        out = out.replace(/@@NEW_FACE_WHY_ENUM@@/g, '身体事件（性行为 / 内射 / 植入 / 怀孕 / 分娩发生在该角色身上）');
-        out = out.replace(/@@NEW_FACE_WHY@@/g, '跟身体有关的事发生在该角色身上（性行为 / 内射 / 植入 / 怀孕 / 分娩）。');
-    }
+    // ★★ 2026-11-18：newFaces 不再问「为什么值得报」——
+    //   轻档现在就是"这一轮出现过、还不是正式档的人"的登记处，跟「提前建档」开关无关
+    //   （她定的：轻档一直在）。开关只管**正式档什么时候建**，那件事走下面的自动追踪提示。
+    //   原来那格 why 是为了在开关关着时把"只交代种族"的人筛掉，现在不筛了 ⇒ 整格删掉省 token ✓
     // 关节段后可能在最后一项留下逗号，修一下 JSON 示例的可读性
     out = out.replace(/,\n(\s*)\}/g, '\n$1}');
     // ★ 2026-10-26：人外那半句**按门控发** —— 没开人外扩展的人契约里不出现「人外」，
@@ -2021,7 +2005,13 @@ export function buildJudgeMessages(roster, pool, presetText = '', rejudge = [], 
                 const sexRule = female
                     ? '只报女性角色：女性、雌性、女性形态都算；男性、雄性和性别不明的人不要报。'
                     : '';
-                return `【自动追踪提示】\n除了名单上的对象，如果最近正文里出现了${who}、而且这个人的身体状态值得建档追踪，就在 targets 里额外增加一条完整记录（vars、cot、profile 都要写，这一轮发生的身体事实也要写进去），本轮最多新增 ${roomTxt} 个。${sexRule}只把名字写进 newFaces 不会开始追踪：那一格只登记名字和种族，不进推演名单。${(!unlimited && room === 0) ? '名额已经满了，这一轮不要新增。' : ''}没有这种角色就只输出名单上的对象。\n${s.autoHints ? '额外规则：' + s.autoHints : ''}`;
+                // ★ 2026-11-18：「提前建档」开着 ⇒ 该类新角色不等身体事件、直接写进 targets 建正式档；
+                //   只给 newFaces 的仍然只是登记名字（轻档、不进名单）✓
+                const raceScan = (() => { try { return settings().raceScan === true; } catch { return false; } })();
+                const earlyNote = raceScan
+                    ? '「提前建档」开着：就算还没发生身体相关的事，上面这类新角色也照上面那样写进 targets 并写完整（不用等身体事件，名额同样算）。只写进 newFaces 的仍然只是登记名字。'
+                    : '';
+                return `【自动追踪提示】\n除了名单上的对象，如果最近正文里出现了${who}、而且这个人的身体状态值得建档追踪，就在 targets 里额外增加一条完整记录（vars、cot、profile 都要写，这一轮发生的身体事实也要写进去），本轮最多新增 ${roomTxt} 个。${sexRule}只把名字写进 newFaces 不会开始追踪：那一格只登记名字和种族，不进推演名单。${earlyNote}${(!unlimited && room === 0) ? '名额已经满了，这一轮不要新增。' : ''}没有这种角色就只输出名单上的对象。\n${s.autoHints ? '额外规则：' + s.autoHints : ''}`;
             })()
             : '',
         '【最近剧情正文（由旧到新）】',
@@ -4586,32 +4576,11 @@ export async function runJudge({ signal = null, force = false, rejudge = [], all
     //   插件手里没有种族可读 ⇒ 只能写「种族未知」
     //   ⚠️ 放在结果循环**之后**：同一个人要是也在名单里，以名单那一份为准（上面已经收下了）✓
     try {
-        // ★ 第二道闸（2026-10-18，2026-10-20 收紧）：契约那边已经按设置改了说法，
-        //   但模型照样会过度上报（只被提了一句名字的人也报上来）。
-        //   关着「提前识别非人类种族」时：**光有 why 不算数** —— 还要在这一轮的
-        //   `targets` 里真的有一条身体事实（sex_events 非空）才收，
-        //   否则连轻档都不建 ✓（旧版只认 why，模型不填 why 或被问了别的词就漏过去了 ✗）
-        const raceScanOn = (() => { try { return settings().raceScan === true; } catch { return false; } })();
-        const normName = (v) => String(v || '').replace(/[（(][^）)]*[)）]/g, '').trim();
-        const bodyFactNames = (() => {
-            const set = new Set();
-            try {
-                for (const it of (json.targets || [])) {
-                    if (!it || typeof it !== 'object') continue;
-                    const has = (Array.isArray(it.sex_events) && it.sex_events.length > 0)
-                        || (Array.isArray(it.inseminations) && it.inseminations.length > 0);
-                    if (has) set.add(normName(it.name));
-                }
-            } catch { /* 忽略 */ }
-            return set;
-        })();
-        const faces = Array.isArray(json.newFaces)
-            ? json.newFaces.filter((x) => {
-                if (raceScanOn) return true;
-                if (String(x?.why || '').includes('种族设定')) return false;
-                return bodyFactNames.has(normName(x?.name));
-            })
-            : json.newFaces;
+        // ★★ 2026-11-18：第二道闸撤了 —— 轻档现在就是"这一轮出现过、还不是正式档的人"的登记处，
+        //   跟「提前建档」开关无关（她定的：轻档一直在）。原来关着开关时按"targets 里有没有身体事实"
+        //   一筛，等于把没做过的名字全丢掉 ⇒ 轻档那一栏永远是空的 ✗
+        //   契约里已经写清"只是被提一句名字的路人不要报"，剩下由 `applyNewFacesReport` 自己校验 ✓
+        const faces = Array.isArray(json.newFaces) ? json.newFaces : [];
         const made = applyNewFacesReport(faces);
         for (const x of made) console.log('[Bodycord] 登记了新面孔（轻档）：' + x.name);
     } catch (e) { console.warn('[Bodycord] 登记新面孔失败', e); }

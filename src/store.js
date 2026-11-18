@@ -2122,8 +2122,17 @@ export function upsertTargetResult(res, opts = {}) {
             // ★ 2026-11-08（发情期第 0 批）：发情记录档身上出现别的账 ⇒ 升成正式档 ✓
             if (isTargetLoose(key)) setTrackMode(key, 'full');
         } else if (autoNew) {
-            setTargetLight(key, true);
-            try { _maybeAutoEstrus(key); } catch { /* 忽略 */ }
+            // ★★ 2026-11-18：「提前建档」开着 ⇒ 自动档该追的新角色，没发生身体事件也直接建正式档；
+            //   关着 ⇒ 先只登记名字，等真有身体事实了再升（上面那一段）✓
+            //   ⚠️ 谁算"该追的人"由追踪模式决定（自动＝全部新角色，自动女性＝女性新角色），
+            //     性别那一关仍然只在提示词里，代码不验 ✓
+            const early = (() => { try { return settings().raceScan === true; } catch { return false; } })();
+            if (early) {
+                if (isTargetLoose(key)) setTrackMode(key, 'full');
+            } else {
+                setTargetLight(key, true);
+                try { _maybeAutoEstrus(key); } catch { /* 忽略 */ }
+            }
         }
     } catch { /* 忽略 */ }
 

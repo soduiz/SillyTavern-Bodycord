@@ -2112,16 +2112,26 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
    窄屏
    ========================================================================= */
 @media (max-width: 900px) {
+    /* ⚠️⚠️ 这一档的宽高必须写死成视口单位，**不能靠 left/top/right/bottom 撑**（2026-11-22 修）——
+       酒馆的 mobile-styles（`@media max-width: 1000px`）会给 body 加 `position: fixed`，
+       于是 <html> 没有在流内容、高度算成 0；`position: fixed` 的包含块就落在这个 0 高的盒子上
+       ⇒ 靠四边撑的盒子高度算成 0（`top:8` ＋ `bottom:8` 减成负数被削成 0），
+       面板只剩上下两条边框，看着就是屏幕上一条白线（真酒馆 820 宽实测：804 × 2）。
+       宽度不受影响（包含块宽度是正常的）⇒ 所以是横线、不是方点。
+       手机那档（≤560）和宽屏那档本来就写死了尺寸，只有这一档中招。 */
     .bc-root {
-        left: 8px; right: 8px; top: 8px; bottom: 8px;
-        width: auto; height: auto;
+        left: 8px; right: auto; top: 8px; bottom: auto;
+        width: min(1180px, calc(100vw - 16px));
+        height: min(800px, calc(100vh - 16px));
+        height: min(800px, calc(100dvh - 16px));
         margin: 0;
         transform: none;
     }
-    /* ⚠️⚠️ 拖过面板之后（`.bc-positioned` 把 inset 解成 auto），上面那条 `width/height:auto`
-       会让整块塌成「只剩顶上一条横条、下面一片空白」——实测 `.bc-panes` 高度变 0，
-       iframe 跟着 0（2026-10-31 需求方缩窗口撞上，量过：267x51、panes=0 ✗）
-       ⇒ 拖过的面板给回**明确尺寸**，宽高仍然跟着窗口走 ✓ */
+    /* ⚠️⚠️ 拖过面板之后（`.bc-positioned` 把 inset 解成 auto）⇒ 尺寸必须还在，
+        否则整块塌成「只剩顶上一条横条、下面一片空白」（2026-10-31 需求方缩窗口撞上，
+        量过：267x51、panes=0 ✗）⇒ 拖过的面板同样给**明确尺寸**，宽高跟着窗口走 ✓
+        （上面那条已经把明确尺寸写在 `.bc-root` 上了，这里重复一份是因为 `.bc-positioned`
+          的解 inset 规则特异性更高，挡不住尺寸本身；两份必须一致） */
     .bc-root.bc-positioned {
         width: min(1180px, calc(100vw - 16px));
         height: min(800px, calc(100dvh - 16px));
@@ -2131,8 +2141,30 @@ body:has(dialog[open] .extensions_info) .bc-lyrics {
     /* ⚠️ 这里原来有 `.bc-brand-text{display:none}` —— 那是当年给顶栏那排旧标签腾地方，
        标签栏早撤了，顶栏只剩"品牌 + 时钟 + 三个图标" ⇒ 品牌字**留得下**
        （2026-10-31 量过：320 宽也够，见下面手机那档的时钟收窄 ✓） */
-    
+
     .bc-inline-host { height: 84vh; }
+}
+
+/* ⚠️ 901~1000 这一档和上面同一个根因（酒馆的 `@media max-width: 1000px` 会给 body 加
+   `position: fixed` ⇒ <html> 高度 0），但这一档的观感是**居中卡片**：
+   宽屏那套靠 `inset:0` ＋ `margin:auto` 居中，其中纵向那一半要拿包含块的高度来算，
+   包含块正好是那个 0 高的 <html> ⇒ 中心落在 y = -一半高，面板上半截在屏幕外面
+   （实测 901 宽：面板 800 高、y = -400，靠 openTab 里那次夹取才勉强挪到屏内，不居中）。
+   ⇒ 这一档的居中改成**用视口单位自己算**：位置 = 50vw − 半个宽（宽高都跟宽屏那套一模一样）
+   好处是观感一点不变，也不依赖包含块 ✓。901 以下、1000 以上都不进这里。 */
+@media (max-width: 1000px) and (min-width: 901px) {
+    .bc-root {
+        left: calc(50vw - min(590px, 47vw));
+        right: auto;
+        top: calc(50vh - min(400px, 44vh));
+        bottom: auto;
+        width: min(1180px, 94vw);
+        height: min(800px, 88vh);
+        /* ⚠️ 必须 border-box：上面那个 50vw 减半宽算的是**外框**，而这里还有 1px 边框，
+           不换算法框会各差 1px、看着偏半像素（尺寸/居中都按外框对齐才精确 ✓） */
+        box-sizing: border-box;
+        margin: 0;
+    }
 }
 
 /* 顶部那个会变身的导航按钮：状态页=齿轮，设置页=返回箭头 */

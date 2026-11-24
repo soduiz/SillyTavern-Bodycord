@@ -877,7 +877,10 @@ function normPeriodPrefs(raw) {
         pain,
         painPattern,
         painByDay,
-        pms: src.pms !== false,
+        // ★ 2026-11-24：默认改成关（需求方拍的）——
+        //   这是「经前那几天往提示词里加一行参考」的可选内容，不该默认往每份摘要里塞。
+        //   老存档 / 玩家自己开过的照他们的值，一个都不动 ✓
+        pms: src.pms === true,
         pmsLead,
         temp: src.temp === true,
         // ★ 2026-11-11：基础体温的「写法」也能自己填（留空就按阶段自动生成）✓

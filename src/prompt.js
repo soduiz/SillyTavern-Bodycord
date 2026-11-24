@@ -999,6 +999,11 @@ function targetVars(t) {
             if (!periodModuleOn) return '';
             if (!prefsP || !prefsP.pms) return '';
             if (pregnant || !showCycle || noBleed) return '';
+            // ★ 2026-11-24：**经期里一个字都不发** ——
+            //   提前天数能填到 15 天，周期短的人（比如 21 到 24 天）那几天会跟经期重叠，
+            //   于是同一条摘要里一边写「月经期」、一边写「现在是经前那几天」✗
+            //   （这句话自己还写着"月经一来就缓解"）⇒ 阶段是经期就直接空 ✓
+            if (String(p.profile?.phaseId || '') === 'menstrual') return '';
             const np = nextPeriodFactOf(t.key);
             if (!np || np.kind === 'recovery') return '';
             const left = Number(np.days);

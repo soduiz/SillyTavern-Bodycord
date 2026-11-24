@@ -944,7 +944,11 @@ function targetVars(t) {
             let reportables = '';
             try {
                 const names = periodPrefsOf(t.key).items.filter((x) => x.on).map((x) => x.name);
+                // ★ 2026-11-24：一条都没勾时也明说「无」——
+                //   以前不给这一句，模型就按经期常识自己补（腰酸、食量增加这类），
+                //   玩家明明什么都没开，正文里却老出现这些症状 ✓
                 if (names.length) reportables = ` · 可报表现：${names.join('、')}`;
+                else reportables = ' · 可报表现：无';
             } catch { /* 读不到就不带 */ }
             vars.menstruation = `月经状态：月经期 · ${t.period.day || ''}`
                 + (t.period.flow ? ` · 流量${t.period.flow}` : '')

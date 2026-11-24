@@ -107,7 +107,7 @@ d9 由系统维护：你只报 zones.stim（本轮刺激了哪些部位、多重
 
 周期划分（以排卵日为锚点）：
 （下面各段的天数由系统按这个身体的参数算好，照用即可。）
-- @@PHASE:menstrual@@（@@DAYS:menstrual@@）：@@IF_BLEED:内膜脱落，出血排出，前 2 天可能有轻微下腹坠痛和腰酸。|周期从这里开始，本段不描写出血；基础率同样按阶段表计（1%），照常累加。@@
+- @@PHASE:menstrual@@（@@DAYS:menstrual@@）：@@IF_BLEED:内膜脱落，出血排出。|周期从这里开始，本段不描写出血；基础率同样按阶段表计（1%），照常累加。@@
 - @@PHASE:follicular@@（@@DAYS:follicular@@）：身体逐步进入状态，精力回升，分泌物开始增多。
 - @@TERM:ovulationWindow@@（@@DAYS:window@@，其中包含@@TERM:ovulationDay@@）：@@TERM:ovum@@排出，@@TERM:cervicalMucus@@呈透明拉丝状，精子穿透力最强。@@TERM:ovulationDay@@为 Ovulation_Day。
 - @@PHASE:transition@@（@@DAYS:transition@@）：基础率 3%，照常累加进累计受孕率，只是不再参与受精判定（判定已在窗口最后一天完成）。

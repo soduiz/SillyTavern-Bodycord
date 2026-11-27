@@ -1733,20 +1733,41 @@ function _estrusRoll(key, idx, tag, range, dflt) {
     return lo + (_estrusHash(key + '|' + tag + '|' + idx) % span);
 }
 
+/** 这一套历法的**平年总长**（不算闰年多出来的那一天；读不出来按 365） */
+function _calBaseYearDays(cal) {
+    const months = Array.isArray(cal?.months) ? cal.months : [];
+    const n = months.reduce((a, b) => a + ((Number.isFinite(Number(b)) && Number(b) > 0) ? Math.round(Number(b)) : 0), 0);
+    return n || 365;
+}
+
+/** 一年里的位置（0~1）→ 第几天（0 起）。按**平年总长**换，跟存进去时的口径一致 ✓ */
+function _seasonDayOf(frac, baseLen) {
+    const a = Number(frac);
+    if (!Number.isFinite(a)) return 0;
+    return Math.max(0, Math.round(Math.max(0, Math.min(1, a)) * baseLen));
+}
+
 /** 这一天在不在「发情季节」那几段里（没填 = 全年 ✓） */
 function _estrusInSeason(season, dateStr, cal) {
     if (!Array.isArray(season) || !season.length) return true;
     const p = parseFictionDate(dateStr, cal);
     if (!p) return true;
-    const len = daysInYearOf(p.y, cal);
-    if (!len) return true;
+    const baseLen = _calBaseYearDays(cal);
+    const len = daysInYearOf(p.y, cal) || baseLen;
     const y0 = absDayOf(p.y, 1, 1, cal);
     const abs = absDayOf(p.y, p.m, p.d, cal);
-    const f = (abs - y0) / len;
-    // ⚠️ 容差别写 1e-9：季节区间是**存下来的小数**（比如 31/365 存成 0.084932），
-    //   跟当场算出来的 0.0849315 差几百万分之一 ⇒ 季节第一天会被判成"季节外" ✗
-    //   一天在一年里约 0.0027，取 1e-6 既盖住存盘的取整、又不会把邻近日子吞进来 ✓
-    return season.some(([a, b]) => f >= a - 1e-6 && f < b + 1e-6);
+    const doy = abs - y0;
+    // ★ 2026-11-27：按**整天**比，不再按小数比例 + 容差比。
+    //   比例只存 6 位小数（0.665753），末尾那一天的比例跟区间上界差 4e-7，
+    //   旧写法「f < b + 1e-6」刚好把它算进季节里 ⇒ 每个季节的结尾都多出一天 ✗
+    //   现在两端都换算成「第几天」：起点含、终点的前一天是最后一天 ✓
+    for (const r of season) {
+        const from = _seasonDayOf(r?.[0], baseLen);
+        const rawB = Number(r?.[1]);
+        const to = (Number.isFinite(rawB) && rawB >= 0.999999) ? len : _seasonDayOf(rawB, baseLen);
+        if (doy >= from && doy < to) return true;
+    }
+    return false;
 }
 
 /**
@@ -1762,6 +1783,7 @@ function _estrusSeasonStartAfter(season, dateStr, cal) {
     const p = parseFictionDate(dateStr, cal);
     if (!p) return '';
     const best = { date: '', diff: Infinity };
+    const baseLen = _calBaseYearDays(cal);
     for (const yy of [p.y, p.y + 1]) {
         const len = daysInYearOf(yy, cal);
         if (!len) continue;
@@ -1770,7 +1792,9 @@ function _estrusSeasonStartAfter(season, dateStr, cal) {
         for (const r of season) {
             const a = Number(r?.[0]);
             if (!Number.isFinite(a)) continue;
-            const doy = Math.max(0, Math.min(len - 1, Math.round(a * len)));
+            // ★ 2026-11-27：换成跟 `_estrusInSeason` 同一套「第几天」（按平年总长算）——
+            //   两边各用各的换算，闰年 / 6 位小数就会互相打架，跳季节原地打转 ✓
+            const doy = Math.max(0, Math.min(len - 1, _seasonDayOf(a, baseLen)));
             let cand = addDays(yearStart, doy);
             if (!cand) continue;
             // ★ 2026-11-09（扫出来的 BUG：闰年全年一次都不发情）——

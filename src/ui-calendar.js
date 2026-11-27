@@ -314,7 +314,10 @@ export function calendarViewHtml(opts = {}) {
                 //   所以留着了，但日历不该再把它当"正在追踪"的人标出来 ✗
                 if (trackModeOf(t) === 'light') continue;
                 for (const mk of estrusMarksInMonth(t.key, y, m)) {
-                    estrusByDay[mk.day] = true;
+                    // ★ 2026-11-27：按天收名字（原来是 true / false）——
+                    //   几个人同一天发情也得看出是谁，格子里写不下就放进提示 ✓
+                    const names = estrusByDay[mk.day] || (estrusByDay[mk.day] = []);
+                    if (mk.name && !names.includes(mk.name)) names.push(mk.name);
                 }
             }
         }
@@ -473,7 +476,7 @@ export function calendarViewHtml(opts = {}) {
             // ★ 同一天那几胎并成一条（第 1、2、3 胎），别在提示里念三遍 ✓
             tips.push(dueLineText(mergeDueByDate(dueList)[0]));
         }
-        if (heat) tips.push('发情日');
+        if (heat) tips.push('发情日：' + (estrusByDay[d] || []).join('、'));
         for (const sp of perHits) {
             tips.push('预计月经：' + sp.name + (sp.range ? ('（' + sp.fromStr + ' 到 ' + sp.toStr + '）') : ('（' + sp.fromStr + '）')));
         }

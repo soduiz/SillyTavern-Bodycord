@@ -28,26 +28,20 @@ const FIXED_ROW_KEYS = new Set(VALUE_ROWS.map((r) => r.key));
  * 数值行的"内容"：只留真正存下来的值。
  * 固定项的名称 / 说明 / 单位 / 下拉选项都由当前版本代码给（`VALUE_ROWS`），
  * 比进文件里的话，插件改一句说明就会让所有老备份都误报「数值表不一样」✗
- * 自己加的项（x- 开头）有玩家自己写的名字，那个是内容，要带 ✓
+ * ★ 2026-11-27：「自己加的项」砍掉了 ⇒ 只带固定项；旧文件里那些行由
+ *   `normalizeEntry` 并进备注（见 codex-schema.js）✓
  */
 function snapshotRows(rows) {
-    return (rows || []).map((r) => {
-        const key = String(r?.key || '');
-        if (FIXED_ROW_KEYS.has(key)) {
-            const o = { key };
+    return (rows || [])
+        .filter((r) => FIXED_ROW_KEYS.has(String(r?.key || '')))
+        .map((r) => {
+            const o = { key: String(r.key) };
             if ('min' in r) o.min = r.min;
             if ('max' in r) o.max = r.max;
             if ('num' in r) o.num = r.num;
             if ('text' in r) o.text = r.text;
             return o;
-        }
-        return {
-            key,
-            label: String(r?.label || ''),
-            kind: 'text',
-            text: r?.text === null || r?.text === undefined ? '' : String(r.text),
-        };
-    });
+        });
 }
 
 /** 一条条目写成导出 / 比较用的快照（字段顺序固定，比较才稳定 ✓） */

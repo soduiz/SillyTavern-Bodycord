@@ -256,13 +256,13 @@ export const VALUE_ROWS = [
     //   同卵按「同卵占比 + 混合占比」填，骰子区间由插件折算（存法没变，仍是这几个字，
     //   判定侧照旧解析；老存档 / 导入的那份也照样读得懂 ✓）
     { key: 'litter', label: '胎数分档', kind: 'text', hint: '按下面的填法：一行一档，填几个孩子、占多少 %' },
-    { key: 'sex', label: '性别分档', kind: 'text', placeholder: '雄 / 雌' },
-    { key: 'twin', label: '同卵与混合胎', kind: 'text' },
+    { key: 'sex', label: '性别分档', kind: 'text', placeholder: '雄 / 雌', hint: '两个称呼加一边占比（比如 雄 60%，剩下 40% 自动算）；孩子不分性别就点「不分性别」' },
+    { key: 'twin', label: '同卵与混合胎', kind: 'text', hint: '同卵占多少 %（其余算异卵）；混合胎只对 3 胎及以上有用，填 0 = 不混合' },
     { key: 'breedGroup', label: '混血组', kind: 'text', placeholder: '同一个原型的族填同一个名字，留空 = 只跟同族生' },
     // ★ 2026-11-07：品种 —— 统称下面是品种时填这里（边牧 / 德牧 / 绵羊 / 山羊）；
     //   留空 = 统称的通用形态。品种只在父母本来就有这个品种时才进混血池 ✓
     { key: 'breed', label: '品种', kind: 'text', placeholder: '留空 = 统称的通用形态；填了就是具体品种' },
-    { key: 'unit', label: '单位', kind: 'text', placeholder: '胎 / 枚 / 只' },
+    { key: 'unit', label: '单位', kind: 'text', placeholder: '胎 / 枚 / 只', hint: '孩子按什么算一个（胎 / 枚 / 只）；只影响写出来时用哪个字，判定用的是个数' },
     // ★ 2026-11-08：从"文字占位"改成**天数区间** —— 分娩那一轮按它掷一次恢复天数，
     //   掷出来存个人，不重掷。空着 ＝ 跟全局默认（设置页那三档）✓
     { key: 'postpartum', label: '产后恢复', kind: 'range', unit: '天', hint: '产后多久恢复周期，最短到最长（天）；空着 = 跟全局默认' },
@@ -317,7 +317,7 @@ function rowFrom(def, raw) {
 
 /**
  * 把任何来源的条目（内置 / 覆盖 / 自建 / 导入）补成同一种形状。
- * 缺的项补空、多出来的自定义行接在固定项后面（顺序固定，界面不会跳）。
+ * 缺的项补空；多出来的旧「自己加的项」并进备注（2026-11-27 起不再有这一块）。
  */
 export function normalizeEntry(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
@@ -327,16 +327,22 @@ export function normalizeEntry(raw) {
         if (r && typeof r.key === 'string') byKey.set(r.key, r);
     }
     const rows = VALUE_ROWS.map((def) => rowFrom(def, byKey.get(def.key)));
-    // 自己加的行（key 不以固定项命名）—— 原样跟在后面 ✓
+    // ★ 2026-11-27：「自己加的项」砍掉了（判定不读、也不发给模型，等于另一种备注）。
+    //   老存档 / 老导出文件里带过来的那些行，按「名字：值」并进备注 ⇒ 内容不丢 ✓
+    //   退休的固定项（show1/2/3、hybrid）是本插件自己的旧字段，不往备注里塞。
+    const leftover = [];
     for (const r of rowsIn) {
         if (!r || typeof r.key !== 'string' || VALUE_KEYS.has(r.key)) continue;
         if (RETIRED_KEYS.has(r.key)) continue;
-        rows.push({
-            key: r.key,
-            label: String(r.label || '自定义项'),
-            kind: 'text',
-            text: r.text === null || r.text === undefined ? '' : String(r.text),
-        });
+        const label = String(r.label || '').trim();
+        const text = (r.text === null || r.text === undefined) ? '' : String(r.text).trim();
+        if (!label && !text) continue;
+        leftover.push(label ? (label + (text ? '：' + text : '')) : text);
+    }
+    let notes = String(src.notes || '');
+    if (leftover.length) {
+        const add = leftover.join('\n');
+        if (!notes.includes(add)) notes = notes ? (notes + '\n' + add) : add;
     }
     return {
         id: String(src.id || ''),
@@ -376,7 +382,7 @@ export function normalizeEntry(raw) {
         stages: Array.isArray(src.stages)
             ? src.stages.map((s) => ({ at: String(s?.at || ''), text: String(s?.text || '') }))
             : [],
-        notes: String(src.notes || ''),
+        notes,
     };
 }
 

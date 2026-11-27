@@ -75,7 +75,7 @@ const HELP_LIST = [
 const HELP_DETAIL = [
     '名字与其他叫法：推演里报别的名字也能对回这一条；撞到多条时会标「要你挑」',
     '分类只是目录用的标签，不参与判定',
-    '数值表：一行一项，刻度（天 / 周 / 月）管着孕期与发育段怎么写；胎数 / 性别 / 同卵这三行不用写骰子区间，按栏目填几个数就行，区间插件自己折；显怀填这一族最早到最晚第几周；空着 = 判定仍用全局那份',
+    '数值表：一行一项，每行下面那句话写的就是这个格子怎么填。刻度（天 / 周 / 月）管着孕期与发育段怎么写；胎数 / 性别 / 同卵这三行按栏目填几个数就行，区间插件自己折；显怀填这一族最早到最晚第几周。空着的项仍用全局那份，空着不等于 0',
     '「繁殖数据借用」：只借数值，不借正文；空着的项从借来的那条读，自己填了的仍然用自己的。刻度 / 生育方式按这一条自己填，不跟着借',
     '发育段：每段「起始刻度 + 一句话」；一段都不填 = 这一族不生成生长描述，模型也不许编',
     '备注只给你自己看：不进提示词、不参与匹配',
@@ -581,12 +581,19 @@ function valueRow(entry, row, repaint) {
     }
     // ★ 2026-11-09：月份勾选那一格**占满整行** —— 一格只有 230 来像素时
     //   12 个月会竖成一条（截图里就是那样 ✗）；占满整行才排得成几列 ✓
-    return h('div', {
+    const field = h('div', {
         class: 'bc-field' + ((DICE_KEYS.has(row.key) || row.kind === 'months') ? ' bc-codex-wide' : ''),
     },
         h('label', { class: 'bc-label', text: row.label }),
         control,
     );
+    // ★ 2026-11-27：每一行下面常驻一句「这个格子怎么填」。
+    //   行定义里本来就有这句话，但一直没画出来 ⇒ 玩家打开数值表只看到一排格子，
+    //   不知道哪一格是什么、空着会怎样。放进「？」不行：玩家是照着表逐格填的，
+    //   解释必须跟格子在一起 ✓
+    const hintText = String(row.hint || '').trim();
+    if (hintText) field.appendChild(h('div', { class: 'bc-hint', text: hintText }));
+    return field;
 }
 
 /** 图鉴里某一格的一句话值（读不到就是空） */
@@ -674,20 +681,6 @@ function mixCard(entry, repaint) {
     }
     body.appendChild(h('div', { class: 'bc-hint', text: '换成别的父母时按同一条规则算：同品种层才扩展，跨组只算父母两个。' }));
     return box;
-}
-
-/** 自己加的一行（键值都由玩家写；只给一句话） */
-function customRow(entry, row, repaint) {
-    const labelIn = textInput(row.label, (v) => { row.label = v; codexSave(entry); }, { placeholder: '这项叫什么' });
-    const textIn = textInput(row.text, (v) => { row.text = v; codexSave(entry); }, { placeholder: '值' });
-    return h('div', { class: 'bc-row bc-row-wrap' },
-        labelIn, textIn,
-        button('删除', () => {
-            entry.rows = entry.rows.filter((r) => r.key !== row.key);
-            codexSave(entry);
-            repaint();
-        }),
-    );
 }
 
 function stagesBlock(entry, repaint) {
@@ -944,26 +937,17 @@ function paintDetail(container, entry, repaint, onBack) {
     container.appendChild(borrowCard(entry, repaint));
 
     // ---- 数值表 ----
+    // ★ 2026-11-27：「自己加的项」砍掉了（它既不被判定读、也不发给模型，
+    //   等于备注的另一种写法，还容易被当成真的数值）⇒ 只画固定项。
+    //   老存档里已经加过的行在读取时并进备注，内容不丢（见 codex-schema.js 的 normalizeEntry）
     const nums = card('数值表', HELP_DETAIL.slice(3, 4));
     const bN = nums.querySelector('.bc-section-body');
-    const fixed = entry.rows.filter((r) => r.kind !== undefined && !String(r.key).startsWith('x-') && !MIX_KEYS.has(r.key));
-    const customs = entry.rows.filter((r) => String(r.key).startsWith('x-'));
+    const fixed = entry.rows.filter((r) => r.kind !== undefined && !MIX_KEYS.has(r.key));
     // ★ 2026-11-06：改成两列网格 —— 一行一项地竖着排太长了，
     //   三个「按栏目填」的行（胎数 / 性别 / 同卵）占满整行 ✓
     const grid = h('div', { class: 'bc-codex-grid' });
     for (const row of fixed) grid.appendChild(valueRow(entry, row, repaint));
     bN.appendChild(grid);
-    if (customs.length) {
-        bN.appendChild(h('div', { class: 'bc-label', text: '自己加的项' }));
-        for (const row of customs) bN.appendChild(customRow(entry, row, repaint));
-    }
-    bN.appendChild(h('div', { class: 'bc-row' },
-        button('+ 加一行', () => {
-            entry.rows.push({ key: 'x-' + Date.now().toString(36) + Math.floor(Math.random() * 100), label: '新项', kind: 'text', text: '' });
-            codexSave(entry);
-            repaint();
-        }),
-    ));
     container.appendChild(nums);
     // ★ 2026-11-07：混血三项和池子收在紧挨着的一张卡里
     container.appendChild(mixCard(entry, repaint));
